@@ -6,6 +6,13 @@
     <description>Notes, builds, and essays by Adrian Marikar.</description>
     <language>en</language>
     <item>
+      <title>How This Blog Is Built and Maintained</title>
+      <link>https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html</link>
+      <guid>https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html</guid>
+      <pubDate>Thu, 11 Jun 2026 18:45:00 GMT</pubDate>
+      <description>A behind-the-scenes build log on the static HTML, GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind adrianmarikar.com.</description>
+    </item>
+    <item>
       <title>RaceEdge: Building a Transparent UK &amp; Ireland Racing Research App</title>
       <link>https://adrianmarikar.com/posts/raceedge-transparent-racing-app.html</link>
       <guid>https://adrianmarikar.com/posts/raceedge-transparent-racing-app.html</guid>

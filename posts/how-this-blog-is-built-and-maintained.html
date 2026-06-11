@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How This Blog Is Built and Maintained — Adrian Marikar</title>
+  <meta name="description" content="A behind-the-scenes build log on how adrianmarikar.com is created, styled, versioned in GitHub, deployed with Coolify, served by nginx, and maintained with Hermes agents.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html">
+  <link rel="stylesheet" href="/styles.css?v=20260611-sitewide1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / build log</p>
+        <h1>How This Blog Is Built and Maintained</h1>
+      </header>
+
+      <p>This blog is intentionally simple. It is a static website, written as plain HTML and CSS, stored in a private GitHub repository, built into a tiny nginx Docker image, and deployed to this VPS through Coolify.</p>
+
+      <p>The interesting part is not the stack itself. The interesting part is the workflow around it: I can ask a Hermes agent from Telegram to write a post, edit the front page, update RSS and the sitemap, run checks, commit to GitHub, trigger a Coolify deployment, and verify that the live website actually changed.</p>
+
+      <blockquote>The goal is a blog that stays easy to edit. No CMS. No database. No build pipeline that needs babysitting. Just files, Git, Docker, Coolify, and verification.</blockquote>
+
+      <h2>The stack</h2>
+      <p>The production site at <a href="https://adrianmarikar.com" rel="noopener">adrianmarikar.com</a> is made from a few boring pieces:</p>
+      <ul>
+        <li><strong>Static HTML:</strong> each page and post is an HTML file.</li>
+        <li><strong>One shared CSS file:</strong> the dark neon/glass visual system lives in <code>styles.css</code>.</li>
+        <li><strong>One tiny JavaScript file:</strong> <code>script.js</code> handles small polish like the dynamic year and pointer glow.</li>
+        <li><strong>nginx:</strong> serves the static files in production.</li>
+        <li><strong>Docker:</strong> packages the site into a repeatable container image.</li>
+        <li><strong>GitHub:</strong> stores the private source repo and commit history.</li>
+        <li><strong>Coolify:</strong> pulls from GitHub, builds the Dockerfile, deploys the container, and routes the domain.</li>
+        <li><strong>Cloudflare:</strong> handles public DNS/proxying in front of the VPS.</li>
+      </ul>
+
+      <h2>The file layout</h2>
+      <p>The repo is deliberately small. The core shape looks like this:</p>
+
+      <pre><code>adrianmarikar-blog/
+  index.html
+  styles.css
+  script.js
+  feed.xml
+  sitemap.xml
+  robots.txt
+  Dockerfile
+  nginx.conf
+  posts/
+    ai-app-factory-vps-hermes-coolify.html
+    raceedge-transparent-racing-app.html
+    how-this-blog-is-built-and-maintained.html</code></pre>
+
+      <p>There is no hidden content system. A new post is just a new file under <code>posts/</code>, plus links added to the homepage, RSS feed, and sitemap.</p>
+
+      <h2>Why static HTML?</h2>
+      <p>I could use a CMS or a static site generator, but for this site plain files are enough. The advantages are practical:</p>
+      <ul>
+        <li>The site is fast because there is nothing to compute at request time.</li>
+        <li>The attack surface is tiny: no admin login, no plugin ecosystem, no database.</li>
+        <li>Every change is visible in Git.</li>
+        <li>Deploys are easy to test locally and in production.</li>
+        <li>An AI agent can safely edit the files without learning a big framework first.</li>
+      </ul>
+
+      <p>That last point matters. A small static site is a great fit for agent-assisted publishing because the agent can inspect the whole project, make a targeted edit, and verify it with simple commands.</p>
+
+      <h2>The Docker setup</h2>
+      <p>The site is deployed as an nginx container. The Dockerfile copies the static files into nginx and exposes port 80. That keeps production boring and portable.</p>
+
+      <pre><code>FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY . /usr/share/nginx/html
+EXPOSE 80</code></pre>
+
+      <p>The nginx config serves normal files, applies basic security headers, caches static assets, and lets missing deleted posts return 404. That last detail matters because I removed the early placeholder posts and wanted their old URLs to stop serving content.</p>
+
+      <h2>The deployment loop</h2>
+      <p>The deployment loop is the same pattern I use for other small apps on this VPS:</p>
+
+      <pre><code>Edit files
+  ↓
+Run local checks
+  ↓
+Build the Docker image
+  ↓
+Commit and push to GitHub
+  ↓
+Trigger Coolify deployment
+  ↓
+Wait for deployment to finish
+  ↓
+Verify the live URLs</code></pre>
+
+      <p>For blog posts, the checks are simple but useful:</p>
+      <ul>
+        <li>Parse the changed HTML files.</li>
+        <li>Parse <code>feed.xml</code> and <code>sitemap.xml</code>.</li>
+        <li>Scan for accidental secret-looking strings.</li>
+        <li>Build the Docker image.</li>
+        <li>Check the live post returns <code>HTTP 200</code>.</li>
+        <li>Check the homepage, RSS, and sitemap all include the new post.</li>
+      </ul>
+
+      <h2>How posts are added</h2>
+      <p>When I add a post, I usually make four changes:</p>
+      <ol>
+        <li>Create a new file in <code>posts/</code>.</li>
+        <li>Add a card to the homepage.</li>
+        <li>Add an RSS item to <code>feed.xml</code>.</li>
+        <li>Add the URL to <code>sitemap.xml</code>.</li>
+      </ol>
+
+      <p>That is enough to keep the public site, feed readers, and search engines aligned.</p>
+
+      <h2>How the visual style is kept consistent</h2>
+      <p>The design is centralised in <code>styles.css</code>. The homepage and posts use the same header, footer, background, typography, article cards, code blocks, links, and neon/glass panel treatment.</p>
+
+      <p>I also version the stylesheet URL when the design changes:</p>
+
+      <pre><code>&lt;link rel="stylesheet" href="/styles.css?v=20260611-sitewide1"&gt;</code></pre>
+
+      <p>That avoids the annoying situation where Cloudflare or the browser keeps showing old CSS after the HTML has changed.</p>
+
+      <h2>How Hermes helps maintain it</h2>
+      <p>The blog is maintained from the same Telegram-to-Hermes workflow I use for app work. I can ask for a post, point Hermes at the relevant app or repo, and have it inspect the actual VPS state before writing.</p>
+
+      <p>The important rule is that the agent has to finish the loop. It should not just write a draft and stop. It needs to:</p>
+      <ul>
+        <li>Write or edit the files.</li>
+        <li>Run the local checks.</li>
+        <li>Build the Docker image.</li>
+        <li>Commit and push the change.</li>
+        <li>Trigger Coolify.</li>
+        <li>Wait for the deployment to finish.</li>
+        <li>Verify the live site with real HTTP checks.</li>
+      </ul>
+
+      <p>That is why the blog is useful as a dogfooding project. Every post is also a test of the wider AI app factory workflow.</p>
+
+      <h2>Why this setup works for me</h2>
+      <p>I do not want publishing to become a project. I want to be able to write about what I am building, ship the post, and move on.</p>
+
+      <p>This setup gives me that:</p>
+      <ul>
+        <li><strong>Simple authoring:</strong> one HTML file per post.</li>
+        <li><strong>Reliable deployment:</strong> GitHub plus Coolify.</li>
+        <li><strong>Easy rollback:</strong> revert a Git commit and redeploy.</li>
+        <li><strong>Fast pages:</strong> static files behind nginx and Cloudflare.</li>
+        <li><strong>Low maintenance:</strong> no CMS updates, database backups, or plugin drama.</li>
+      </ul>
+
+      <h2>The trade-off</h2>
+      <p>The trade-off is that this is not a full publishing platform. There is no admin dashboard, editor UI, image manager, comment system, or tag database. For now, that is a feature. The site stays small because the process is intentionally manual, inspectable, and agent-friendly.</p>
+
+      <p>If it grows, I can always add a static generator or a small markdown pipeline later. But the current version is enough: a personal site that can be edited by hand, maintained by an agent, and deployed like any other app on the VPS.</p>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js"></script>
+</body>
+</html>
