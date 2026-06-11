@@ -19,26 +19,5 @@
       <pubDate>Thu, 11 Jun 2026 15:45:00 GMT</pubDate>
       <description>A practical step-by-step guide to using a VPS, multiple Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to build and deploy apps with AI.</description>
     </item>
-    <item>
-      <title>Starting a new blog</title>
-      <link>https://adrianmarikar.com/posts/starting-a-new-blog.html</link>
-      <guid>https://adrianmarikar.com/posts/starting-a-new-blog.html</guid>
-      <pubDate>Thu, 11 Jun 2026 00:00:00 GMT</pubDate>
-      <description>A short opening note on why this space exists and how it will evolve.</description>
-    </item>
-    <item>
-      <title>Building small, useful things</title>
-      <link>https://adrianmarikar.com/posts/building-small-useful-things.html</link>
-      <guid>https://adrianmarikar.com/posts/building-small-useful-things.html</guid>
-      <pubDate>Thu, 11 Jun 2026 00:00:00 GMT</pubDate>
-      <description>Why small projects are often the fastest way to learn, validate, and compound taste.</description>
-    </item>
-    <item>
-      <title>A fast personal website</title>
-      <link>https://adrianmarikar.com/posts/a-fast-personal-website.html</link>
-      <guid>https://adrianmarikar.com/posts/a-fast-personal-website.html</guid>
-      <pubDate>Thu, 11 Jun 2026 00:00:00 GMT</pubDate>
-      <description>The design notes behind this static, lightweight blog.</description>
-    </item>
   </channel>
 </rss>
