@@ -69,9 +69,9 @@
 
       <pre><code>adrianmarikar.com.      MX   10 mail.poolvisitreports.com.</code></pre>
 
-      <p>SPF authorises the VPS to send mail for the domain:</p>
+      <p>SPF authorises the configured mail exchanger to send mail for the domain, without needing to publish the VPS IP address in this write-up:</p>
 
-      <pre><code>adrianmarikar.com.      TXT  "v=spf1 mx ip4:128.140.118.196 -all"</code></pre>
+      <pre><code>adrianmarikar.com.      TXT  "v=spf1 mx -all"</code></pre>
 
       <p>DMARC starts in monitoring mode:</p>
 
