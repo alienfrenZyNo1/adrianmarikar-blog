@@ -1,0 +1,24 @@
+# Adrian Marikar
+
+> Practical build logs and notes on software, systems, self-hosted infrastructure, automation, product experiments, and independent internet projects.
+
+## Site
+
+- Homepage: https://adrianmarikar.com/
+- RSS feed: https://adrianmarikar.com/feed.xml
+- Sitemap: https://adrianmarikar.com/sitemap.xml
+
+## Current posts
+
+- How Email Is Handled on This VPS: https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html
+  - Docker Mailserver, multi-domain self-hosted email, SPF, DKIM, DMARC, Let’s Encrypt, and terminal email workflows.
+- How This Blog Is Built and Maintained: https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html
+  - Static HTML/CSS, GitHub, Docker, nginx, Coolify, Cloudflare, RSS, sitemap, and Hermes maintenance workflow.
+- RaceEdge: Building a Transparent UK & Ireland Racing Research App: https://adrianmarikar.com/posts/raceedge-transparent-racing-app.html
+  - A build log for raceedge.uk, transparent racing research, explainable scoring, paper tracking, and Coolify deployment.
+- My AI App Factory: Hetzner, Hermes, Coolify, GitHub, Cloudflare, and Telegram: https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html
+  - Using a VPS, Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to ship apps with AI.
+
+## Author
+
+Adrian Marikar writes about practical technology, automation, self-hosted systems, internet businesses, product experiments, and turning rough ideas into shipped work.

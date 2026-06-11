@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Adrian Marikar</title>
     <link>https://adrianmarikar.com/</link>
     <description>Notes, builds, and essays by Adrian Marikar.</description>
     <language>en</language>
+    <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>How Email Is Handled on This VPS</title>
       <link>https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html</link>
       <guid>https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html</guid>
       <pubDate>Thu, 11 Jun 2026 20:05:00 GMT</pubDate>
-      <description>A build log on using Docker Mailserver, DNS, SPF, DKIM, DMARC, Let’s Encrypt, and Himalaya to handle self-hosted email on the VPS.</description>
+      <description>A build log on using Docker Mailserver, DNS, SPF, DKIM, DMARC, Let’s Encrypt, and Himalaya to handle self-hosted email on a VPS.</description>
     </item>
     <item>
       <title>How This Blog Is Built and Maintained</title>
@@ -31,7 +32,7 @@
       <link>https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html</link>
       <guid>https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html</guid>
       <pubDate>Thu, 11 Jun 2026 15:45:00 GMT</pubDate>
-      <description>A practical step-by-step guide to using a VPS, multiple Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to build and deploy apps with AI.</description>
+      <description>A practical guide to using a VPS, Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to build and deploy apps with AI.</description>
     </item>
   </channel>
 </rss>

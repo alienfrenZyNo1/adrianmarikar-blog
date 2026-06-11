@@ -6,7 +6,21 @@
   <title>How Email Is Handled on This VPS — Adrian Marikar</title>
   <meta name="description" content="A build log on how email is hosted on the VPS with Docker Mailserver, DNS, SPF, DKIM, DMARC, Let's Encrypt, Himalaya, and careful multi-domain setup.">
   <link rel="canonical" href="https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html">
-  <link rel="stylesheet" href="/styles.css?v=20260611-mobileanchor3">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="How Email Is Handled on This VPS">
+  <meta property="og:description" content="A build log on using Docker Mailserver, DNS, SPF, DKIM, DMARC, Let’s Encrypt, and Himalaya to handle self-hosted email on a VPS.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html">
+  <meta property="article:published_time" content="2026-06-11T20:05:00Z">
+  <meta property="article:modified_time" content="2026-06-11T22:13:56Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="How Email Is Handled on This VPS">
+  <meta name="twitter:description" content="A build log on using Docker Mailserver, DNS, SPF, DKIM, DMARC, Let’s Encrypt, and Himalaya to handle self-hosted email on a VPS.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How Email Is Handled on This VPS","description":"A build log on using Docker Mailserver, DNS, SPF, DKIM, DMARC, Let’s Encrypt, and Himalaya to handle self-hosted email on a VPS.","url":"https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html"},"datePublished":"2026-06-11T20:05:00Z","dateModified":"2026-06-11T22:13:56Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["self-hosted email","Docker Mailserver","VPS email","DKIM","SPF","DMARC","Let’s Encrypt","Himalaya"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
 </head>
 <body>
   <header class="site-header">
@@ -193,10 +207,18 @@ Username: hello@adrianmarikar.com</code></pre>
       <p>This gives the VPS a practical self-hosted mail layer. Apps can send transactional email, the personal domain has a real mailbox, and Hermes can operate the mailbox through a terminal client when needed.</p>
 
       <p>It is not as hands-off as using a big hosted email provider, but it fits the way this VPS is being used: self-hosted where practical, simple enough to understand, and verified end-to-end instead of assumed to work.</p>
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind this site.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>How the VPS, Hermes, Coolify, GitHub, Cloudflare, and Telegram setup ships apps.</span></li>
+        </ul>
+      </section>
     </article>
   </main>
 
   <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
-  <script src="/script.js?v=20260611-mobileanchor3"></script>
+  <script src="/script.js?v=20260611-organic1"></script>
 </body>
 </html>

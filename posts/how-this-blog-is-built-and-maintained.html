@@ -6,7 +6,21 @@
   <title>How This Blog Is Built and Maintained — Adrian Marikar</title>
   <meta name="description" content="A behind-the-scenes build log on how adrianmarikar.com is created, styled, versioned in GitHub, deployed with Coolify, served by nginx, and maintained with Hermes agents.">
   <link rel="canonical" href="https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html">
-  <link rel="stylesheet" href="/styles.css?v=20260611-mobileanchor3">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="How This Blog Is Built and Maintained">
+  <meta property="og:description" content="A behind-the-scenes build log on the static HTML, GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind adrianmarikar.com.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html">
+  <meta property="article:published_time" content="2026-06-11T18:45:00Z">
+  <meta property="article:modified_time" content="2026-06-11T22:13:56Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="How This Blog Is Built and Maintained">
+  <meta name="twitter:description" content="A behind-the-scenes build log on the static HTML, GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind adrianmarikar.com.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How This Blog Is Built and Maintained","description":"A behind-the-scenes build log on the static HTML, GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind adrianmarikar.com.","url":"https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html"},"datePublished":"2026-06-11T18:45:00Z","dateModified":"2026-06-11T22:13:56Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["static blog","Coolify","GitHub deployment","nginx Docker","Hermes Agent","Cloudflare"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
 </head>
 <body>
   <header class="site-header">
@@ -125,7 +139,7 @@ Verify the live URLs</code></pre>
 
       <p>I also version the stylesheet URL when the design changes:</p>
 
-      <pre><code>&lt;link rel="stylesheet" href="/styles.css?v=20260611-mobileanchor3"&gt;</code></pre>
+      <pre><code>&lt;link rel="stylesheet" href="/styles.css?v=20260611-organic1"&gt;</code></pre>
 
       <p>That avoids the annoying situation where Cloudflare or the browser keeps showing old CSS after the HTML has changed.</p>
 
@@ -161,10 +175,18 @@ Verify the live URLs</code></pre>
       <p>The trade-off is that this is not a full publishing platform. There is no admin dashboard, editor UI, image manager, comment system, or tag database. For now, that is a feature. The site stays small because the process is intentionally manual, inspectable, and agent-friendly.</p>
 
       <p>If it grows, I can always add a static generator or a small markdown pipeline later. But the current version is enough: a personal site that can be edited by hand, maintained by an agent, and deployed like any other app on the VPS.</p>
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The self-hosted email layer behind hello@adrianmarikar.com.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The wider agent-driven deployment workflow this blog uses.</span></li>
+        </ul>
+      </section>
     </article>
   </main>
 
   <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
-  <script src="/script.js?v=20260611-mobileanchor3"></script>
+  <script src="/script.js?v=20260611-organic1"></script>
 </body>
 </html>

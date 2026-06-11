@@ -385,6 +385,37 @@ h3 { font-size: 1.45rem; line-height: 1.1; }
 }
 .article ol, .article ul { padding-left: 1.35rem; }
 .article li + li { margin-top: .45rem; }
+.related-posts {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.related-posts h2 { margin-bottom: 1rem; }
+.related-posts ul {
+  display: grid;
+  gap: .85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.related-posts li {
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  background: rgba(255,255,255,.035);
+}
+.related-posts a {
+  display: inline-flex;
+  margin-bottom: .35rem;
+  color: var(--text);
+  font-weight: 800;
+  text-decoration-color: rgba(0,217,146,.55);
+}
+.related-posts span {
+  display: block;
+  color: var(--muted);
+  font-size: .98rem;
+}
 .back-link {
   display: inline-flex;
   align-items: center;
