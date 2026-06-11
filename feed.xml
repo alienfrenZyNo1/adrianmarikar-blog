@@ -6,6 +6,13 @@
     <description>Notes, builds, and essays by Adrian Marikar.</description>
     <language>en</language>
     <item>
+      <title>My AI App Factory: Hetzner, Hermes, Coolify, GitHub, Cloudflare, and Telegram</title>
+      <link>https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html</link>
+      <guid>https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html</guid>
+      <pubDate>Thu, 11 Jun 2026 15:45:00 GMT</pubDate>
+      <description>A practical step-by-step guide to using a VPS, multiple Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to build and deploy apps with AI.</description>
+    </item>
+    <item>
       <title>Starting a new blog</title>
       <link>https://adrianmarikar.com/posts/starting-a-new-blog.html</link>
       <guid>https://adrianmarikar.com/posts/starting-a-new-blog.html</guid>

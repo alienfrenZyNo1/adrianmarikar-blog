@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My AI App Factory: Hetzner, Hermes, Coolify, GitHub, Cloudflare, and Telegram — Adrian Marikar</title>
+  <meta name="description" content="A practical step-by-step guide to using a Hetzner Ubuntu VPS, multiple Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to build and deploy apps with AI.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/ai-app-factory-vps-hermes-coolify.html">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / field guide</p>
+        <h1>My AI App Factory: Hetzner, Hermes, Coolify, GitHub, Cloudflare, and Telegram</h1>
+      </header>
+
+      <p>I wanted a setup where I could message an AI agent from my phone, ask it to build an app, have it create a private GitHub repo, deploy through Coolify, put it behind Cloudflare, and then verify that the live URL actually works.</p>
+
+      <p>This post documents the stack I am using right now. It is intentionally practical: one VPS, open-source/self-hosted infrastructure where possible, GitHub as the source of truth, Coolify as the deployment layer, Cloudflare for DNS/proxying, and Telegram as the control surface.</p>
+
+      <blockquote>No private keys, API tokens, or provider secrets are shown here. Treat the commands as a blueprint and keep your own credentials in environment files or secret stores.</blockquote>
+
+      <h2>The current stack</h2>
+      <p>This site is running on a Hetzner VPS with Ubuntu and Docker. On the box I currently have:</p>
+      <ul>
+        <li><strong>Server:</strong> Hetzner Ubuntu 26.04 LTS VPS, 8 GB class, Falkenstein-style hostname.</li>
+        <li><strong>Docker:</strong> Docker 29.x with Docker Compose v5.x.</li>
+        <li><strong>Hermes Agent:</strong> multiple profiles running as long-lived agents, including a Telegram-connected profile.</li>
+        <li><strong>Coolify:</strong> Coolify 4.1.x running in Docker with Traefik as the public reverse proxy.</li>
+        <li><strong>GitHub:</strong> private repositories by default, deploy keys for Coolify access.</li>
+        <li><strong>Cloudflare:</strong> DNS, proxying, SSL mode, and final public edge routing.</li>
+        <li><strong>Telegram:</strong> the chat interface I use to direct the AI agents from anywhere.</li>
+      </ul>
+
+      <p>The live pattern looks like this:</p>
+
+      <pre><code>Telegram DM
+   ↓
+Hermes Agent running on the VPS
+   ↓
+Local tools: shell, files, git, browser checks, Coolify API
+   ↓
+GitHub private repo
+   ↓
+Coolify build + deploy
+   ↓
+Traefik reverse proxy + Let's Encrypt origin cert
+   ↓
+Cloudflare DNS/proxy
+   ↓
+Live app on a real domain</code></pre>
+
+      <h2>Why this setup works so well</h2>
+      <p>The magic is not any single tool. It is the loop:</p>
+      <ol>
+        <li>I describe what I want in Telegram.</li>
+        <li>Hermes edits files, runs commands, creates repos, and checks logs.</li>
+        <li>GitHub stores the code and history.</li>
+        <li>Coolify builds and deploys the app from GitHub.</li>
+        <li>Cloudflare points the real domain at the VPS.</li>
+        <li>Hermes verifies the live website and reports back in the same Telegram chat.</li>
+      </ol>
+
+      <p>That means I do not just get a code snippet. I get a working artifact: a repository, a deployment, and a public URL that has been checked.</p>
+
+      <h2>Step 1 — Start with a clean VPS</h2>
+      <p>Provision a VPS from <a href="https://www.hetzner.com/cloud/" rel="noopener">Hetzner Cloud</a>. I use Ubuntu because almost every tool supports it cleanly and the package ecosystem is predictable.</p>
+
+      <p>After first login, do the boring but important setup:</p>
+
+      <pre><code>sudo apt update
+sudo apt upgrade -y
+sudo adduser deployer
+sudo usermod -aG sudo deployer</code></pre>
+
+      <p>Then add your SSH key, disable password login if appropriate, and configure a firewall. A simple baseline is:</p>
+
+      <pre><code>sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable</code></pre>
+
+      <p>If you plan to run mail or other services, open only the specific ports you need. Do not expose databases directly unless you have a very good reason.</p>
+
+      <h2>Step 2 — Install Docker</h2>
+      <p>Coolify and most small apps are easiest when Docker is the deployment substrate. Use Docker's official install docs for your exact distribution: <a href="https://docs.docker.com/engine/install/ubuntu/" rel="noopener">Install Docker Engine on Ubuntu</a>.</p>
+
+      <p>The end state you want is:</p>
+
+      <pre><code>docker --version
+docker compose version</code></pre>
+
+      <p>On my server, Docker and Compose are available system-wide, which lets Coolify build and run apps without special handling.</p>
+
+      <h2>Step 3 — Install Coolify</h2>
+      <p><a href="https://coolify.io/" rel="noopener">Coolify</a> is the self-hosted deployment platform in this setup. It gives you a UI and API for projects, apps, databases, environment variables, deployments, logs, domains, and SSL.</p>
+
+      <p>Install Coolify using the official docs: <a href="https://coolify.io/docs/installation" rel="noopener">Coolify installation guide</a>.</p>
+
+      <p>On this VPS, Coolify runs as Docker containers, including:</p>
+
+      <pre><code>coolify              # the app/API
+coolify-proxy        # Traefik reverse proxy
+coolify-db           # Coolify's Postgres
+coolify-redis        # queue/cache
+coolify-realtime     # realtime service
+coolify-sentinel     # monitoring/helper service</code></pre>
+
+      <p>A quick health check looks like:</p>
+
+      <pre><code>curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/api/v1/health</code></pre>
+
+      <p>Both should return <code>OK</code>.</p>
+
+      <h2>Step 4 — Give Coolify API access</h2>
+      <p>Hermes can drive Coolify through the REST API. In the Coolify dashboard, enable API access and create a token with read, write, and deploy permissions.</p>
+
+      <p>Store the token somewhere the agent can read, but never commit it to GitHub:</p>
+
+      <pre><code>COOLIFY_URL=http://127.0.0.1:8000
+COOLIFY_TOKEN=your_token_here</code></pre>
+
+      <p>Then verify it without printing the token:</p>
+
+      <pre><code>curl "$COOLIFY_URL/api/v1/version" \
+  -H "Authorization: Bearer TOKEN_PLACEHOLDER" \
+  -H "Accept: application/json"</code></pre>
+
+      <p>One useful gotcha: if Coolify has an API IP allowlist, requests from the same physical VPS may appear to come from Docker bridge IPs rather than <code>127.0.0.1</code>. If you get a 403 from a valid token, check the allowlist before regenerating credentials.</p>
+
+      <h2>Step 5 — Install Hermes Agent</h2>
+      <p><a href="https://hermes-agent.nousresearch.com/docs/" rel="noopener">Hermes Agent</a> is the AI agent layer. It can use tools to edit files, run terminal commands, search sessions, manage skills, call APIs, spawn subagents, and talk through messaging platforms.</p>
+
+      <p>Install Hermes from the official docs or installer:</p>
+
+      <pre><code>curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes setup
+hermes status</code></pre>
+
+      <p>Hermes supports multiple model providers, persistent memory, skills, scheduled jobs, browser automation, file tools, terminal tools, and platform gateways. In this setup I use it as the operator sitting on the VPS.</p>
+
+      <h2>Step 6 — Use multiple Hermes profiles</h2>
+      <p>Profiles let you run separate Hermes instances with isolated config, memory, tools, sessions, and credentials. That is useful when you want one general agent and another agent dedicated to background jobs or a specific Telegram workflow.</p>
+
+      <pre><code>hermes profile list
+hermes profile create jobs
+hermes --profile jobs setup</code></pre>
+
+      <p>On this VPS I have multiple profiles, including a default profile and a jobs profile. They can run independently, which makes the system feel less like one chatbot and more like a small AI operations team.</p>
+
+      <h2>Step 7 — Connect Telegram</h2>
+      <p>Telegram is the interface I use most. I can send a normal message from my phone like “build a blog site and deploy it,” and Hermes can work through the actual server steps.</p>
+
+      <p>Create a bot with <a href="https://core.telegram.org/bots#botfather" rel="noopener">BotFather</a>, then configure the Hermes gateway:</p>
+
+      <pre><code>hermes gateway setup
+hermes gateway run</code></pre>
+
+      <p>For a long-running server, install or run the gateway as a background service according to the <a href="https://hermes-agent.nousresearch.com/docs/user-guide/messaging/" rel="noopener">Hermes messaging docs</a>.</p>
+
+      <p>The goal is simple: Telegram becomes your command center, while the agent stays close to the files, Docker daemon, Git repo, and Coolify API on the VPS.</p>
+
+      <h2>Step 8 — Wire GitHub as the source of truth</h2>
+      <p>Every app should live in GitHub. I prefer private repositories by default. The agent can create repos, commit changes, push, and then hand Coolify a deploy key or GitHub App connection.</p>
+
+      <p>The basic shape is:</p>
+
+      <pre><code>mkdir my-new-app
+cd my-new-app
+git init -b main
+# create files, Dockerfile, README, etc.
+git add .
+git commit -m "Initial app"
+git remote add origin git@github.com:YOUR_USER/my-new-app.git
+git push -u origin main</code></pre>
+
+      <p>For Coolify, either:</p>
+      <ul>
+        <li>Use a public repo for the simplest setup.</li>
+        <li>Use a private repo with a read-only deploy key.</li>
+        <li>Use a GitHub App integration if you want smoother long-term repo management.</li>
+      </ul>
+
+      <p>I like deploy keys for small private projects because they are narrow: one key, one repo, read-only.</p>
+
+      <h2>Step 9 — Make apps deployable with a Dockerfile</h2>
+      <p>The agent should produce apps that Coolify can deploy predictably. A simple static site can be as small as:</p>
+
+      <pre><code>FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY . /usr/share/nginx/html
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/ &gt;/dev/null || exit 1</code></pre>
+
+      <p>For a Node, Python, or Go app, the same idea applies: expose one internal port, include a healthcheck, keep secrets in environment variables, and make the image build from a clean checkout.</p>
+
+      <h2>Step 10 — Create the app in Coolify</h2>
+      <p>Once GitHub has the repo, create a Coolify project, environment, and application. You can do this in the UI, or the agent can call the API.</p>
+
+      <p>The important settings are:</p>
+      <ul>
+        <li><strong>Project:</strong> one logical group per product or experiment.</li>
+        <li><strong>Environment:</strong> usually <code>production</code> for small apps.</li>
+        <li><strong>Server:</strong> the local Coolify host.</li>
+        <li><strong>Repository:</strong> GitHub URL and branch, usually <code>main</code>.</li>
+        <li><strong>Build pack:</strong> Dockerfile for predictable builds.</li>
+        <li><strong>Domain:</strong> the final domain or subdomain.</li>
+        <li><strong>Environment variables:</strong> app secrets and config, never committed.</li>
+      </ul>
+
+      <p>Then deploy and watch logs. The agent should not stop at “I pushed code.” It should verify that Coolify built the image, started the container, passed the healthcheck, and served the app.</p>
+
+      <h2>Step 11 — Put Cloudflare in front</h2>
+      <p>Cloudflare handles DNS and optional proxying. The usual flow is:</p>
+
+      <ol>
+        <li>Add an A record for your domain or subdomain pointing to the VPS IP.</li>
+        <li>Let Coolify/Traefik issue a Let's Encrypt origin certificate.</li>
+        <li>Verify direct origin HTTPS works.</li>
+        <li>Turn Cloudflare proxy on if you want edge protection and caching.</li>
+        <li>Use <strong>Full (strict)</strong> once the origin certificate is valid.</li>
+      </ol>
+
+      <p>Useful verification commands:</p>
+
+      <pre><code># Public DNS should point where you expect
+getent ahostsv4 example.com
+
+# Verify the origin cert directly from the VPS
+echo | openssl s_client -connect 127.0.0.1:443 -servername example.com 2&gt;/dev/null \
+  | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+
+# Verify the live site
+curl -I https://example.com/</code></pre>
+
+      <p>If Cloudflare returns <code>526</code>, it usually means Cloudflare cannot validate the origin certificate. Temporarily set the DNS record to DNS-only, let Traefik issue the certificate, verify the origin cert, then switch back to proxy and Full (strict).</p>
+
+      <h2>Step 12 — Let Hermes do the boring verification</h2>
+      <p>The biggest advantage of this setup is not generation. It is verification. A good agent loop should run checks like:</p>
+
+      <pre><code>docker ps
+curl -I https://your-domain.com/
+curl https://your-domain.com/ | grep "expected text"
+git status --short
+git log -1 --oneline</code></pre>
+
+      <p>For a real app, the checklist might also include database migrations, SMTP checks, queue workers, logs, health endpoints, and a browser screenshot.</p>
+
+      <h2>A complete app-building prompt</h2>
+      <p>Here is the kind of prompt I can send from Telegram:</p>
+
+      <pre><code>Create a private GitHub repo for a small FastAPI lead-capture app.
+Build it with a Dockerfile, SQLite or Postgres depending on what fits,
+add a clean landing page, deploy it with Coolify to leads.example.com,
+configure env vars through Coolify, then verify the live HTTPS URL.
+Do not expose secrets. Commit everything and report the repo and URL.</code></pre>
+
+      <p>The agent can then break the work into actual steps: create files, build locally, create a repo, push, create the Coolify app, add env vars, deploy, inspect logs, and curl the live domain.</p>
+
+      <h2>My safety rules</h2>
+      <ul>
+        <li><strong>Private repos by default.</strong> Make things public later, deliberately.</li>
+        <li><strong>No secrets in Git.</strong> Use Coolify environment variables and local env files.</li>
+        <li><strong>Read-only deploy keys where possible.</strong> Keep access narrow.</li>
+        <li><strong>Verify with real commands.</strong> No pretending a deployment worked.</li>
+        <li><strong>Use healthchecks.</strong> A running container is not always a working app.</li>
+        <li><strong>Keep DNS boring.</strong> Cert problems are usually DNS/proxy problems.</li>
+        <li><strong>Let agents inspect, but not leak.</strong> Logs are useful; tokens do not belong in blog posts, commits, or screenshots.</li>
+      </ul>
+
+      <h2>What this unlocks</h2>
+      <p>This setup turns app creation into a tight feedback loop. I can go from idea to live URL without manually babysitting every file, commit, container, DNS check, and deployment log.</p>
+
+      <p>It is still real infrastructure. The agent is not magic. But when the VPS, Hermes, GitHub, Coolify, Cloudflare, and Telegram are wired together properly, the agent has the context and tools to do the tedious parts quickly — and, importantly, to prove that the result is live.</p>
+
+      <p>That is the difference between “AI wrote some code” and “AI helped ship an app.”</p>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar // powered by Coolify</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+</body>
+</html>
