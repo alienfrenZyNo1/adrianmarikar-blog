@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RaceEdge: Building a Transparent UK &amp; Ireland Racing Research App — Adrian Marikar</title>
+  <meta name="description" content="A build log on RaceEdge, a transparent UK and Ireland horse racing research app using real racecards, explainable scoring, paper tracking, bankroll planning, and Coolify deployment.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/raceedge-transparent-racing-app.html">
+  <link rel="stylesheet" href="/styles.css?v=20260611-sitewide1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / build log</p>
+        <h1>RaceEdge: Building a Transparent UK &amp; Ireland Racing Research App</h1>
+      </header>
+
+      <p><a href="https://raceedge.uk" rel="noopener">RaceEdge</a> is one of the apps I have been building and testing on this VPS. The idea is simple: take real UK and Ireland racing data, score runners with an explainable model, and show the reasoning clearly instead of pretending a black-box AI can magically pick winners.</p>
+
+      <p>It is deliberately a research and decision-support tool. Horse racing involves risk, and RaceEdge is designed to make the assumptions visible: what data was used, why a horse scored well, what the confidence level is, and where the warnings are.</p>
+
+      <blockquote>This is not financial advice or a promise of profit. RaceEdge is a software experiment in transparent racing research, paper tracking, bankroll discipline, and evidence-led model building.</blockquote>
+
+      <h2>What the live app does today</h2>
+      <p>The current live version at <a href="https://raceedge.uk" rel="noopener">raceedge.uk</a> is a Next.js app deployed through Coolify from a private GitHub repository. Coolify reports it as running healthy, exposed on port 3000, and served publicly at the RaceEdge domain.</p>
+
+      <p>On the homepage, the app shows a daily dashboard for UK and Ireland racing:</p>
+      <ul>
+        <li>Today’s date and the active data source.</li>
+        <li>A clear “No mock data” badge.</li>
+        <li>Counts for meetings, races, and generated tips.</li>
+        <li>Top ranked selections with confidence and risk labels.</li>
+        <li>Factor-by-factor scoring for each runner.</li>
+        <li>Reasoning bullets and uncertainty warnings.</li>
+        <li>Today’s meetings with race class, type, distance, runners, and going.</li>
+      </ul>
+
+      <h2>The principle: no fake fallback</h2>
+      <p>One of the most important product decisions is that RaceEdge should not silently swap in fake runners if the real data source fails. If the scraper breaks, an upstream site changes, or a dependency is missing, the app should show an error.</p>
+
+      <p>That sounds small, but it matters. A racing app that quietly substitutes mock data can look like it is working while producing meaningless output. RaceEdge is meant to be boringly honest: real data or a visible failure.</p>
+
+      <pre><code>Real racecards
+  ↓
+Transparent runner scoring
+  ↓
+Ranked tips with reasons
+  ↓
+Risk warnings and paper tracking
+  ↓
+Research evidence before any live promotion</code></pre>
+
+      <h2>The data layer</h2>
+      <p>The MVP has two practical data paths:</p>
+      <ul>
+        <li><strong>Racing Post public web endpoints via a local low-frequency scraper</strong> for free racecard research.</li>
+        <li><strong>The Racing API</strong> when a configured API key is available.</li>
+      </ul>
+
+      <p>The current live dashboard is using the Racing Post free scraper route. The scraper is kept behind a data-source interface so the rest of the app can work with the same race and runner objects whether the source is free scraping, a paid API, or a future licensed historical feed.</p>
+
+      <h2>The scoring model</h2>
+      <p>RaceEdge does not claim to have a trained ML model before the evidence exists. The current model is a transparent weighted scorer that breaks each selection into visible factors.</p>
+
+      <p>Examples of the factors shown in the UI include:</p>
+      <ul>
+        <li><strong>Recent form:</strong> how the horse performed in recent starts.</li>
+        <li><strong>Class suitability:</strong> whether today’s race looks easier or harder than the previous run.</li>
+        <li><strong>Race type match:</strong> whether the race fits the preferred strategy profile.</li>
+        <li><strong>Field size:</strong> with a preference for races that match the tested setup.</li>
+        <li><strong>Trainer and jockey strike rates:</strong> used as supporting signals, not magic answers.</li>
+        <li><strong>Going, distance, and course suitability:</strong> evidence that today’s conditions fit the runner.</li>
+        <li><strong>Value odds and market position:</strong> including late market movement when available.</li>
+      </ul>
+
+      <p>Each tip card then shows a composite score, confidence label, risk label, factor breakdowns, and reasoning. This makes the app feel more like a research dashboard than a “trust me” tipster.</p>
+
+      <h2>The starting strategy</h2>
+      <p>The preferred starting strategy is intentionally narrow. RaceEdge focuses on UK and Ireland handicaps, with a bias toward class 3–5 races and fields around 8–12 runners.</p>
+
+      <p>The first strategy rules look for patterns such as:</p>
+      <ul>
+        <li>A favourite or near-favourite with recent top-two form.</li>
+        <li>Recent activity, usually a run within the last few weeks.</li>
+        <li>Strong jockey or trainer signals.</li>
+        <li>Distance suitability and, where possible, course evidence.</li>
+        <li>Clear warning labels when information is missing or uncertain.</li>
+      </ul>
+
+      <p>The point is not to make the model complicated. The point is to keep the first version inspectable, testable, and easy to challenge.</p>
+
+      <h2>Bankroll, paper tracking, and research modes</h2>
+      <p>RaceEdge also has pages beyond the daily tips screen. The navigation includes Dashboard, Races, Tips, Bankroll, Paper, Research, Performance, History, and Strategy.</p>
+
+      <p>The bankroll page lets a user enter an available bank and see staking suggestions with guardrails. It supports multiple modes, including backing RaceEdge tips, paper-testing false-favourite lays, and tracking alternative place-style ideas. Overrides above the suggested risk percentage are labelled aggressive with drawdown warnings.</p>
+
+      <p>The paper tracking system is a big part of the app. Instead of jumping straight from a backtest to real stakes, RaceEdge can capture daily paper signals, settle them later, and keep separate evidence streams for different hypotheses.</p>
+
+      <pre><code>Daily racecards
+  ↓
+Generate tips
+  ↓
+Capture paper signals
+  ↓
+Capture available Exchange prices
+  ↓
+Settle against results
+  ↓
+Review evidence before changing the strategy</code></pre>
+
+      <h2>What I have been testing on the VPS</h2>
+      <p>The VPS has been useful because the app can run like a real product instead of a local demo. The current deployment flow is:</p>
+      <ul>
+        <li>Code lives in a private GitHub repository.</li>
+        <li>Coolify builds the Dockerfile from the main branch.</li>
+        <li>The app runs as a Next.js production container.</li>
+        <li>Coolify and Traefik route traffic to <a href="https://raceedge.uk" rel="noopener">raceedge.uk</a>.</li>
+        <li>The live site can be checked from the same Hermes agent that is editing, deploying, and inspecting it.</li>
+      </ul>
+
+      <p>That loop is exactly why I like this VPS setup. I can ask an agent from Telegram to inspect the app, read the repository, check the deployment, run tests, and verify the public URL. It turns a rough product idea into something that can actually be exercised in production.</p>
+
+      <h2>Historical backtests and the reality check</h2>
+      <p>RaceEdge has also been moving toward serious historical validation. The repository includes scripts for importing historical datasets, running baseline strategy reports, testing model grids, and validating false-favourite ideas against Betfair BSP-style data.</p>
+
+      <p>The most important lesson so far is that broad racing strategies are easy to make look good in a narrow slice and hard to make robust across years, price sources, and realistic assumptions. RaceEdge therefore keeps research labels explicit:</p>
+      <ul>
+        <li>Backtested does not mean live-promoted.</li>
+        <li>Proxy/SP evidence is not the same as executable Exchange evidence.</li>
+        <li>Positive slices need sample size, fold consistency, drawdown control, and price-source validation.</li>
+        <li>Weak or contradictory signals should remain paper-only.</li>
+      </ul>
+
+      <h2>The product I want RaceEdge to become</h2>
+      <p>The long-term version of RaceEdge is not just a tip list. It is a transparent racing research workbench: daily cards, scored runners, strategy configuration, bankroll discipline, historical validation, paper tracking, Exchange price evidence, and eventually carefully validated ML models.</p>
+
+      <p>The roadmap points toward:</p>
+      <ul>
+        <li>Deeper historical data pipelines.</li>
+        <li>Walk-forward backtesting and strategy optimisation.</li>
+        <li>Probability calibration and no-leakage validation.</li>
+        <li>Live odds and market movement tracking.</li>
+        <li>Better pace, draw, going, course, and trainer-intent features.</li>
+        <li>ML only after the transparent baseline and data quality are strong enough.</li>
+      </ul>
+
+      <h2>Why I like this build</h2>
+      <p>RaceEdge is a good example of the kind of app this VPS workflow makes possible. It is not just a landing page or toy demo. It has a real domain, a real deployment, a real data source, a database-backed research layer, and enough moving parts to force honest engineering decisions.</p>
+
+      <p>The most useful constraint is transparency. Every time the app makes a claim, I want it to show the ingredients: the score, the factors, the warning signs, and the evidence status. That is the difference between a flashy AI prediction app and a tool I can actually learn from.</p>
+
+      <p>You can see the live app here: <a href="https://raceedge.uk" rel="noopener">raceedge.uk</a>.</p>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js"></script>
+</body>
+</html>
