@@ -1,0 +1,11 @@
+*
+!Dockerfile
+!nginx.conf
+!index.html
+!styles.css
+!robots.txt
+!sitemap.xml
+!feed.xml
+!README.md
+!posts/
+!posts/*.html
