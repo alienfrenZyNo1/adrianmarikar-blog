@@ -411,8 +411,8 @@ h3 { font-size: 1.45rem; line-height: 1.1; }
   .section-heading { display: block; }
 }
 @media (max-width: 640px) {
-  html { scroll-padding-top: 9.75rem; }
-  .site-header { align-items: flex-start; flex-direction: column; }
+  html { scroll-padding-top: 1rem; }
+  .site-header { position: relative; align-items: flex-start; flex-direction: column; }
   nav { width: 100%; overflow-x: auto; padding-bottom: .2rem; }
   nav a { white-space: nowrap; }
   h1 { font-size: clamp(3rem, 17vw, 4.4rem); }
