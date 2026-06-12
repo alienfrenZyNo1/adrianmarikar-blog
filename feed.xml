@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</guid>
+      <pubDate>Fri, 12 Jun 2026 08:35:00 GMT</pubDate>
+      <description>A practical guide to adding a second domain to Docker Mailserver while preserving an existing mail identity, PTR/rDNS, SPF, DKIM, DMARC, TLS, and mailboxes.</description>
+    </item>
+    <item>
       <title>How Email Is Handled on This VPS</title>
       <link>https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html</link>
       <guid>https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html</guid>

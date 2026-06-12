@@ -10,6 +10,8 @@
 
 ## Current posts
 
+- Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail: https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html
+  - A practical checklist for adding a second domain to Docker Mailserver while preserving PTR/rDNS, DKIM, TLS, and existing mailboxes.
 - How Email Is Handled on This VPS: https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html
   - Docker Mailserver, multi-domain self-hosted email, SPF, DKIM, DMARC, Let’s Encrypt, and terminal email workflows.
 - How This Blog Is Built and Maintained: https://adrianmarikar.com/posts/how-this-blog-is-built-and-maintained.html

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail — Adrian Marikar</title>
+  <meta name="description" content="A practical guide to adding a second domain to Docker Mailserver while preserving an existing mail identity, PTR/rDNS, SPF, DKIM, DMARC, TLS, and mailboxes.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail">
+  <meta property="og:description" content="A practical guide to adding a second domain to Docker Mailserver while preserving an existing mail identity, PTR/rDNS, SPF, DKIM, DMARC, TLS, and mailboxes.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html">
+  <meta property="article:published_time" content="2026-06-12T08:35:00Z">
+  <meta property="article:modified_time" content="2026-06-12T08:35:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail">
+  <meta name="twitter:description" content="A practical guide to adding a second domain to Docker Mailserver while preserving an existing mail identity, PTR/rDNS, SPF, DKIM, DMARC, TLS, and mailboxes.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail","description":"A practical guide to adding a second domain to Docker Mailserver while preserving an existing mail identity, PTR/rDNS, SPF, DKIM, DMARC, TLS, and mailboxes.","url":"https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html"},"datePublished":"2026-06-12T08:35:00Z","dateModified":"2026-06-12T08:35:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","multiple domains","self-hosted email","DKIM","SPF","DMARC","PTR","reverse DNS","Let’s Encrypt"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / EMAIL GUIDE</p>
+        <h1>Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail</h1>
+      </header>
+
+      <p>If you already have Docker Mailserver working for one domain, adding a second domain can feel riskier than the first setup. The danger is not that Docker Mailserver cannot host multiple domains. It can. The danger is accidentally changing the identity that the rest of the world already trusts.</p>
+
+      <p>This is the checklist I use for adding a new mail domain to an existing VPS mail server while preserving the existing mailboxes, reverse DNS, TLS certificate, DKIM signing, and app SMTP settings.</p>
+
+      <blockquote>Goal: add another domain without changing the server identity that is already delivering mail.</blockquote>
+
+      <h2>The mental model</h2>
+      <p>A mail server can receive and send mail for many domains while presenting one stable server hostname to the world.</p>
+
+      <pre><code>One VPS mail identity
+  ├─ mail.primary-domain.example
+  │   ├─ PTR/rDNS points here
+  │   ├─ SMTP announces this hostname
+  │   └─ TLS certificate covers this hostname
+  │
+  ├─ mailbox@primary-domain.example
+  └─ mailbox@second-domain.example</code></pre>
+
+      <p>The second domain does not need its own PTR record. In most VPS setups you only get one reverse DNS value for the server IP anyway. The important thing is that the PTR, forward DNS, SMTP banner, and certificate all agree on the mail server hostname.</p>
+
+      <h2>What not to change</h2>
+      <p>Before touching the new domain, write down what already works and avoid changing it unless you have a specific reason.</p>
+
+      <ul>
+        <li>Do not change the existing PTR/rDNS just because a new domain is being added.</li>
+        <li>Do not rename the Docker Mailserver hostname if existing deliverability is good.</li>
+        <li>Do not delete or regenerate existing DKIM keys for the first domain.</li>
+        <li>Do not replace the existing Rspamd DKIM config without checking how it signs the current domain.</li>
+        <li>Do not change app SMTP environment variables that already work for production apps.</li>
+      </ul>
+
+      <h2>DNS records for the new domain</h2>
+      <p>The new domain needs its own MX, SPF, DKIM, and DMARC records. The MX points to the existing mail hostname.</p>
+
+      <pre><code>second-domain.example.      MX   10 mail.primary-domain.example.</code></pre>
+
+      <p>For SPF, the simplest safe form is often to authorize the domain's configured MX host:</p>
+
+      <pre><code>second-domain.example.      TXT  "v=spf1 mx -all"</code></pre>
+
+      <p>That avoids publishing a raw server IP in docs or blog posts. Use the exact SPF policy that matches your real mail flow, but keep it simple unless you actually send through more providers.</p>
+
+      <p>Start DMARC in monitoring mode while you verify delivery:</p>
+
+      <pre><code>_dmarc.second-domain.example. TXT "v=DMARC1; p=none; adkim=s; aspf=s"</code></pre>
+
+      <p>Then publish the DKIM record generated for the new domain. With the common <code>mail</code> selector, it looks like this:</p>
+
+      <pre><code>mail._domainkey.second-domain.example. TXT "v=DKIM1; k=rsa; p=..."</code></pre>
+
+      <p>The <code>p=...</code> value must be the exact public key produced by Docker Mailserver. Do not paste labels like “Name”, “Type”, or “Value” into the DNS value field.</p>
+
+      <h2>Add the mailbox</h2>
+      <p>Docker Mailserver's setup command can add the mailbox without changing the existing domain.</p>
+
+      <pre><code>docker exec mailserver setup email add hello@second-domain.example</code></pre>
+
+      <p>Use a strong password and store it in your local secret manager. Do not commit it to the app repository, blog repository, Docker Compose file, or public documentation.</p>
+
+      <p>Then verify the mailbox exists:</p>
+
+      <pre><code>docker exec mailserver setup email list</code></pre>
+
+      <h2>Generate DKIM for the new domain</h2>
+      <p>Generate DKIM for the added domain:</p>
+
+      <pre><code>docker exec mailserver setup config dkim domain second-domain.example</code></pre>
+
+      <p>Now check how DKIM signing is configured. This is the part that trips people up. If your mail server already has a custom Rspamd DKIM signing file, generating a new key may not automatically add the new domain to the signing map.</p>
+
+      <p>The config needs both domains, not only the newest one:</p>
+
+      <pre><code>domain {
+  primary-domain.example {
+    selector = "mail";
+    path = "/tmp/docker-mailserver/rspamd/dkim/...primary-domain.example.private.txt";
+  }
+
+  second-domain.example {
+    selector = "mail";
+    path = "/tmp/docker-mailserver/rspamd/dkim/...second-domain.example.private.txt";
+  }
+}</code></pre>
+
+      <p>Preserve the existing domain block. Add the new block beside it.</p>
+
+      <h2>Keep TLS focused on the mail hostname</h2>
+      <p>The mail client connects to the server hostname, not to every mailbox domain. That means a single certificate for the mail hostname is normally enough:</p>
+
+      <pre><code>mail.primary-domain.example</code></pre>
+
+      <p>If your VPS already runs web apps through a reverse proxy, DNS-01 validation is often the cleanest way to issue or renew the mail certificate because it does not need to take over ports 80 or 443.</p>
+
+      <h2>Verification checklist</h2>
+      <p>After DNS has propagated and the mail container has been restarted if needed, verify each layer directly.</p>
+
+      <ol>
+        <li>MX for the new domain points at the existing mail hostname.</li>
+        <li>The mail hostname resolves to the VPS.</li>
+        <li>PTR/rDNS still points to the stable mail hostname.</li>
+        <li>SPF exists for the new domain.</li>
+        <li>DKIM TXT exists for the new domain and exactly matches the generated public key.</li>
+        <li>DMARC exists for the new domain.</li>
+        <li>The mailbox authenticates over IMAP.</li>
+        <li>SMTP submission accepts the mailbox credentials.</li>
+        <li>A test message from the new domain arrives in the inbox.</li>
+        <li>A reply from the new domain signs with DKIM and passes SPF/DMARC alignment.</li>
+      </ol>
+
+      <h2>Useful commands</h2>
+      <p>These are generic examples. Replace the domains and container name with your own.</p>
+
+      <pre><code># Check MX
+ dig +short MX second-domain.example
+
+# Check SPF
+ dig +short TXT second-domain.example
+
+# Check DMARC
+ dig +short TXT _dmarc.second-domain.example
+
+# Check DKIM
+ dig +short TXT mail._domainkey.second-domain.example
+
+# Check the presented IMAP certificate
+ openssl s_client -connect mail.primary-domain.example:993 \
+   -servername mail.primary-domain.example -verify_return_error</code></pre>
+
+      <h2>Common failure modes</h2>
+      <ul>
+        <li><strong>Changing PTR/rDNS unnecessarily:</strong> this can damage the existing domain's deliverability.</li>
+        <li><strong>Publishing DKIM with pasted labels:</strong> the DNS record exists but DKIM still fails.</li>
+        <li><strong>Overwriting Rspamd DKIM config:</strong> the new domain works but the old one stops signing.</li>
+        <li><strong>Using the mailbox domain as the IMAP host:</strong> clients should connect to the mail server hostname unless you also provision certificates for per-domain mail hostnames.</li>
+        <li><strong>Testing only local delivery:</strong> always test external delivery and authentication results too.</li>
+      </ul>
+
+      <h2>The safe rule</h2>
+      <p>Think of the mail server hostname as the machine's passport and the hosted domains as tenants. Adding a new tenant should not require changing the passport. Preserve the identity that already works, add the new domain's DNS/authentication carefully, and verify each layer before wiring it into apps.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The real VPS email build log behind this general checklist.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The broader VPS, Hermes, Coolify, GitHub, Cloudflare, and Telegram workflow.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

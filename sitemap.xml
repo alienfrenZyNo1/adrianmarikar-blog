@@ -7,6 +7,12 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</loc>
+    <lastmod>2026-06-12</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
     <loc>https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html</loc>
     <lastmod>2026-06-11</lastmod>
     <changefreq>monthly</changefreq>
