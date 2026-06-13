@@ -10,6 +10,8 @@
 
 ## Current posts
 
+- Privacy-Friendly Nginx Log Analytics for a Static Blog: https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html
+  - Measuring real unique visitors on a static nginx blog with SQLite, salted hashes, bot filtering, no cookies, and no stored raw IPs.
 - Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail: https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html
   - A practical checklist for adding a second domain to Docker Mailserver while preserving PTR/rDNS, DKIM, TLS, and existing mailboxes.
 - How Email Is Handled on This VPS: https://adrianmarikar.com/posts/self-hosted-email-on-the-vps.html

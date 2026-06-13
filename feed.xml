@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Privacy-Friendly Nginx Log Analytics for a Static Blog</title>
+      <link>https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html</link>
+      <guid>https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html</guid>
+      <pubDate>Sat, 13 Jun 2026 09:10:00 GMT</pubDate>
+      <description>How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and no tracking scripts or stored raw IPs.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</guid>

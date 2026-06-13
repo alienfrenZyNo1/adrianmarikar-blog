@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy-Friendly Nginx Log Analytics for a Static Blog — Adrian Marikar</title>
+  <meta name="description" content="How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and no tracking scripts or stored raw IPs.">
+  <meta name="keywords" content="privacy friendly analytics, nginx access logs, static blog analytics, SQLite analytics, unique visitors, no cookies, self hosted analytics">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Privacy-Friendly Nginx Log Analytics for a Static Blog">
+  <meta property="og:description" content="A practical pattern for measuring real unique visitors from nginx logs without tracking scripts, cookies, or persisted raw IP addresses.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html">
+  <meta property="article:published_time" content="2026-06-13T09:10:00Z">
+  <meta property="article:modified_time" content="2026-06-13T09:10:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Privacy-Friendly Nginx Log Analytics for a Static Blog">
+  <meta name="twitter:description" content="How to measure real unique visitors on a static nginx blog with SQLite, salted hashes, bot filtering, and no tracking scripts.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Privacy-Friendly Nginx Log Analytics for a Static Blog","description":"How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and no tracking scripts or stored raw IPs.","url":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html"},"datePublished":"2026-06-13T09:10:00Z","dateModified":"2026-06-13T09:10:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["privacy-friendly analytics","nginx access logs","static website analytics","SQLite","unique visitors","no cookies","self-hosted analytics","Coolify"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / ANALYTICS GUIDE</p>
+        <h1>Privacy-Friendly Nginx Log Analytics for a Static Blog</h1>
+      </header>
+
+      <p>A static blog can be measured without turning it into an ad-tech project. If the site is already served by nginx, the web server sees enough information to answer the questions that matter: which pages are being read, where readers arrive from, and whether the audience is growing.</p>
+
+      <p>The pattern I like is deliberately boring: keep nginx access logs, parse them into SQLite, count daily salted visitor hashes, ignore obvious bots, and avoid storing raw IP addresses after ingestion. It is not as feature-rich as a full analytics suite, but it is enough for a small independent site that cares about real readers more than dashboards.</p>
+
+      <blockquote>Goal: measure useful audience growth without cookies, fingerprinting scripts, third-party pixels, or a database of visitor IPs.</blockquote>
+
+      <h2>What this is good for</h2>
+      <p>This setup answers practical questions for a static site:</p>
+      <ul>
+        <li>How many likely human visitors read the site today?</li>
+        <li>Which posts attract real attention instead of crawler noise?</li>
+        <li>Are Google, RSS readers, direct visits, or internal links sending traffic?</li>
+        <li>Is a new post finding an audience after it is published?</li>
+      </ul>
+
+      <p>It does not try to identify people across weeks, build advertising profiles, replay sessions, track scroll depth, or collect personal data for fun. That constraint is the point.</p>
+
+      <h2>The data boundary</h2>
+      <p>nginx can log values such as the request path, status code, referrer, user agent, timestamp, and client address. The official nginx log module documents the configurable <code>log_format</code> and <code>access_log</code> directives, which means you can choose exactly what lands in the raw log.</p>
+
+      <p>The privacy boundary should be simple:</p>
+      <ol>
+        <li>Read the raw server log locally.</li>
+        <li>Normalize the request into the small fields needed for counting.</li>
+        <li>Hash the client address with a private salt and the visit date.</li>
+        <li>Store the hash, page path, referrer source, user-agent classification, and timestamp.</li>
+        <li>Do not persist the raw IP address in SQLite.</li>
+      </ol>
+
+      <pre><code>raw nginx log
+  ↓
+local parser
+  ↓
+SQLite row:
+  day, path, status, source, visitor_hash, bot_flag</code></pre>
+
+      <p>The date in the hash matters. A daily visitor hash lets the site count unique readers per day without creating a stable identifier that follows someone forever.</p>
+
+      <h2>A minimal SQLite shape</h2>
+      <p>SQLite is a good fit because it is one file, easy to back up, easy to query, and already comfortable on small servers. A minimal table can look like this:</p>
+
+      <pre><code>CREATE TABLE visits (
+  id INTEGER PRIMARY KEY,
+  seen_at TEXT NOT NULL,
+  day TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  visitor_hash TEXT NOT NULL,
+  is_bot INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX visits_day_idx ON visits(day);
+CREATE INDEX visits_path_idx ON visits(path);
+CREATE INDEX visits_visitor_idx ON visits(day, visitor_hash);</code></pre>
+
+      <p>SQLite date functions such as <code>strftime</code> make simple daily and monthly rollups possible without a separate analytics service.</p>
+
+      <h2>Hashing visitors without keeping IPs</h2>
+      <p>The hash should be one-way and salted. In pseudocode:</p>
+
+      <pre><code>visitor_hash = sha256(
+  private_salt + "|" + day + "|" + client_address + "|" + coarse_user_agent
+)</code></pre>
+
+      <p>The salt belongs outside the website repository. Keep it in a local environment variable or a private server secret store. If the database is copied somewhere else, the hashes should not be useful for reconstructing addresses.</p>
+
+      <p>Do not publish the real salt, the real path to the salt file, or the raw production log location in public posts. Those are operational details, not content.</p>
+
+      <h2>Filtering obvious non-readers</h2>
+      <p>Static sites receive plenty of requests that are not readers: uptime checks, feed fetchers, link preview bots, search crawlers, vulnerability scanners, and random probes for files that do not exist. Some of those are useful; they just should not be counted as human visitors.</p>
+
+      <p>A small filter can mark requests as bot-like when:</p>
+      <ul>
+        <li>The user agent contains obvious crawler terms such as <code>bot</code>, <code>crawl</code>, <code>spider</code>, or <code>preview</code>.</li>
+        <li>The path is for assets rather than pages: CSS, JavaScript, images, favicon, or verification files.</li>
+        <li>The status code is not a normal page response.</li>
+        <li>The path is a scanner target such as <code>/wp-admin</code> on a site that is not WordPress.</li>
+      </ul>
+
+      <p>The filter does not need to be perfect. It only needs to be conservative enough that the trend line mostly reflects people reading pages.</p>
+
+      <h2>Queries that are actually useful</h2>
+      <p>Once the database has cleaned rows, the useful queries are small.</p>
+
+      <pre><code>-- Daily unique likely-human visitors
+SELECT day, COUNT(DISTINCT visitor_hash) AS unique_visitors
+FROM visits
+WHERE is_bot = 0 AND status = 200
+GROUP BY day
+ORDER BY day DESC;
+
+-- Most-read posts
+SELECT path,
+       COUNT(*) AS pageviews,
+       COUNT(DISTINCT visitor_hash) AS unique_visitors
+FROM visits
+WHERE is_bot = 0
+  AND status = 200
+  AND path LIKE '/posts/%'
+GROUP BY path
+ORDER BY unique_visitors DESC;
+
+-- Referrer/source summary
+SELECT source, COUNT(DISTINCT visitor_hash) AS unique_visitors
+FROM visits
+WHERE is_bot = 0 AND status = 200
+GROUP BY source
+ORDER BY unique_visitors DESC;</code></pre>
+
+      <p>Those three views are enough to guide a legitimate growth sprint: write more of what people read, improve pages that earn impressions but not clicks, and keep publishing genuinely useful long-tail posts.</p>
+
+      <h2>Where consent guidance fits</h2>
+      <p>Privacy rules vary by jurisdiction, so this is not legal advice. The useful design principle is to minimize the data before arguing about compliance. CNIL’s public guidance on audience measurement describes consent-exemption conditions for analytics whose purpose is limited to measuring an audience. Whether a specific site qualifies depends on implementation and context, but the direction is clear: limit the purpose, limit retention, and avoid unnecessary tracking.</p>
+
+      <p>For a personal static blog, that means the analytics system should be boring by design: no cross-site tracking, no ad targeting, no third-party pixel, no raw IP archive, and no surprise client-side script.</p>
+
+      <h2>Retention rules</h2>
+      <p>Measurement improves when old data ages out. A simple retention policy might be:</p>
+      <ul>
+        <li>Keep raw nginx logs only as long as operationally necessary.</li>
+        <li>Keep hashed per-request rows for a short rolling window.</li>
+        <li>Keep aggregate daily counts longer because they no longer need request-level detail.</li>
+        <li>Rotate the salt if the threat model or hosting situation changes.</li>
+      </ul>
+
+      <p>The exact number of days is less important than making the rule explicit and automating it.</p>
+
+      <h2>How it fits this blog</h2>
+      <p>This site is static HTML served by nginx and deployed through Coolify, so log-based measurement matches the architecture. There is no client-side analytics tag to break page speed, no cookie banner just for vanity stats, and no dependency on a hosted dashboard to know whether posts are working.</p>
+
+      <p>The workflow is:</p>
+      <pre><code>publish a practical post
+  ↓
+verify the live URL
+  ↓
+collect cleaned nginx visits
+  ↓
+review unique readers and sources
+  ↓
+choose the next useful topic</code></pre>
+
+      <p>That loop is slower than buying traffic and less flashy than a real-time dashboard. It is also healthier. The metric is not “can I inflate a counter?” The metric is “are real people finding useful pages?”</p>
+
+      <h2>Practical checklist</h2>
+      <ol>
+        <li>Define an nginx log format with only the fields you need.</li>
+        <li>Parse logs locally into SQLite.</li>
+        <li>Hash visitor identifiers with a private salt and the date.</li>
+        <li>Never store raw IP addresses in the analytics database.</li>
+        <li>Filter obvious bots, assets, scanners, and non-page responses.</li>
+        <li>Report unique readers, pageviews, top posts, and sources.</li>
+        <li>Use the results to write better posts, not to track individuals.</li>
+      </ol>
+
+      <p>If a static blog is meant to be fast, independent, and reader-friendly, its analytics should follow the same values. Start with the smallest measurement system that can inform better publishing decisions, then resist the urge to collect more just because you can.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static HTML, nginx, Docker, GitHub, Coolify, and Hermes workflow behind the site.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The wider VPS and agent-driven deployment workflow that keeps the blog moving.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Another practical self-hosted infrastructure checklist with safe public examples.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

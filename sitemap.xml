@@ -2,9 +2,15 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://adrianmarikar.com/</loc>
-    <lastmod>2026-06-11</lastmod>
+    <lastmod>2026-06-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html</loc>
+    <lastmod>2026-06-13</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
   </url>
   <url>
     <loc>https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html</loc>
