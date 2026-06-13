@@ -13,3 +13,5 @@
 !README.md
 !posts/
 !posts/*.html
+!categories/
+!categories/*.html
