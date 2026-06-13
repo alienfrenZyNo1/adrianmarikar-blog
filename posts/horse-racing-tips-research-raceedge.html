@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Horse Racing Tips Research: What RaceEdge Has Learned So Far — Adrian Marikar</title>
+  <meta name="description" content="A transparent RaceEdge research update: what our horse racing tips experiments have learned from paper tracking, Betfair price validation, exchange slice testing, and blocked strategies.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Horse Racing Tips Research: What RaceEdge Has Learned So Far">
+  <meta property="og:description" content="The RaceEdge research update: transparent scoring, paper evidence, Betfair delayed pricing, official-price validation, and why most racing signals stay research-only.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html">
+  <meta property="article:published_time" content="2026-06-13T13:50:00Z">
+  <meta property="article:modified_time" content="2026-06-13T13:50:00Z">
+  <meta property="article:section" content="Horse Racing Tips Research">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Horse Racing Tips Research: What RaceEdge Has Learned So Far">
+  <meta name="twitter:description" content="A transparent update on RaceEdge's evidence-first horse racing tips research, including paper tracking and Betfair validation lessons.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Horse Racing Tips Research: What RaceEdge Has Learned So Far","description":"A transparent RaceEdge research update: what our horse racing tips experiments have learned from paper tracking, Betfair price validation, exchange slice testing, and blocked strategies.","url":"https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html"},"datePublished":"2026-06-13T13:50:00Z","dateModified":"2026-06-13T13:50:00Z","articleSection":"Horse Racing Tips Research","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["horse racing tips research","RaceEdge","raceedge.uk","Betfair BSP validation","paper trading racing tips","UK horse racing tips","Ireland horse racing tips","transparent racing model"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/categories/horse-racing-tips-research.html">Horse racing research</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/categories/horse-racing-tips-research.html">← Horse racing tips research</a>
+      <header>
+        <p class="date">2026.06 / horse racing tips research</p>
+        <h1>Horse Racing Tips Research: What RaceEdge Has Learned So Far</h1>
+      </header>
+
+      <p><a href="https://raceedge.uk" rel="noopener">RaceEdge</a> started as a horse racing tips app, but the research has pushed it in a more useful direction: less “today’s nap”, more transparent evidence lab. The interesting work so far is not whether one runner happened to win yesterday. It is whether a signal can survive real data, paper tracking, realistic prices, drawdown checks, and enough sample size to be worth trusting.</p>
+
+      <blockquote>Nothing in this post is betting advice or a promise of profit. RaceEdge is an evidence-first racing research project. Strategies stay research-only until they survive live/paper validation with executable-price evidence.</blockquote>
+
+      <h2>The current product stance</h2>
+      <p>The live app is intentionally conservative. RaceEdge shows UK and Ireland racecards, ranked selections, reasoning, confidence, risk labels, responsible-gambling copy, and a clear “no mock data” principle. If the real source fails, the app should fail visibly instead of inventing fake runners.</p>
+
+      <p>The research dashboard is even stricter. Its current promotion status is still <strong>collecting evidence</strong>. The live paper record has not reached the guardrails needed to promote anything as a tested strategy. The current threshold is at least <strong>250 settled paper signals</strong>, plus positive live paper ROI and drawdown discipline. At the latest check, RaceEdge had <strong>54 settled paper signals</strong>, with live paper ROI still negative.</p>
+
+      <h2>What we are measuring</h2>
+      <p>The key lesson has been to separate different kinds of “evidence”. They are not equal.</p>
+      <ul>
+        <li><strong>Proxy or SP-only evidence</strong> can be useful for smoke tests, but it can flatter a signal that would not have been executable at a real price.</li>
+        <li><strong>Betfair delayed or Exchange-style evidence</strong> is more useful because it gets closer to the prices a real user could have faced.</li>
+        <li><strong>Official historical price validation</strong>, using BSP, PPWAP, and MorningWAP-style sources, is a stronger filter for historical slices.</li>
+        <li><strong>Forward paper tracking</strong> is the product guardrail: a promising backtest still has to prove it can produce signals and settle sensibly in the live system.</li>
+      </ul>
+
+      <p>This is why RaceEdge reports mode-by-mode and source-by-source results rather than blending everything into one headline number.</p>
+
+      <h2>The research database is no longer tiny</h2>
+      <p>The VPS research dataset now contains a large historical store separate from the production app. At migration time it held roughly:</p>
+      <ul>
+        <li><strong>1.85 million</strong> runner training rows.</li>
+        <li><strong>949k</strong> Betfair BSP price rows.</li>
+        <li>Paper signal and Exchange snapshot tables for live evidence capture.</li>
+      </ul>
+
+      <p>That does not magically create an edge, but it changes the quality of the questions. Instead of “did this tip win?”, we can ask: does this slice hold across years, countries, score bands, price sources, and drawdown constraints?</p>
+
+      <h2>The strongest historical finding so far: narrow lay slices</h2>
+      <p>The best current historical candidates are not broad “back the top-rated horse” rules. They are narrow lay slices found in official-price validation across 2023–2025, using BSP, PPWAP, and MorningWAP style sources with commission and slippage assumptions.</p>
+
+      <p>Two slices survived the cross-source filter:</p>
+      <ul>
+        <li><strong>Odds 1.50–1.79, score 60–69, medium risk, GB+IRE:</strong> worst-source ROI around <strong>+4.96%</strong> on liability, average ROI around <strong>+6.72%</strong>, with positive results across the three price sources.</li>
+        <li><strong>Score 70–79, medium risk, GB only:</strong> worst-source ROI around <strong>+1.10%</strong> on liability, average ROI around <strong>+4.82%</strong>, also positive across the three price sources.</li>
+      </ul>
+
+      <p>Those sound promising, but the important word is <em>candidate</em>. The first slice had a negative 2025 under some sources, and the second had a weak edge with a negative 2024 across sources. RaceEdge therefore keeps them in <strong>paper-only Exchange slice candidate tracking</strong>, not in promoted staking.</p>
+
+      <pre><code>Historical slice passes filters
+  ↓
+Keep it research-only
+  ↓
+Capture live/paper Exchange-style prices
+  ↓
+Settle separately by mode and source
+  ↓
+Only consider promotion after sample-size and drawdown guards</code></pre>
+
+      <h2>The most useful failure: the proxy ML lay idea</h2>
+      <p>The most valuable research result so far may be a rejection. A proxy model-lay idea looked attractive in sampled historical testing: it had more than 17k proxy lays and roughly +5% ROI on liability, with no losing folds in that proxy view.</p>
+
+      <p>Then official Betfair price validation broke it.</p>
+      <ul>
+        <li>Validated candidate lays: <strong>5,289</strong>.</li>
+        <li>Matched Betfair lays: roughly <strong>4.15k</strong>.</li>
+        <li>BSP ROI: <strong>-3.27%</strong>.</li>
+        <li>PPWAP ROI: <strong>-2.72%</strong>.</li>
+        <li>MorningWAP ROI: <strong>-11.99%</strong>.</li>
+        <li>Losing years: <strong>3/3</strong> on every official-price source.</li>
+      </ul>
+
+      <p>That result is exactly why the research process exists. A signal that looks good under proxy assumptions can be unusable at real market prices. RaceEdge should block those ideas, not bury the bad report.</p>
+
+      <h2>What the live paper record says right now</h2>
+      <p>The live research dashboard currently shows a mixed and immature evidence picture. The sample is still small. Some lay slice candidates are positive in early paper tracking, but the overall live paper ROI remains negative and the executable Betfair delayed bucket is worse than proxy-only settlement.</p>
+
+      <p>That is the warning sign RaceEdge is designed to surface: proxy-only results can look encouraging while executable-price evidence is still weak or negative. Until the live record is larger and more consistent, the honest answer is: keep collecting evidence.</p>
+
+      <h2>How this changes the app</h2>
+      <p>The research so far has pushed RaceEdge toward a clearer product identity:</p>
+      <ul>
+        <li>Daily tips are useful as a visible scoring layer, not a guarantee.</li>
+        <li>The real product is the feedback loop: score, capture, settle, compare, and reject weak ideas.</li>
+        <li>Backtest output should be labelled by evidence level, not presented as a finished tipster system.</li>
+        <li>Any mode that cannot survive Betfair-style validation stays blocked or paper-only.</li>
+      </ul>
+
+      <h2>The next research priorities</h2>
+      <p>The next useful RaceEdge work is not to add more hype. It is to improve forward evidence quality:</p>
+      <ul>
+        <li>Keep capturing Betfair delayed/VPN Exchange snapshots for open paper signals.</li>
+        <li>Separate P&amp;L by mode and price source so proxy-only performance cannot hide executable-price weakness.</li>
+        <li>Let the candidate slices accumulate enough settled signals before changing any promotion status.</li>
+        <li>Use the historical database to find robust, boring, cross-source patterns rather than one-off lucky slices.</li>
+        <li>Keep the public app honest with risk warnings, sample-size labels, and responsible-gambling messaging.</li>
+      </ul>
+
+      <p>That is slower than a normal horse racing tips site, but it is the only version of this project I trust. RaceEdge should earn confidence by showing the work: what passed, what failed, and what is still too early to call.</p>
+
+      <p>Live project: <a href="https://raceedge.uk" rel="noopener">raceedge.uk</a>.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related RaceEdge notes</h2>
+        <ul>
+          <li><a href="/posts/raceedge-transparent-racing-app.html">RaceEdge: transparent racing research</a><span>The original build log for the live app, scoring model, paper tracking, and no-mock-data principle.</span></li>
+          <li><a href="/categories/horse-racing-tips-research.html">Horse racing tips research category</a><span>All RaceEdge posts about UK and Ireland horse racing tips research.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

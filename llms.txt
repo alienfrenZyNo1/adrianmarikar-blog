@@ -10,6 +10,10 @@
 
 ## Current posts
 
+- Horse Racing Tips Research category: https://adrianmarikar.com/categories/horse-racing-tips-research.html
+  - RaceEdge-focused archive covering UK and Ireland horse racing tips research, paper tracking, Betfair validation, and transparent evidence standards.
+- Horse Racing Tips Research: What RaceEdge Has Learned So Far: https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html
+  - A research update on RaceEdge's evidence so far: cross-source lay slices, blocked proxy model-lay results, live paper tracking, and why signals remain research-only.
 - Privacy-Friendly Nginx Log Analytics for a Static Blog: https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html
   - Measuring real unique visitors on a static nginx blog with SQLite, salted hashes, bot filtering, no cookies, and no stored raw IPs.
 - Docker Mailserver Multi-Domain Setup Without Breaking Existing Mail: https://adrianmarikar.com/posts/docker-mailserver-multiple-domains.html
