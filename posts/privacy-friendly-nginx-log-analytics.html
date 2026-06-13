@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy-Friendly Nginx Log Analytics for a Static Blog — Adrian Marikar</title>
-  <meta name="description" content="How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and no tracking scripts or stored raw IPs.">
+  <meta name="description" content="How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and minimal measurement and no stored raw IPs.">
   <meta name="keywords" content="privacy friendly analytics, nginx access logs, static blog analytics, SQLite analytics, unique visitors, no cookies, self hosted analytics">
   <link rel="canonical" href="https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html">
   <!-- SEO discovery metadata -->
@@ -18,10 +18,11 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Privacy-Friendly Nginx Log Analytics for a Static Blog">
   <meta name="twitter:description" content="How to measure real unique visitors on a static nginx blog with SQLite, salted hashes, bot filtering, and no tracking scripts.">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Privacy-Friendly Nginx Log Analytics for a Static Blog","description":"How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and no tracking scripts or stored raw IPs.","url":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html"},"datePublished":"2026-06-13T09:10:00Z","dateModified":"2026-06-13T09:10:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["privacy-friendly analytics","nginx access logs","static website analytics","SQLite","unique visitors","no cookies","self-hosted analytics","Coolify"],"inLanguage":"en"}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Privacy-Friendly Nginx Log Analytics for a Static Blog","description":"How to measure real unique visitors on a static nginx blog with access logs, SQLite, salted hashes, bot filtering, and minimal measurement and no stored raw IPs.","url":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/privacy-friendly-nginx-log-analytics.html"},"datePublished":"2026-06-13T09:10:00Z","dateModified":"2026-06-13T09:10:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["privacy-friendly analytics","nginx access logs","static website analytics","SQLite","unique visitors","no cookies","self-hosted analytics","Coolify"],"inLanguage":"en"}</script>
   <!-- /SEO discovery metadata -->
 
   <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
 </head>
 <body>
   <header class="site-header">
@@ -152,7 +153,7 @@ ORDER BY unique_visitors DESC;</code></pre>
       <h2>Where consent guidance fits</h2>
       <p>Privacy rules vary by jurisdiction, so this is not legal advice. The useful design principle is to minimize the data before arguing about compliance. CNIL’s public guidance on audience measurement describes consent-exemption conditions for analytics whose purpose is limited to measuring an audience. Whether a specific site qualifies depends on implementation and context, but the direction is clear: limit the purpose, limit retention, and avoid unnecessary tracking.</p>
 
-      <p>For a personal static blog, that means the analytics system should be boring by design: no cross-site tracking, no ad targeting, no third-party pixel, no raw IP archive, and no surprise client-side script.</p>
+      <p>For a personal static blog, that means the analytics system should be boring by design: no cross-site tracking, no ad targeting, no ad network pixel, no raw IP archive, and no cross-site tracking. If a client-side analytics script is used, it should be self-hosted, lightweight, and limited to first-party audience measurement.</p>
 
       <h2>Retention rules</h2>
       <p>Measurement improves when old data ages out. A simple retention policy might be:</p>
@@ -166,7 +167,7 @@ ORDER BY unique_visitors DESC;</code></pre>
       <p>The exact number of days is less important than making the rule explicit and automating it.</p>
 
       <h2>How it fits this blog</h2>
-      <p>This site is static HTML served by nginx and deployed through Coolify, so log-based measurement matches the architecture. There is no client-side analytics tag to break page speed, no cookie banner just for vanity stats, and no dependency on a hosted dashboard to know whether posts are working.</p>
+      <p>This site is static HTML served by nginx and deployed through Coolify, so log-based measurement matches the architecture. There is a small self-hosted Umami tag for page-level trends plus nginx log checks for independent verification. The goal is still the same: useful measurement without ad pixels, cross-site profiling, or storing raw IP addresses in the local analytics database.</p>
 
       <p>The workflow is:</p>
       <pre><code>publish a practical post
