@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>The RailSide Ratings Evidence Ladder</title>
+      <link>https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html</link>
+      <guid>https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html</guid>
+      <pubDate>Mon, 15 Jun 2026 10:52:28 GMT</pubDate>
+      <description>How RailSide Ratings separates weak racing signals from stronger evidence using paper tracking, executable-price checks, and promotion guardrails.</description>
+    </item>
+    <item>
       <title>Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS</title>
       <link>https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html</guid>

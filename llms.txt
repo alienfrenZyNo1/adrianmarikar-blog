@@ -14,6 +14,8 @@
   - A practical GitHub-to-Coolify-to-nginx deploy checklist for static HTML sites, cache-busted CSS, Docker builds, RSS, sitemap, live verification, and safe public hygiene scans.
 - Horse Racing Tips Research category: https://adrianmarikar.com/categories/horse-racing-tips-research.html
   - RailSideRatings-focused archive covering UK and Ireland horse racing tips research, paper tracking, Betfair validation, and transparent evidence standards.
+- The RailSide Ratings Evidence Ladder: https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html
+  - Research-method note explaining the evidence ladder: real racecards, transparent scoring, price-source validation, paper tracking, and promotion guardrails.
 - Why RaceEdge Became RailSide Ratings: https://adrianmarikar.com/posts/raceedge-to-railsideratings-name-change.html
   - Naming note explaining why the racing research project moved to RailSide Ratings and railsideratings.co.uk.
 - Horse Racing Tips Research: What RaceEdge Has Learned So Far: https://adrianmarikar.com/posts/horse-racing-tips-research-raceedge.html

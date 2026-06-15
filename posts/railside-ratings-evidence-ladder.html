@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The RailSide Ratings Evidence Ladder — Adrian Marikar</title>
+  <meta name="description" content="How RailSide Ratings separates weak racing signals from stronger evidence using no-mock-data racecards, paper tracking, executable-price checks, and promotion guardrails.">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The RailSide Ratings Evidence Ladder">
+  <meta property="og:description" content="How RailSide Ratings separates weak racing signals from stronger evidence using paper tracking, executable-price checks, and promotion guardrails.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html">
+  <meta property="article:published_time" content="2026-06-15T10:52:28Z">
+  <meta property="article:modified_time" content="2026-06-15T10:52:28Z">
+  <meta property="article:section" content="Horse Racing Tips Research">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="The RailSide Ratings Evidence Ladder">
+  <meta name="twitter:description" content="A practical note on how RailSide Ratings grades racing research evidence before any angle is promoted.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"The RailSide Ratings Evidence Ladder","description":"How RailSide Ratings separates weak racing signals from stronger evidence using no-mock-data racecards, paper tracking, executable-price checks, and promotion guardrails.","url":"https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html"},"datePublished":"2026-06-15T10:52:28Z","dateModified":"2026-06-15T10:52:28Z","articleSection":"Horse Racing Tips Research","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["RailSide Ratings","horse racing tips research","paper tracking","Betfair validation","racing ratings","evidence ladder","railsideratings.co.uk"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/categories/horse-racing-tips-research.html">← RailSideRatings Research</a>
+      <header>
+        <p class="date">2026.06 / research method</p>
+        <h1>The RailSide Ratings Evidence Ladder</h1>
+      </header>
+
+      <p><a href="https://railsideratings.co.uk" rel="noopener">RailSide Ratings</a> is not meant to be another “today’s nap” site dressed up with charts. The useful version of the product is a research workbench: it should show what the model thinks, what evidence supports it, and where the evidence is still too weak to trust.</p>
+
+      <p>The central idea is an evidence ladder. A racing angle should not jump straight from “looked good in a backtest” to “use this with real money”. It should move through stricter layers of proof, and it should be blocked or labelled research-only when it fails.</p>
+
+      <blockquote>Nothing here is betting advice or a promise of profit. The whole point of the ladder is to slow decisions down until the evidence is better.</blockquote>
+
+      <h2>Level 1 — real racecards, no mock fallback</h2>
+      <p>The lowest rung is still important: the app has to be using real racecards. If a scraper breaks, an API is unavailable, or a dependency fails, RailSide Ratings should not quietly invent runners just to keep the dashboard looking full.</p>
+
+      <p>Fake fallback data is dangerous because it makes a broken app look healthy. The safer rule is simple: real data or a visible failure.</p>
+
+      <h2>Level 2 — transparent scoring</h2>
+      <p>Once the app has real race data, it can score runners. But scoring is not the same as evidence. A rating is only a structured opinion until it has been tested.</p>
+
+      <p>This is why the scoring layer needs to stay explainable. Users should be able to see the ingredients: recent form, class context, race profile, distance suitability, market clues where available, and warning labels when information is missing.</p>
+
+      <pre><code>Racecard
+  ↓
+Runner factors
+  ↓
+Transparent score
+  ↓
+Confidence and risk labels
+  ↓
+Research status, not blind certainty</code></pre>
+
+      <h2>Level 3 — historical smoke tests</h2>
+      <p>Historical tests are useful for killing bad ideas early. If a rule cannot survive a broad historical smoke test, it probably does not deserve live attention.</p>
+
+      <p>But this layer can also flatter weak ideas. Starting-price or proxy-only results can look tidy while hiding whether a user could actually have got a sensible price. So historical smoke tests are a filter, not a finish line.</p>
+
+      <h2>Level 4 — official and executable-price checks</h2>
+      <p>The next rung is stricter: compare the idea against price sources that are closer to what the market actually offered. That means separating source types rather than blending them into one flattering headline.</p>
+
+      <ul>
+        <li><strong>Proxy results</strong> are useful for early shape-checking.</li>
+        <li><strong>Official historical prices</strong> are a stronger test of whether the angle survives real settlement assumptions.</li>
+        <li><strong>Exchange-style or delayed market captures</strong> help show whether the signal still makes sense around executable prices.</li>
+      </ul>
+
+      <p>If an angle only works in the weakest bucket, it stays weak. The app should say that plainly.</p>
+
+      <h2>Level 5 — forward paper tracking</h2>
+      <p>Forward paper tracking is the product guardrail. It tests whether a signal can be generated live, captured consistently, priced realistically, and settled without rewriting the rules after the result.</p>
+
+      <p>This is deliberately slower than publishing a daily tip list. It means accepting that most signals will stay in a boring status like “collecting evidence” for a long time. That is a feature, not a flaw.</p>
+
+      <h2>Level 6 — promotion guardrails</h2>
+      <p>The final rung is promotion, and most ideas should never reach it. A candidate needs enough settled signals, tolerable drawdown, positive forward evidence, and performance that does not depend on one fragile price source.</p>
+
+      <p>For now, the useful default is caution. Candidate slices can be tracked, compared, and reported, but they should not be treated as validated until sample size and executable-price evidence justify it.</p>
+
+      <pre><code>Interesting backtest
+  ↓
+Source-by-source validation
+  ↓
+Forward paper capture
+  ↓
+Separate settlement by mode
+  ↓
+Sample-size and drawdown checks
+  ↓
+Only then consider promotion</code></pre>
+
+      <h2>Why this matters for the product</h2>
+      <p>The evidence ladder changes what RailSide Ratings is trying to be. It is not just a list of picks. It is a system for making claims harder to publish and easier to challenge.</p>
+
+      <p>That is the product direction I trust more: fewer bold claims, clearer labels, more separation between research modes, and public writing that explains what is still unproven. In racing, a tool that blocks weak ideas is more valuable than a tool that always finds something to say.</p>
+
+      <p>Live project: <a href="https://railsideratings.co.uk" rel="noopener">railsideratings.co.uk</a>.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related RailSide notes</h2>
+        <ul>
+          <li><a href="/posts/raceedge-to-railsideratings-name-change.html">Why RaceEdge became RailSide Ratings</a><span>The naming note for the project now living at railsideratings.co.uk.</span></li>
+          <li><a href="/posts/horse-racing-tips-research-raceedge.html">Horse racing tips research so far</a><span>The current evidence update on paper tracking, official-price validation, and blocked strategies.</span></li>
+          <li><a href="/posts/raceedge-transparent-racing-app.html">Transparent racing research build log</a><span>The original build log for the app, scoring model, and no-mock-data principle.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar // powered by Coolify</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
