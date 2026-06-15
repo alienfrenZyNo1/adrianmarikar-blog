@@ -112,12 +112,12 @@
       <pre><code>domain {
   primary-domain.example {
     selector = "mail";
-    path = "/tmp/docker-mailserver/rspamd/dkim/...primary-domain.example.private.txt";
+    path = "&lt;dkim-key-file-for-primary-domain&gt;";
   }
 
   second-domain.example {
     selector = "mail";
-    path = "/tmp/docker-mailserver/rspamd/dkim/...second-domain.example.private.txt";
+    path = "&lt;dkim-key-file-for-second-domain&gt;";
   }
 }</code></pre>
 

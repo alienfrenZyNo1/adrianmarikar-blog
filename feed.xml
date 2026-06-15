@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS</title>
+      <link>https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html</guid>
+      <pubDate>Mon, 15 Jun 2026 10:01:38 GMT</pubDate>
+      <description>A practical checklist for deploying a static HTML site from GitHub through Coolify and nginx without stale CSS, missed files, broken RSS, or unverified production changes.</description>
+    </item>
+    <item>
       <title>Why RaceEdge Became RailSide Ratings</title>
       <link>https://adrianmarikar.com/posts/raceedge-to-railsideratings-name-change.html</link>
       <guid>https://adrianmarikar.com/posts/raceedge-to-railsideratings-name-change.html</guid>

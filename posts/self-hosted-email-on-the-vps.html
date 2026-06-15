@@ -117,12 +117,12 @@
       <pre><code>domain {
   poolvisitreports.com {
     selector = "mail";
-    path = "/tmp/docker-mailserver/rspamd/dkim/...poolvisitreports.com.private.txt";
+    path = "&lt;dkim-key-file-for-primary-domain&gt;";
   }
 
   adrianmarikar.com {
     selector = "mail";
-    path = "/tmp/docker-mailserver/rspamd/dkim/...adrianmarikar.com.private.txt";
+    path = "&lt;dkim-key-file-for-second-domain&gt;";
   }
 }</code></pre>
 

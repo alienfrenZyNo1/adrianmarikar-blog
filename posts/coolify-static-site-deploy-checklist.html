@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS — Adrian Marikar</title>
+  <meta name="description" content="A practical checklist for deploying a static HTML site from GitHub through Coolify and nginx without stale CSS, missed files, broken RSS, or unverified production changes.">
+  <meta name="keywords" content="Coolify static site deployment, GitHub deploy checklist, nginx static site, cache busting CSS, Docker static website, RSS sitemap verification">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS">
+  <meta property="og:description" content="A practical checklist for deploying a static HTML site from GitHub through Coolify and nginx without stale CSS, missed files, broken RSS, or unverified production changes.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html">
+  <meta property="article:published_time" content="2026-06-15T10:01:38Z">
+  <meta property="article:modified_time" content="2026-06-15T10:01:38Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS">
+  <meta name="twitter:description" content="How to verify a GitHub-to-Coolify static site deploy, avoid stale CSS, and prove the live page changed.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS","description":"A practical checklist for deploying a static HTML site from GitHub through Coolify and nginx without stale CSS, missed files, broken RSS, or unverified production changes.","url":"https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html"},"datePublished":"2026-06-15T10:01:38Z","dateModified":"2026-06-15T10:01:38Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","static site deployment","GitHub deploy","nginx","cache busting","Docker","RSS","sitemap","production verification"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / DEPLOY CHECKLIST</p>
+        <h1>Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS</h1>
+      </header>
+
+      <p>A static site should be the easiest thing in the world to deploy. Commit files, push to GitHub, let Coolify build the container, and serve the output with nginx. In practice, most mistakes are not dramatic build failures. They are quieter: the homepage updates but a post keeps old styling, a new directory is ignored by the Docker build context, or the browser keeps yesterday's CSS.</p>
+
+      <p>This is the checklist I use for this blog when publishing plain HTML through GitHub, Docker, nginx, and Coolify. It is intentionally biased toward proof. The deploy is not done when Git says “pushed”; it is done when the live page, feed, sitemap, and assets all say the same thing.</p>
+
+      <blockquote>Goal: make a static site deploy boring by verifying the source files, container, live HTML, cache-busted assets, and discovery files every time.</blockquote>
+
+      <h2>The simple architecture</h2>
+      <p>The reliable version of the setup has very few moving parts:</p>
+
+      <pre><code>local static files
+  ↓ git push
+private GitHub repository
+  ↓ Coolify deployment
+Docker image with nginx
+  ↓ HTTPS route
+production website</code></pre>
+
+      <p>Coolify's application docs cover Git-based deployments, Docker build packs, and static build packs. nginx is a good final server because it is small, predictable, and excellent at serving static files. MDN's caching guidance is the reminder that “fast” and “fresh” have to be designed together: long-lived assets need versioned URLs or filenames when they change.</p>
+
+      <h2>Start with the files, not the deploy button</h2>
+      <p>Before triggering a deployment, inspect what changed locally. For a hand-built static blog, the minimum set is usually:</p>
+
+      <ul>
+        <li>the new or edited HTML page,</li>
+        <li>the homepage card or archive link,</li>
+        <li><code>feed.xml</code>,</li>
+        <li><code>sitemap.xml</code>,</li>
+        <li><code>llms.txt</code> or any other discovery page,</li>
+        <li>shared CSS and JavaScript references, if the visual shell changed.</li>
+      </ul>
+
+      <p>That list matters because static sites do not have a database-backed archive that updates itself. If a post exists on disk but is missing from RSS, many readers and crawlers will never see the update.</p>
+
+      <h2>Use one shared shell</h2>
+      <p>The easiest way to make a small blog feel broken is to polish the homepage while posts use an older header, older stylesheet URL, or different footer. Every public HTML page should share the same basic shell:</p>
+
+      <pre><code>&lt;link rel="stylesheet" href="/styles.css?v=YYYYMMDD-purpose"&gt;
+...
+&lt;script src="/script.js?v=YYYYMMDD-purpose"&gt;&lt;/script&gt;</code></pre>
+
+      <p>When the CSS changes, update the versioned URL everywhere. It is not enough to edit <code>styles.css</code> if a long cache lifetime means returning readers still have the old file. A version in the request URL gives the browser a new asset to fetch while still allowing aggressive caching for unchanged assets.</p>
+
+      <h2>Check the Docker build context</h2>
+      <p>A common static-site failure is adding a new top-level folder, committing it, and forgetting that the container build may not copy it. If the Dockerfile copies the whole repository, this is simple. If <code>.dockerignore</code> or a build script uses an allowlist, confirm the new directory is included.</p>
+
+      <pre><code># Good boring static-site shape
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY . /usr/share/nginx/html</code></pre>
+
+      <p>The point is not that every site must use exactly this Dockerfile. The point is that the container, not the local folder, is what production serves. Build the image locally before pushing and catch missing files before Coolify does.</p>
+
+      <h2>Validate HTML and structured data</h2>
+      <p>Small syntax mistakes can break metadata without breaking the visible page. Parse the edited HTML, then parse any JSON-LD blocks. For article pages, I want at least:</p>
+
+      <ul>
+        <li>a canonical URL,</li>
+        <li>Open Graph title, description, type, and URL,</li>
+        <li>Twitter card title and description,</li>
+        <li>Article JSON-LD with published and modified timestamps,</li>
+        <li>safe keywords that describe the post without stuffing.</li>
+      </ul>
+
+      <p>Then parse RSS and sitemap XML. If those files are malformed, a crawler or feed reader may drop the update even when the browser page looks fine.</p>
+
+      <h2>Deploy, then verify production like a reader</h2>
+      <p>The production check should include both command-line and browser-style verification:</p>
+
+      <ol>
+        <li>Fetch the homepage and the new post with a cache-busting query string.</li>
+        <li>Confirm both return <code>200</code>.</li>
+        <li>Confirm the live homepage links to the new post.</li>
+        <li>Confirm the live post references the expected stylesheet version.</li>
+        <li>Fetch the live stylesheet URL and check that the expected selectors exist.</li>
+        <li>Fetch <code>/feed.xml</code>, <code>/sitemap.xml</code>, and <code>/llms.txt</code>.</li>
+        <li>Open the rendered page when the change is visual, because grep cannot see cramped spacing or sticky-header overlap.</li>
+      </ol>
+
+      <p>This is especially important with Coolify because a successful Git push and a successful deployment are separate events. The app should be running and healthy, and the live HTML should prove which version actually reached nginx.</p>
+
+      <h2>Run a public hygiene scan</h2>
+      <p>Infrastructure posts need one extra gate: do not leak operational details. Before publishing, scan the generated public files for real IP literals, API tokens, DKIM signing-key locations, mailbox passwords, credential filenames, and local-only credential paths.</p>
+
+      <p>Use placeholders in public examples:</p>
+
+      <pre><code>&lt;origin-host&gt;
+second-domain.example
+REDACTED_TOKEN_VALUE
+v=spf1 mx -all</code></pre>
+
+      <p>Readers need the pattern, not your production credential material. A good public guide explains the shape of the system while deliberately withholding the parts that would help an attacker.</p>
+
+      <h2>My deployment checklist</h2>
+      <ol>
+        <li>Write or edit exactly the pages needed for the change.</li>
+        <li>Update homepage, RSS, sitemap, and LLM-readable metadata.</li>
+        <li>Keep every page on the same shared stylesheet and script versions.</li>
+        <li>Parse HTML, JSON-LD, RSS, and sitemap files.</li>
+        <li>Scan public output for credential material, real IP addresses, and sensitive paths.</li>
+        <li>Build the Docker image locally.</li>
+        <li>Commit with a descriptive message and push to the deploy branch.</li>
+        <li>Trigger Coolify and wait for the deployment to finish.</li>
+        <li>Verify live homepage, post, assets, feed, sitemap, and health.</li>
+        <li>Only then submit discovery pings such as IndexNow.</li>
+      </ol>
+
+      <p>That might sound heavy for static HTML, but the checks are fast and mostly automatable. They let the site stay simple without becoming sloppy.</p>
+
+      <h2>Why this helps growth</h2>
+      <p>Organic growth is not only about topic selection. It also depends on whether useful pages can be discovered, loaded, and trusted. A post that is missing from RSS, hidden from the sitemap, or styled with stale CSS is a weaker page than it needs to be.</p>
+
+      <p>The boring deploy checklist supports the interesting work: writing practical posts for people who are trying to ship their own static sites, self-hosted tools, and small internet projects. The site stays fast, the archive stays coherent, and each new page has a fair chance to be found.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The broader static HTML, GitHub, Docker, nginx, Coolify, Cloudflare, and Hermes workflow behind the site.</span></li>
+          <li><a href="/posts/privacy-friendly-nginx-log-analytics.html">Privacy-friendly nginx log analytics</a><span>How the site measures real audience growth without turning into an ad-tech project.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The VPS and agent-driven publishing workflow that sits around this deployment loop.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
