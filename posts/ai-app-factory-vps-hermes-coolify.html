@@ -142,12 +142,12 @@ curl $COOLIFY_URL/api/v1/health</code></pre>
       <p>Store the token somewhere the agent can read, but never commit it to GitHub:</p>
 
       <pre><code>COOLIFY_URL=http://localhost:8000
-DEPLOY_API_TOKEN=[REDACTED]</code></pre>
+DEPLOY_API_TOKEN=REDACTED_TOKEN_VALUE</code></pre>
 
       <p>Then verify it without printing the token:</p>
 
       <pre><code>curl "$COOLIFY_URL/api/v1/version" \
-  -H "Authorization: [redacted bearer token]" \
+  -H "Authorization: REDACTED_BEARER_TOKEN_HEADER" \
   -H "Accept: application/json"</code></pre>
 
       <p>One useful gotcha: if Coolify has an API IP allowlist, requests from the same physical VPS may appear to come from Docker bridge addresses rather than the loopback address. If you get a 403 from a valid token, check the allowlist before regenerating credentials.</p>
