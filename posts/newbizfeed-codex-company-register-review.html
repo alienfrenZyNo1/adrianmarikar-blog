@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Using Multiple Codex Agents to Review Companies House and CRO Data — Adrian Marikar</title>
+  <meta name="description" content="How NewBizFeed uses parallel Codex review lanes to turn Companies House and CRO public-register data into safer, more useful company lead packs.">
+  <meta name="keywords" content="NewBizFeed, Codex agents, Companies House data, CRO Ireland data, company formation leads, autonomous agents, lead enrichment, public register data">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Using Multiple Codex Agents to Review Companies House and CRO Data">
+  <meta property="og:description" content="How NewBizFeed uses parallel Codex review lanes to turn Companies House and CRO public-register data into safer, more useful company lead packs.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html">
+  <meta property="article:published_time" content="2026-06-16T10:54:53Z">
+  <meta property="article:modified_time" content="2026-06-16T10:54:53Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Using Multiple Codex Agents to Review Companies House and CRO Data">
+  <meta name="twitter:description" content="A build note on NewBizFeed's multi-agent review pipeline for public company-register data.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Using Multiple Codex Agents to Review Companies House and CRO Data","description":"How NewBizFeed uses parallel Codex review lanes to turn Companies House and CRO public-register data into safer, more useful company lead packs.","url":"https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html"},"datePublished":"2026-06-16T10:54:53Z","dateModified":"2026-06-16T10:54:53Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["NewBizFeed","Codex agents","Companies House","CRO Ireland","company formation leads","public register data","lead enrichment","agent review pipeline"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / NEWBIZFEED BUILD LOG</p>
+        <h1>Using Multiple Codex Agents to Review Companies House and CRO Data</h1>
+      </header>
+
+      <p><a href="https://newbizfeed.com/">NewBizFeed</a> is a simple idea with an awkward data problem behind it: fresh UK and Ireland company formation data is useful, but raw public-register data is not the same thing as a customer-ready lead list.</p>
+
+      <p>Companies House and the Irish Companies Registration Office are excellent sources of official company records. They tell you that a company exists, when it was incorporated, what broad category it sits in, and where the official record can be checked. They do not, by themselves, answer the question a small business actually cares about: “is this a sensible company for me to contact, and can I trust the extra website/contact evidence attached to it?”</p>
+
+      <blockquote>The product is not the raw database. The product is a smaller, fresher, source-attributed list that has been filtered, checked, and kept honest about uncertainty.</blockquote>
+
+      <h2>The raw feeds are useful, but uneven</h2>
+      <p>The UK side starts with Companies House public data products and, where configured, Companies House stream/API updates. The Ireland side uses CRO Open Data company records, which are suitable for a daily Ireland feed. Both sources are official public-register data, but they arrive with different cadence, shape, and limitations.</p>
+
+      <p>That matters because “new companies” is a deceptively simple phrase. A company can be active, active with a strike-off proposal, recently incorporated, dormant-looking, a property holding vehicle, a charity-style entity, or a perfectly valid but commercially irrelevant record for a particular lead pack. NewBizFeed has to treat the register as a warehouse, not as the finished offer.</p>
+
+      <h2>Why one agent is not enough</h2>
+      <p>At small scale, a single enrichment job can work through companies one by one. At real register scale, that becomes slow and expensive. The better pattern is a pipeline with different jobs doing different levels of thinking:</p>
+
+      <ul>
+        <li><strong>Data ingestion</strong> imports Companies House and CRO records and keeps source attribution attached.</li>
+        <li><strong>Deterministic filters</strong> remove obviously unsuitable records before any model is asked to reason.</li>
+        <li><strong>Codex Discovery A and B</strong> work through separate batches in parallel, looking for website and contact evidence.</li>
+        <li><strong>Codex Instant Review</strong> checks candidates that discovery found, focusing on quick evidence quality.</li>
+        <li><strong>Codex Final Review</strong> is reserved for uncertain, weak, ambiguous, or higher-risk cases.</li>
+        <li><strong>The deterministic gate</strong> is the only part allowed to publish customer-visible website/contact fields.</li>
+      </ul>
+
+      <p>The important design choice is that the agents are not treated as magic truth machines. They are reviewers. They can inspect evidence, summarise what they found, and label confidence, but they do not get to publish directly.</p>
+
+      <h2>Two discovery lanes are better than duplicate checking</h2>
+      <p>Earlier versions of this kind of workflow often spend multiple model calls checking the same row. That can improve confidence, but it also burns throughput. For NewBizFeed, the normal discovery path now uses two Codex discovery lanes on different company batches. Codex Discovery A and Codex Discovery B can both move through fresh UK and Ireland rows at the same time.</p>
+
+      <p>That gives the system a wider first pass. If neither lane finds useful evidence, there is no reason to send the row deeper into review. If a lane does find a plausible website/contact candidate, the row moves to a fast review stage. Only rows that remain uncertain or weak need the slower final-review lane.</p>
+
+      <pre><code>Companies House / CRO records
+  ↓
+quality filters and enrichment queue
+  ↓
+Codex Discovery A      Codex Discovery B
+  ↓                    ↓
+found candidates and evidence notes
+  ↓
+Codex Instant Review
+  ↓
+Codex Final Review only when needed
+  ↓
+deterministic publish gate
+  ↓
+customer-visible lead packs</code></pre>
+
+      <h2>The gate matters more than the model</h2>
+      <p>The safest part of the design is deliberately boring: a deterministic gate decides whether a field can be published. Agent output is provisional. A model can say “this looks like the right website”, but the gate still checks whether the evidence is strong enough, whether the confidence label is acceptable, whether the contact-page evidence is missing or ambiguous, and whether the row should remain blank instead.</p>
+
+      <p>That last option is important. For lead products, a blank field is often better than a wrong field. A buyer can work around missing data; wrong data damages trust.</p>
+
+      <h2>What Codex is actually reviewing</h2>
+      <p>The agents are not reviewing private information. The useful checks are public, source-attributed, and intentionally narrow:</p>
+
+      <ul>
+        <li>Does a candidate website appear to belong to the company rather than a similarly named business?</li>
+        <li>Is there hard evidence on the site, such as matching company name, trading name, locality, or source link?</li>
+        <li>Is the contact page present and relevant, or is the evidence weak?</li>
+        <li>Should the row be marked high-confidence, kept for review, or suppressed?</li>
+        <li>Does the result remain compliant with the source terms and customer-facing caveats?</li>
+      </ul>
+
+      <p>This keeps the automation useful without pretending it can infer permission to market, private contact details, or guaranteed buyer intent. NewBizFeed is about organising official public-register data and evidence, not inventing a magic list of ready-to-buy customers.</p>
+
+      <h2>Why this is a good fit for Codex-style agents</h2>
+      <p>This task sits in a useful middle ground. It is too judgement-heavy for a simple script, but too repetitive for a human to do manually at register scale. Codex-style agents are useful because they can read messy public web pages, compare evidence, return structured notes, and operate as separate workers on separate batches.</p>
+
+      <p>The trick is not to ask the model to run the business. The trick is to wrap the model in a system that limits scope:</p>
+
+      <ul>
+        <li>separate discovery lanes for throughput,</li>
+        <li>a fast review lane for ordinary candidates,</li>
+        <li>a slower final-review lane for difficult cases,</li>
+        <li>audit trails for agent runs and imported reviews,</li>
+        <li>deterministic rules for what can be published,</li>
+        <li>source links so customers can verify important records themselves.</li>
+      </ul>
+
+      <h2>The product lesson</h2>
+      <p>The useful lesson from NewBizFeed is not “use AI to scrape everything.” It is almost the opposite: use official public data as the base, filter hard, use agents for the specific evidence checks that scripts struggle with, and keep a non-AI gate between provisional review and customer-facing output.</p>
+
+      <p>That is slower than pretending every record is a qualified lead, but it is a better foundation for a product people can trust. The aim is a lead feed that is fresh enough to be useful, small enough to act on, and honest enough that every exported row can point back to its source.</p>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <p>© <span id="year">2026</span> Adrian Marikar // powered by Coolify</p>
+    <p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p>
+  </footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

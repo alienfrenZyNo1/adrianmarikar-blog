@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Using Multiple Codex Agents to Review Companies House and CRO Data</title>
+      <link>https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html</link>
+      <guid>https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html</guid>
+      <pubDate>Tue, 16 Jun 2026 10:54:53 GMT</pubDate>
+      <description>How NewBizFeed uses parallel Codex review lanes to turn Companies House and CRO public-register data into safer, more useful company lead packs.</description>
+    </item>
+    <item>
       <title>The RailSide Ratings Evidence Ladder</title>
       <link>https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html</link>
       <guid>https://adrianmarikar.com/posts/railside-ratings-evidence-ladder.html</guid>

@@ -10,6 +10,8 @@
 
 ## Current posts
 
+- Using Multiple Codex Agents to Review Companies House and CRO Data: https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html
+  - Build log on NewBizFeed's parallel Codex discovery/review lanes for Companies House and CRO public-register data, source-attributed lead enrichment, and deterministic publish gates.
 - Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS: https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html
   - A practical GitHub-to-Coolify-to-nginx deploy checklist for static HTML sites, cache-busted CSS, Docker builds, RSS, sitemap, live verification, and safe public hygiene scans.
 - Horse Racing Tips Research category: https://adrianmarikar.com/categories/horse-racing-tips-research.html
