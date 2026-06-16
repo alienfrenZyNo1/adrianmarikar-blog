@@ -8,8 +8,12 @@
 - RSS feed: https://adrianmarikar.com/feed.xml
 - Sitemap: https://adrianmarikar.com/sitemap.xml
 
-## Current posts
+## Current posts and categories
 
+- NewBizFeed category: https://adrianmarikar.com/categories/newbizfeed.html
+  - Focused archive for NewBizFeed build notes covering public company-register data, Companies House and CRO workflows, Codex review lanes, source attribution, and lead-feed automation.
+- Dry Home Advice category: https://adrianmarikar.com/categories/dryhomeadvice.html
+  - Focused archive for dryhomeadvice.co.uk build notes covering dehumidifier buyer-intent content, analytics, indexing, affiliate-link checks, and practical long-tail SEO experiments.
 - Using Multiple Codex Agents to Review Companies House and CRO Data: https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html
   - Build log on NewBizFeed's parallel Codex discovery/review lanes for Companies House and CRO public-register data, source-attributed lead enrichment, and deterministic publish gates.
 - Coolify Static Site Deploy Checklist: GitHub to Nginx Without Stale CSS: https://adrianmarikar.com/posts/coolify-static-site-deploy-checklist.html
