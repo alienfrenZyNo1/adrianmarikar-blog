@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks</title>
+      <link>https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html</link>
+      <guid>https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html</guid>
+      <pubDate>Wed, 17 Jun 2026 10:00:55 GMT</pubDate>
+      <description>A practical Cloudflare DNS checklist for self-hosted Coolify apps: which records to proxy, which records to keep DNS-only, how to avoid origin leaks, and what to verify after launch.</description>
+    </item>
+    <item>
       <title>Using Multiple Codex Agents to Review Companies House and CRO Data</title>
       <link>https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html</link>
       <guid>https://adrianmarikar.com/posts/newbizfeed-codex-company-register-review.html</guid>

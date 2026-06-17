@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks — Adrian Marikar</title>
+  <meta name="description" content="A practical Cloudflare DNS checklist for self-hosted Coolify apps: which records to proxy, which records to keep DNS-only, how to avoid origin leaks, and what to verify after launch.">
+  <meta name="keywords" content="Cloudflare DNS Coolify, self-hosted app DNS, Cloudflare proxied records, origin IP leaks, Coolify custom domain, DNS checklist, mail DNS records">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks">
+  <meta property="og:description" content="A practical Cloudflare DNS checklist for self-hosted Coolify apps: which records to proxy, which records to keep DNS-only, how to avoid origin leaks, and what to verify after launch.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html">
+  <meta property="article:published_time" content="2026-06-17T10:00:55Z">
+  <meta property="article:modified_time" content="2026-06-17T10:00:55Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Cloudflare DNS for Self-Hosted Coolify Apps">
+  <meta name="twitter:description" content="Which DNS records to proxy, which to keep DNS-only, and how to verify a self-hosted Coolify app without leaking useful origin details.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks","description":"A practical Cloudflare DNS checklist for self-hosted Coolify apps: which records to proxy, which records to keep DNS-only, how to avoid origin leaks, and what to verify after launch.","url":"https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html"},"datePublished":"2026-06-17T10:00:55Z","dateModified":"2026-06-17T10:00:55Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Cloudflare DNS","Coolify","self-hosted apps","origin protection","proxied records","mail DNS","custom domains","VPS infrastructure"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / DNS CHECKLIST</p>
+        <h1>Cloudflare DNS for self-hosted Coolify apps: proxy web, protect mail, avoid origin leaks</h1>
+      </header>
+
+      <p>When a new self-hosted app is ready in Coolify, the exciting part is adding the custom domain and seeing HTTPS go green. The risky part is treating every DNS record the same. Web records, mail records, verification records, and internal hostnames have different jobs. If they are mixed together casually, the site may work while quietly exposing an origin address or breaking mail delivery.</p>
+
+      <p>This is the DNS checklist I use when a small VPS app moves from “it works on the server” to “it has a public domain”. It is written for the common pattern: GitHub deploys into Coolify, Coolify routes traffic to app containers, Cloudflare manages public DNS, and the same VPS may also host mail or other services.</p>
+
+      <blockquote>Goal: make the public web path easy to discover and cache, while keeping non-web services explicit, boring, and not accidentally hidden behind a proxy that cannot serve them.</blockquote>
+
+      <h2>The mental model</h2>
+      <p>Cloudflare's DNS docs describe the proxy status as a choice between DNS-only records and proxied records. Proxied records send supported web traffic through Cloudflare's edge before it reaches the origin. DNS-only records simply publish where a hostname points.</p>
+
+      <p>For a self-hosted Coolify app, that leads to a simple default:</p>
+
+      <ul>
+        <li><strong>Proxy web hostnames</strong> such as <code>example.com</code>, <code>www.example.com</code>, or <code>app.example.com</code> when they serve HTTP/HTTPS traffic.</li>
+        <li><strong>Keep mail and protocol records DNS-only</strong>, including MX targets, SPF, DKIM, DMARC, IMAP, SMTP, and verification TXT records.</li>
+        <li><strong>Do not publish spare hostnames</strong> that point at the same origin unless they are needed and intentionally protected.</li>
+      </ul>
+
+      <p>The important distinction is not “orange cloud good, grey cloud bad”. The important distinction is what protocol the hostname serves and whether Cloudflare can safely sit in front of it.</p>
+
+      <h2>A safe record shape</h2>
+      <p>For a web app, the public DNS usually wants to be boring:</p>
+
+      <pre><code># Web app records
+example.com       A or CNAME   &lt;origin-or-target&gt;   proxied
+www.example.com   CNAME        example.com          proxied
+app.example.com   CNAME        &lt;origin-or-target&gt;   proxied
+
+# Mail and authentication records
+example.com                    MX     mail.primary-domain.example   DNS-only
+example.com                    TXT    v=spf1 mx -all                DNS-only
+_dmarc.example.com             TXT    v=DMARC1; p=none; rua=mailto:dmarc@example.com
+selector._domainkey.example.com TXT   v=DKIM1; k=rsa; p=&lt;public-key&gt;</code></pre>
+
+      <p>The placeholders matter. A public guide does not need to reveal a real origin address, private hostname, mailbox credential, signing-key material, or provider token. The reader needs the pattern: web records can be proxied; mail and authentication records should remain directly visible because other mail servers need to read them.</p>
+
+      <h2>Coolify-specific checks</h2>
+      <p>Coolify makes the app side pleasant, but DNS still has to agree with the route you configured. Before declaring a custom domain live, check these layers:</p>
+
+      <ol>
+        <li>The application has the intended public FQDN in Coolify.</li>
+        <li>The DNS record exists for that exact hostname.</li>
+        <li>The record is proxied if it is web traffic and you want Cloudflare in front.</li>
+        <li>The app responds over HTTPS with the expected host header.</li>
+        <li>The apex and <code>www</code> version either both work or one deliberately redirects to the other.</li>
+        <li>The page's canonical URL, Open Graph URL, sitemap entry, and RSS links all use the chosen public URL.</li>
+      </ol>
+
+      <p>That last point is easy to miss. A page can load in the browser while its metadata still points to a staging host, old project name, or unproxied hostname. Search and sharing systems will repeat whatever the HTML says.</p>
+
+      <h2>How origin leaks happen</h2>
+      <p>Origin leaks are usually not dramatic breaches. They are small leftovers:</p>
+
+      <ul>
+        <li>a DNS-only <code>staging</code> or <code>old-app</code> record still pointing at the same server,</li>
+        <li>a direct mail hostname reused as a web hostname,</li>
+        <li>an old sitemap, README, or blog post containing a literal IP address,</li>
+        <li>a monitoring status page that publishes upstream targets too literally,</li>
+        <li>a screenshot or code block that includes a real token, credential path, or private service URL.</li>
+      </ul>
+
+      <p>Cloudflare's proxy can reduce casual exposure for web traffic, but it is not a magic privacy layer if other records or public files disclose the same origin. The fix is boring hygiene: publish only the hostnames you need, avoid literal server addresses in public docs, and scan the generated site before deploying infrastructure posts.</p>
+
+      <h2>Verification commands</h2>
+      <p>These commands are intentionally generic. Replace domains with your own and avoid pasting sensitive output into public pages.</p>
+
+      <pre><code># See what public DNS returns for the web hostname
+dig +short example.com
+
+# Check the canonical HTTPS response
+curl -I https://example.com/
+
+# Check www behaviour
+curl -I https://www.example.com/
+
+# Check whether HTML metadata names the production URL
+curl -fsSL https://example.com/ | grep -E 'canonical|og:url|sitemap|feed'
+
+# Check mail records separately
+dig +short MX example.com
+dig +short TXT example.com
+dig +short TXT _dmarc.example.com</code></pre>
+
+      <p>For proxied web hostnames, public DNS will normally return Cloudflare edge addresses rather than the origin. That is expected. For mail-related records, the goal is different: other mail servers need clear MX, SPF, DKIM, and DMARC answers.</p>
+
+      <h2>Common mistakes</h2>
+      <ul>
+        <li><strong>Proxying mail hostnames blindly:</strong> Cloudflare's normal HTTP proxy is for web traffic, not a transparent SMTP or IMAP proxy.</li>
+        <li><strong>Leaving old A records around:</strong> the new app is proxied, but an unused subdomain still exposes the same machine.</li>
+        <li><strong>Mixing staging and production metadata:</strong> the site loads, but canonical and Open Graph tags point somewhere else.</li>
+        <li><strong>Turning every warning into a DNS change:</strong> changing MX, PTR/rDNS, DKIM, or DMARC to “fix” a web app can break mail that was already working.</li>
+        <li><strong>Skipping live verification:</strong> a correct-looking dashboard does not prove the public page, RSS feed, and sitemap now agree.</li>
+      </ul>
+
+      <h2>The practical launch checklist</h2>
+      <ol>
+        <li>Choose the canonical hostname before editing metadata.</li>
+        <li>Add the Coolify FQDN for that hostname.</li>
+        <li>Create or update the Cloudflare web record and proxy it if appropriate.</li>
+        <li>Keep MX, SPF, DKIM, DMARC, and mail hostnames DNS-only.</li>
+        <li>Remove unused DNS records that point at the same origin.</li>
+        <li>Verify <code>curl -I</code> responses for apex and <code>www</code>.</li>
+        <li>Verify live canonical, Open Graph, RSS, and sitemap URLs.</li>
+        <li>Scan public HTML, XML, and TXT output for IP literals, token-shaped strings, and sensitive paths.</li>
+      </ol>
+
+      <p>This is the same habit behind my <a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a> and the <a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain checklist</a>: separate the public web path from the mail path, verify each layer directly, and do not publish operational details that readers do not need.</p>
+
+      <h2>Why this helps organic growth</h2>
+      <p>DNS hygiene sounds like infrastructure housekeeping, but it supports discoverability. Search engines, feed readers, social previews, and humans all need one stable public URL. A site that flips between apex, <code>www</code>, staging, and old hostnames splits signals and makes debugging harder.</p>
+
+      <p>A clean Cloudflare and Coolify setup gives each useful page a stable home. That is not a traffic hack. It is the quiet foundation that lets practical posts, build logs, and project pages earn real visitors over time.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The GitHub-to-Coolify-to-nginx verification loop for static pages, RSS, sitemap, and cache-busted assets.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The broader static HTML, Cloudflare, Docker, nginx, Coolify, and Hermes workflow behind this site.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>The companion checklist for keeping mail DNS and authentication stable while adding domains.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

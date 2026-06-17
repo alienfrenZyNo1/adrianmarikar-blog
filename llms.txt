@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+- Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks: https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html
+  - Practical checklist for connecting self-hosted Coolify apps through Cloudflare DNS, choosing proxied versus DNS-only records, avoiding origin leaks, and keeping mail records safe.
 - NewBizFeed category: https://adrianmarikar.com/categories/newbizfeed.html
   - Focused archive for NewBizFeed build notes covering public company-register data, Companies House and CRO workflows, Codex review lanes, source attribution, and lead-feed automation.
 - Dry Home Advice category: https://adrianmarikar.com/categories/dryhomeadvice.html
