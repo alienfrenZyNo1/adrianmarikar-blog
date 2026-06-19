@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+- IndexNow for Static Sites: Submit New Posts After a Coolify Deploy: https://adrianmarikar.com/posts/indexnow-static-site-coolify.html
+  - Practical workflow for static HTML discovery pings after GitHub, Coolify, RSS, sitemap, live-page, and key-file verification.
 - Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks: https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html
   - Practical checklist for connecting self-hosted Coolify apps through Cloudflare DNS, choosing proxied versus DNS-only records, avoiding origin leaks, and keeping mail records safe.
 - NewBizFeed category: https://adrianmarikar.com/categories/newbizfeed.html

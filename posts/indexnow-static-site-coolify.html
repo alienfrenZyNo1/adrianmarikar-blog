@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IndexNow for Static Sites: Submit New Posts After a Coolify Deploy — Adrian Marikar</title>
+  <meta name="description" content="A practical IndexNow workflow for static HTML sites deployed with GitHub, Coolify, Docker, and nginx: key file, RSS, sitemap, deploy verification, and safe URL submission.">
+  <meta name="keywords" content="IndexNow static site, Coolify deployment, static HTML SEO, RSS sitemap, URL submission, nginx static website, GitHub deploy verification">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/indexnow-static-site-coolify.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="IndexNow for Static Sites: Submit New Posts After a Coolify Deploy">
+  <meta property="og:description" content="A practical IndexNow workflow for static HTML sites deployed with GitHub, Coolify, Docker, and nginx: key file, RSS, sitemap, deploy verification, and safe URL submission.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/indexnow-static-site-coolify.html">
+  <meta property="article:published_time" content="2026-06-19T10:00:39Z">
+  <meta property="article:modified_time" content="2026-06-19T10:00:39Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="IndexNow for Static Sites: Submit New Posts After a Coolify Deploy">
+  <meta name="twitter:description" content="How to add IndexNow to a static HTML publishing workflow without replacing RSS, sitemaps, or live deploy verification.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"IndexNow for Static Sites: Submit New Posts After a Coolify Deploy","description":"A practical IndexNow workflow for static HTML sites deployed with GitHub, Coolify, Docker, and nginx: key file, RSS, sitemap, deploy verification, and safe URL submission.","url":"https://adrianmarikar.com/posts/indexnow-static-site-coolify.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/indexnow-static-site-coolify.html"},"datePublished":"2026-06-19T10:00:39Z","dateModified":"2026-06-19T10:00:39Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["IndexNow","static site","Coolify","GitHub deployment","RSS","sitemap","nginx","search discovery"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / DISCOVERY WORKFLOW</p>
+        <h1>IndexNow for Static Sites: Submit New Posts After a Coolify Deploy</h1>
+      </header>
+
+      <p>Static sites are easy to host, but they do not automatically tell search engines when a new HTML file is live. A sitemap helps. RSS helps. Internal links help. IndexNow adds one more useful signal: after a page is actually deployed, the site can notify participating search engines that a specific URL changed.</p>
+
+      <p>This is the workflow I use for a small static HTML blog deployed from GitHub through Coolify to an nginx container. It is deliberately conservative. IndexNow is treated as a discovery ping, not as a substitute for good pages, crawlable links, valid feeds, or deploy verification.</p>
+
+      <blockquote>Short version: publish the page, verify it is live, verify RSS and sitemap, then submit only the canonical changed URLs through IndexNow.</blockquote>
+
+      <h2>What IndexNow does and does not do</h2>
+      <p>The IndexNow documentation describes a simple protocol: host a key file on the site, then send changed URLs and the key location to a participating endpoint. The key file proves that the caller has control of the host. The submitted URL tells the search engine what changed.</p>
+
+      <p>That is useful for a static blog because a new post is just a file. There is no CMS plugin quietly pinging anything in the background. But it is still only a notification. It does not guarantee ranking, indexing, crawling frequency, or traffic. Google’s sitemap guidance is a useful reminder that discovery systems work best when the site also has clean canonical URLs, sensible links, and valid XML discovery files.</p>
+
+      <h2>The static-site checklist before submission</h2>
+      <p>For this kind of blog, I only submit a URL after these checks pass:</p>
+
+      <ol>
+        <li>The new post exists as a committed HTML file.</li>
+        <li>The homepage links to the post with the canonical path.</li>
+        <li><code>feed.xml</code> contains a new item with the same URL.</li>
+        <li><code>sitemap.xml</code> contains the URL and a current <code>lastmod</code>.</li>
+        <li>The page has a canonical tag, Open Graph metadata, Twitter metadata, and Article JSON-LD.</li>
+        <li>The Docker image builds locally.</li>
+        <li>The Coolify deployment has finished.</li>
+        <li>The production URL returns <code>200</code> and the live HTML contains the expected title.</li>
+      </ol>
+
+      <p>The order matters. If a deploy fails and the IndexNow ping goes out anyway, the submitted URL may point to yesterday’s site. That is noisy and unnecessary.</p>
+
+      <h2>Where the key file lives</h2>
+      <p>IndexNow uses a text key file on the host being submitted. For a static nginx site, that can be a small <code>.txt</code> file copied into the web root with the rest of the site:</p>
+
+      <pre><code>https://example.com/&lt;indexnow-key&gt;.txt</code></pre>
+
+      <p>The file has to be reachable over HTTPS. Do not put secret operational material in it. The IndexNow key is a site-verification token, not a mailbox password, API token, deploy key, private key, or server credential. It can be public because crawlers need to fetch it, but the rest of the deployment credentials should never be mixed into the static web root.</p>
+
+      <h2>Submit the changed URL, not the whole internet</h2>
+      <p>For a one-post update, the changed URLs are usually:</p>
+
+      <ul>
+        <li>the new article URL,</li>
+        <li>the homepage, because it now links to the post,</li>
+        <li>the RSS feed,</li>
+        <li>the sitemap.</li>
+      </ul>
+
+      <p>That is enough. A small site does not need to resubmit every old post on every deploy. Submitting only changed canonical URLs keeps the signal clean and makes the workflow easier to audit.</p>
+
+      <h2>A safe command shape</h2>
+      <p>The specific key value is deliberately not shown here. The useful shape is a JSON request that names the host, the key, the hosted key-file location, and the canonical URLs that changed:</p>
+
+      <pre><code>curl -sS -X POST 'https://api.indexnow.org/indexnow' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "host": "example.com",
+    "key": "&lt;indexnow-key&gt;",
+    "keyLocation": "https://example.com/&lt;indexnow-key&gt;.txt",
+    "urlList": [
+      "https://example.com/posts/new-static-site-post.html",
+      "https://example.com/",
+      "https://example.com/feed.xml",
+      "https://example.com/sitemap.xml"
+    ]
+  }'</code></pre>
+
+      <p>In automation, the same pattern should read the key from a local environment variable or a protected deployment setting, print only the HTTP status, and avoid logging the raw key.</p>
+
+      <h2>How this fits with Coolify</h2>
+      <p>Coolify is the deployment boundary. GitHub can say the commit exists, and Docker can say the image built, but production is not updated until the Coolify app is running the new container. That is why my <a href="/posts/coolify-static-site-deploy-checklist.html">static-site deploy checklist</a> verifies the live page, RSS, sitemap, and assets before any discovery ping.</p>
+
+      <p>The practical sequence is:</p>
+
+      <pre><code>write post
+update index, RSS, sitemap, llms.txt
+git commit and push
+Coolify deploy
+fetch live page and discovery files
+submit IndexNow URLs</code></pre>
+
+      <p>That keeps the source of truth in Git, the running site in Coolify, and the discovery ping at the end where it belongs.</p>
+
+      <h2>Why it helps organic growth</h2>
+      <p>IndexNow will not rescue thin content or make a private note rank. Its value is more boring and more useful: it reduces the chance that a genuinely helpful new page waits unseen for longer than necessary. For a small technical blog, that means practical posts about Docker Mailserver, Coolify, Cloudflare DNS, privacy-friendly analytics, and static-site operations get a clean path from source file to discoverable public URL.</p>
+
+      <p>The growth lesson is simple: write something worth finding, publish it cleanly, make it crawlable, then notify discovery systems after the live site proves the page exists.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The production verification loop that should happen before any IndexNow ping.</span></li>
+          <li><a href="/posts/privacy-friendly-nginx-log-analytics.html">Privacy-friendly nginx log analytics</a><span>How the site measures real visitors without turning discovery work into surveillance.</span></li>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>DNS choices that keep web traffic reachable while protecting origin and mail details.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The broader static HTML, GitHub, Docker, nginx, Coolify, and Cloudflare workflow.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
