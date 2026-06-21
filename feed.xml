@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>A Practical VPS Hardening Checklist for Self-Hosted Apps</title>
+      <link>https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html</link>
+      <guid>https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html</guid>
+      <pubDate>Sun, 21 Jun 2026 10:00:00 GMT</pubDate>
+      <description>An ordered VPS hardening checklist for self-hosted apps: non-root sudo user, SSH key-only logins, UFW firewall, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups.</description>
+    </item>
+    <item>
       <title>NewBizFeed Progress Update: Fresh Company Leads, Fast</title>
       <link>https://adrianmarikar.com/posts/newbizfeed-progress-update-june-2026.html</link>
       <guid>https://adrianmarikar.com/posts/newbizfeed-progress-update-june-2026.html</guid>

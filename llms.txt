@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+- A Practical VPS Hardening Checklist for Self-Hosted Apps: https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html
+  - An ordered VPS hardening checklist: non-root sudo user, SSH key-only logins, UFW firewall, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups.
 - IndexNow for Static Sites: Submit New Posts After a Coolify Deploy: https://adrianmarikar.com/posts/indexnow-static-site-coolify.html
   - Practical workflow for static HTML discovery pings after GitHub, Coolify, RSS, sitemap, live-page, and key-file verification.
 - Cloudflare DNS for Self-Hosted Coolify Apps: Proxy Web, Protect Mail, Avoid Origin Leaks: https://adrianmarikar.com/posts/cloudflare-dns-coolify-origin-checklist.html

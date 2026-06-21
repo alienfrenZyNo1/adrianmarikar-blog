@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A Practical VPS Hardening Checklist for Self-Hosted Apps — Adrian Marikar</title>
+  <meta name="description" content="A practical, ordered VPS hardening checklist for self-hosted apps: non-root sudo user, SSH key-only logins, UFW firewall, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound services, and tested backups.">
+  <meta name="keywords" content="VPS hardening checklist, Linux server security, SSH key login, UFW firewall, fail2ban, unattended-upgrades, Ubuntu server hardening, self-hosted security, sysctl hardening, VPS backup, non-root sudo user">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="A Practical VPS Hardening Checklist for Self-Hosted Apps">
+  <meta property="og:description" content="An ordered VPS hardening checklist for self-hosted apps: SSH key-only logins, a non-root sudo user, UFW, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html">
+  <meta property="article:published_time" content="2026-06-21T10:00:00Z">
+  <meta property="article:modified_time" content="2026-06-21T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="A Practical VPS Hardening Checklist for Self-Hosted Apps">
+  <meta name="twitter:description" content="SSH key-only logins, a non-root sudo user, UFW, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups — in a sensible order.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"A Practical VPS Hardening Checklist for Self-Hosted Apps","description":"An ordered VPS hardening checklist for self-hosted apps: non-root sudo user, SSH key-only logins, UFW firewall, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups.","url":"https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html"},"datePublished":"2026-06-21T10:00:00Z","dateModified":"2026-06-21T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["VPS hardening checklist","Linux server security","SSH key login","UFW firewall","fail2ban","unattended-upgrades","Ubuntu server hardening","self-hosted security","sysctl hardening","VPS backup"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.06 / SECURITY CHECKLIST 017</p>
+        <h1>A Practical VPS Hardening Checklist for Self-Hosted Apps</h1>
+      </header>
+
+      <p>The first time you run your own server, the default install is tuned for convenience, not for exposure. A fresh VPS from Hetzner, DigitalOcean, OVH, or Linode is usually reachable from the whole internet within seconds of booting, and SSH password logins are often on by default. That is fine for the first five minutes. It is not fine for the next five years.</p>
+
+      <p>This is the hardening checklist I actually run against a self-hosted box before it ships a single app. It is deliberately ordered: each step is safer to do <em>after</em> the previous one, and several steps exist specifically to stop you locking yourself out of your own machine.</p>
+
+      <blockquote>Goal: shrink the attack surface, stop automated brute force, keep the box patched, and make sure a single mistake does not cost you the data.</blockquote>
+
+      <p>It is not a compliance document and it is not the CIS Benchmarks. Think of it as the minimum sane posture for a one-box self-hosted setup running things like <a href="/posts/ai-app-factory-vps-hermes-coolify.html">Coolify</a>, <a href="/posts/self-hosted-email-on-the-vps.html">a self-hosted mail server</a>, and a handful of small web apps.</p>
+
+      <h2>0. Before you touch SSH: keep a second session open</h2>
+      <p>Every step below that edits <code>sshd_config</code> or your firewall has the power to lock you out. Before you change anything, open a second SSH session in a second terminal and leave it logged in. If your edited config breaks the first session, the second one is still alive and you can fix it without a recovery console.</p>
+
+      <p>Also keep your hosting provider's out-of-band console (Hetzner <em>Console</em>, DigitalOcean <em>Recovery</em>, Vultr <em>Web Console</em>) bookmarked. That is the recovery parachute when SSH itself is broken.</p>
+
+      <h2>1. Update everything, then turn on automatic security updates</h2>
+      <p>On the first boot, bring the system current:</p>
+
+      <pre><code>sudo apt update &amp;&amp; sudo apt upgrade -y
+sudo apt install -y unattended-upgrades</code></pre>
+
+      <p>On Debian and Ubuntu, <code>unattended-upgrades</code> can pull in security fixes automatically. The package reads <code>/etc/apt/apt.conf.d/50unattended-upgrades</code> for what it is allowed to install. A sensible default is to allow the <code>security</code> origin and leave third-party repos on manual, so a surprise kernel upgrade from a PPA does not silently reboot an app mid-traffic.</p>
+
+      <pre><code>sudo dpkg-reconfigure -plow unattended-upgrades</code></pre>
+
+      <p>Automatic reboots are a separate choice. I let security patches install on their own but schedule reboots deliberately, because a kernel update that reboots a server at 03:00 can take down a live site at the wrong moment. Know which behaviour you have.</p>
+
+      <h2>2. Create a non-root user with sudo</h2>
+      <p>Running everything as <code>root</code> means a typo can delete the whole filesystem and a compromise is immediately maximal. Make a normal user, give it passwordless sudo, and switch to it:</p>
+
+      <pre><code>adduser amaria
+usermod -aG sudo amaria</code></pre>
+
+      <p>Copy your SSH public key into the new user's <code>~/.ssh/authorized_keys</code> <em>before</em> you disable root login, then log in as that user in a fresh session to confirm sudo works. Only then proceed.</p>
+
+      <h2>3. SSH keys only, no passwords, no root login</h2>
+      <p>Generate a key on your laptop, not on the server:</p>
+
+      <pre><code>ssh-keygen -t ed25519 -C "amaria@laptop-2026"</code></pre>
+
+      <p>Push it to the server with <code>ssh-copy-id</code> or by hand. Then edit <code>/etc/ssh/sshd_config</code>:</p>
+
+      <pre><code>PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+MaxAuthTries 3
+LoginGraceTime 20</code></pre>
+
+      <p>Reload sshd and verify in a <em>new</em> session before closing the old one:</p>
+
+      <pre><code>sudo sshd -t &amp;&amp; sudo systemctl reload ssh</code></pre>
+
+      <p><code>sshd -t</code> checks the syntax of the config without applying it. Never skip it. A typo in <code>sshd_config</code> is the most common way to lock yourself out.</p>
+
+      <p>Should you change the SSH port? It cuts down log noise from opportunistic scanners, but it is security through obscurity and not a real defence. I do it on noisy boxes and leave it alone on quiet ones. Either way, it is not a substitute for the key-only step above.</p>
+
+      <h2>4. Turn the firewall on, smallest hole first</h2>
+      <p><code>ufw</code> is the simplest sane default on Ubuntu. The order matters: allow SSH <em>before</em> you enable the firewall, or you will lock yourself out again.</p>
+
+      <pre><code>sudo ufw allow OpenSSH      # or: sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+sudo ufw status verbose</code></pre>
+
+      <p>For a self-hosted web stack, the public surface should usually be exactly three things: SSH, HTTP, and HTTPS. Everything else — databases, admin panels, Coolify's dashboard, mail admin ports — belongs on the loopback interface or behind a tunnel, not on a public port.</p>
+
+      <p>If you change the SSH port, allow that port instead of <code>OpenSSH</code>, and if you run <a href="/posts/self-hosted-email-on-the-vps.html">a mail server</a> you will additionally need 25, 465, 587, 993 depending on what you accept. Add those explicitly and deliberately; do not blanket-allow.</p>
+
+      <h2>5. Stop brute force with fail2ban</h2>
+      <p>Key-only logins make password brute force mostly irrelevant, but bots will still hammer SSH and fill your logs. <code>fail2ban</code> watches auth logs and temporarily bans IPs that fail too many times.</p>
+
+      <pre><code>sudo apt install -y fail2ban
+sudo systemctl enable --now fail2ban
+sudo fail2ban-client status sshd</code></pre>
+
+      <p>The default <code>sshd</code> jail is reasonable for a small box: 10 minutes, a handful of retries. If you changed the SSH port, tell fail2ban about it in <code>/etc/fail2ban/jail.local</code> so it watches the right log lines. fail2ban is also useful for protecting mail and web apps — there are ready-made jails for Postfix, Dovecot, and nginx.</p>
+
+      <h2>6. Add swap, especially on small VPS plans</h2>
+      <p>Small VPS plans ship with 1–2&nbsp;GB of RAM. Without swap, a memory spike from a build or a misbehaving container will trigger the OOM killer and take down apps unpredictably. A simple 2–4&nbsp;GB swapfile smooths that out:</p>
+
+      <pre><code>sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab</code></pre>
+
+      <p>Swap is not a replacement for enough RAM. It is a safety net so a transient spike does not kill the whole box. Tune <code>vm.swappiness</code> down (around <code>10</code>) on a server so the kernel prefers real memory.</p>
+
+      <h2>7. Set the timezone and keep the clock honest</h2>
+      <p>A consistent timezone makes logs readable across machines, and an accurate clock is a hard requirement for TLS, Kerberos, and some mail deliverability checks. UTC is the sane default for server logs:</p>
+
+      <pre><code>sudo timedatectl set-timezone UTC
+sudo timedatectl set-ntp true
+timedatectl</code></pre>
+
+      <p>Store timestamps in UTC in your database and convert to local time only at the display edge. You will thank yourself the first time you debug an incident across two services in different regions.</p>
+
+      <h2>8. Tighten the network stack with sysctl</h2>
+      <p>The kernel has sensible defaults for a desktop and looser defaults than a public server wants. A small <code>/etc/sysctl.d/99-hardening.conf</code> file covers the high-value items:</p>
+
+      <pre><code># Drop spoofed / martian packets
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+
+# Log and drop packets we do not have a route for
+net.ipv4.conf.all.log_martians = 1
+
+# Ignore ICMP broadcast / redirect noise
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+
+# Disable source packet routing
+net.ipv4.conf.all.accept_source_route = 0
+
+# SYN flood mitigation
+net.ipv4.tcp_syncookies = 1</code></pre>
+
+      <p>Apply with <code>sudo sysctl --system</code> and check for errors. None of these will break a normal web stack; they just close old attack categories that are still scanned for constantly.</p>
+
+      <h2>9. Bind admin services to loopback, proxy the rest</h2>
+      <p>This is the step that does the most work for the least effort. Most self-hosted disasters come from an admin interface that was accidentally left on a public port.</p>
+
+      <p>The pattern: run Coolify's dashboard, your database, Redis, admin tools, and anything with a login on <code>127.0.0.1</code> or a private Docker network, and expose only the public apps through a reverse proxy on 80/443. Traefik (which Coolify ships with) and nginx both do this well.</p>
+
+      <p>If you need to reach an admin UI from outside your home, do not just open port 8000 to the world. Put it behind a Cloudflare Tunnel plus Cloudflare Access policy, or a WireGuard tunnel, and verify the login page works through that path before you close the raw port. <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">My Cloudflare DNS checklist</a> covers the related question of which records to proxy and which to keep DNS-only.</p>
+
+      <h2>10. Backups you have actually restored from</h2>
+      <p>A backup you have never restored is a rumour. For a one-box setup the realistic plan is:</p>
+      <ul>
+        <li>Snapshot the whole VPS on a schedule at the hosting provider — cheap, coarse, and good for "I deleted the wrong thing".</li>
+        <li>Export app data (Postgres dumps, Docker volumes, mail config, Coolify database) on a schedule and copy them <em>off the box</em> to object storage or a different provider.</li>
+        <li>Test a restore into a throwaway VPS at least once. The first time you need a backup is the wrong time to learn the dump format is wrong.</li>
+      </ul>
+
+      <p>Encrypt off-box backups and keep the decryption key somewhere that is not the same box. A backup and its key on the same compromised server is not a backup.</p>
+
+      <h2>11. Know what is listening</h2>
+      <p>After everything is running, confirm what is actually exposed. The two commands I check on any new box:</p>
+
+      <pre><code>sudo ss -tulpn                      # what is listening locally
+sudo ufw status numbered           # what the firewall allows</code></pre>
+
+      <p>If <code>ss</code> shows a database or admin port on <code>0.0.0.0</code> instead of <code>127.0.0.1</code>, that is the bug to fix before anything else. From outside, an <code>nmap</code> scan against your own server (from a different machine, with permission) confirms the public surface really is just the ports you intended.</p>
+
+      <h2>12. Logging and a basic change record</h2>
+      <p>You do not need a SIEM for one box, but you do need to be able to answer "what changed last night?". Keep it simple:</p>
+      <ul>
+        <li>Leave <code>journald</code> or <code>rsyslog</code> on with reasonable retention.</li>
+        <li>Install <code>auditd</code> if you want a record of who ran privileged commands.</li>
+        <li>Mirror your hardening config (the <code>sysctl</code> file, <code>sshd_config</code>, <code>ufw rules</code>, <code>fail2ban</code> jails) into a private Git repo so changes are versioned and reviewable.</li>
+      </ul>
+
+      <p>Version-controlling your server config is the single biggest upgrade from "it works on my box" to "I can rebuild this box".</p>
+
+      <h2>The one-page checklist</h2>
+      <ol>
+        <li>Update the system; enable unattended security upgrades.</li>
+        <li>Create a non-root sudo user; copy your SSH key in.</li>
+        <li>Disable root login and password auth; reload sshd with <code>sshd -t</code> first.</li>
+        <li>Enable UFW: allow SSH, 80, 443 (and mail ports only if needed).</li>
+        <li>Install fail2ban for SSH (and mail/web jails as you add services).</li>
+        <li>Add a swapfile; tune swappiness down.</li>
+        <li>Set timezone to UTC; turn on NTP.</li>
+        <li>Apply the sysctl hardening block.</li>
+        <li>Bind admin services to loopback; proxy public apps on 80/443 only.</li>
+        <li>Schedule VPS snapshots plus off-box, encrypted app backups; test a restore.</li>
+        <li>Audit <code>ss -tulpn</code> and <code>ufw status</code>; nothing on <code>0.0.0.0</code> that shouldn't be.</li>
+        <li>Version-control the hardening config in a private repo.</li>
+      </ol>
+
+      <p>None of this is exotic. The whole point is that hardening is not a clever trick; it is a short list of unglamorous defaults applied in the right order, then checked. Do the boring steps, keep a second SSH session open while you do them, and verify the public surface afterwards. That is most of the security you will ever get from a single well-run box.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The mail-specific side of the same stack: SPF, DKIM, DMARC, and why each port matters.</span></li>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Which records to proxy, which to keep DNS-only, and how to avoid leaking your origin.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The full Hetzner, Hermes, Coolify, GitHub, and Cloudflare stack this hardening protects.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static HTML, Docker, nginx, and Coolify workflow running on top of this hardened box.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
