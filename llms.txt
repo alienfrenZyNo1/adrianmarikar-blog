@@ -10,7 +10,9 @@
 
 ## Current posts and categories
 
-- A Practical VPS Hardening Checklist for Self-Hosted Apps: https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html
+|- GitHub Actions CI/CD for Docker Builds and Coolify Deploys: https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html
+  - A practical guide to building Docker images with GitHub Actions, pushing to GHCR, and triggering a Coolify redeploy via webhook for self-hosted apps on a VPS.
+|- A Practical VPS Hardening Checklist for Self-Hosted Apps
   - An ordered VPS hardening checklist: non-root sudo user, SSH key-only logins, UFW firewall, fail2ban, unattended security upgrades, swap, sysctl tuning, loopback-bound admin services, and tested backups.
 - IndexNow for Static Sites: Submit New Posts After a Coolify Deploy: https://adrianmarikar.com/posts/indexnow-static-site-coolify.html
   - Practical workflow for static HTML discovery pings after GitHub, Coolify, RSS, sitemap, live-page, and key-file verification.

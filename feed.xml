@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>GitHub Actions CI/CD for Docker Builds and Coolify Deploys</title>
+      <link>https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html</link>
+      <guid>https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html</guid>
+      <pubDate>Wed, 25 Jun 2026 12:00:00 GMT</pubDate>
+      <description>A practical guide to building Docker images with GitHub Actions, pushing to GHCR, and triggering a Coolify redeploy via webhook for self-hosted apps on a VPS.</description>
+    </item>
+    <item>
       <title>A Practical VPS Hardening Checklist for Self-Hosted Apps</title>
       <link>https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html</link>
       <guid>https://adrianmarikar.com/posts/practical-vps-hardening-checklist.html</guid>
