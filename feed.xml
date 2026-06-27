@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports</title>
+      <link>https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html</link>
+      <guid>https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html</guid>
+      <pubDate>Sat, 27 Jun 2026 12:00:00 GMT</pubDate>
+      <description>A practical guide to setting up Cloudflare Tunnel (cloudflared) on a VPS to expose self-hosted apps, admin panels, and web services without opening inbound firewall ports. Covers Docker setup, ingress rules, TLS, websocket paths, and common pitfalls.</description>
+    </item>
+    <item>
       <title>GitHub Actions CI/CD for Docker Builds and Coolify Deploys</title>
       <link>https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html</link>
       <guid>https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html</guid>

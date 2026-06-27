@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports: https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html
+  - A practical guide to setting up Cloudflare Tunnel (cloudflared) on a VPS to expose self-hosted apps, admin panels, and web services without opening inbound firewall ports. Covers Docker setup, ingress rules, TLS, websocket paths, and common pitfalls.
 |- GitHub Actions CI/CD for Docker Builds and Coolify Deploys: https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html
   - A practical guide to building Docker images with GitHub Actions, pushing to GHCR, and triggering a Coolify redeploy via webhook for self-hosted apps on a VPS.
 |- A Practical VPS Hardening Checklist for Self-Hosted Apps

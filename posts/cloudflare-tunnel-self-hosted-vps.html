@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports — Adrian Marikar</title>
+  <meta name="description" content="A practical guide to setting up Cloudflare Tunnel (cloudflared) on a VPS to expose self-hosted apps, admin panels, and web services without opening inbound firewall ports. Covers Docker setup, ingress rules, TLS, websocket paths, and common pitfalls.">
+  <meta name="keywords" content="Cloudflare Tunnel, cloudflared, self-hosted VPS, expose local service without port forwarding, cloudflare tunnel docker, VPS tunnel setup, reverse proxy alternative, cloudflare tunnel ingress, self-hosted without public ports">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports">
+  <meta property="og:description" content="A practical guide to setting up Cloudflare Tunnel on a VPS: run cloudflared in Docker, configure ingress rules, expose self-hosted apps without inbound ports, handle TLS and websockets.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html">
+  <meta property="article:published_time" content="2026-06-27T12:00:00Z">
+  <meta property="article:modified_time" content="2026-06-27T12:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Cloudflare Tunnel for Self-Hosted VPS Apps">
+  <meta name="twitter:description" content="How to expose self-hosted apps on a VPS through Cloudflare Tunnel without opening inbound firewall ports. Docker setup, ingress rules, TLS, and common pitfalls.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports","description":"A practical guide to setting up Cloudflare Tunnel (cloudflared) on a VPS to expose self-hosted apps, admin panels, and web services without opening inbound firewall ports. Covers Docker setup, ingress rules, TLS, websocket paths, and common pitfalls.","url":"https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html"},"datePublished":"2026-06-27T12:00:00Z","dateModified":"2026-06-27T12:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Cloudflare Tunnel","cloudflared","self-hosted VPS","expose local service without port forwarding","cloudflare tunnel docker","VPS tunnel setup","reverse proxy alternative","self-hosted without public ports"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">&larr; Back home</a>
+      <header>
+        <p class="date">2026.06 / INFRASTRUCTURE GUIDE 019</p>
+        <h1>Cloudflare Tunnel for self-hosted VPS apps: expose services without opening ports</h1>
+      </header>
+
+      <p>Every self-hosted app eventually reaches the same question: how do people reach it from the internet? The obvious answer — open a firewall port, point DNS at the server, and let a reverse proxy terminate TLS — works, but it also means your server is reachable from everywhere on those ports. That is fine for a public website on 443. It is less ideal for an admin dashboard, a development instance, a database admin tool, or any service that only needs to be reached through a controlled path.</p>
+
+      <p>Cloudflare Tunnel (<code>cloudflared</code>) answers that question differently. Instead of the outside world connecting <em>in</em> to your server, the tunnel client connects <em>out</em> to Cloudflare's edge. Public traffic arrives at Cloudflare first, then flows through the encrypted tunnel to your service. You never open inbound ports for the tunneled apps, and you gain Cloudflare's DDoS protection, TLS termination, and optional Access policies along the way.</p>
+
+      <blockquote>Goal: run a Cloudflare Tunnel on a VPS alongside existing services like Coolify, Docker Mailserver, and nginx — without breaking what is already there, and without opening any new inbound ports.</blockquote>
+
+      <h2>When a tunnel is the right tool</h2>
+      <p>A tunnel is not a replacement for your normal public web stack. If you are already running Traefik or nginx on ports 80/443 with Cloudflare-proxied DNS records, that path works well and you should keep it. A tunnel becomes useful in three specific situations:</p>
+
+      <ol>
+        <li><strong>Admin interfaces you want to protect.</strong> A Coolify dashboard, Portainer, phpMyAdmin, or Grafana that should only be reachable through Cloudflare Access (email-based login) rather than on a raw public port.</li>
+        <li><strong>Services that do not need a public hostname at all.</strong> A dev instance, a staging app, or an internal API that you want to reach from your laptop without VPN or SSH port-forwarding.</li>
+        <li><strong>Servers behind NAT or firewalls you do not control.</strong> A home lab, a Raspberry Pi, or a corporate network where you cannot open inbound ports. The tunnel only needs outbound HTTPS, which is almost always allowed.</li>
+      </ol>
+
+      <p>If all your services already run behind a reverse proxy on 80/443 and you are happy with that, you do not strictly need a tunnel. But for anything that should be locked behind an identity check rather than just a port number, a tunnel plus Cloudflare Access is the cleaner design.</p>
+
+      <h2>How it works: the short version</h2>
+      <p>The architecture is straightforward:</p>
+
+      <ul>
+        <li><code>cloudflared</code> runs on your VPS (or in a Docker container).</li>
+        <li>It maintains an outbound connection to Cloudflare's edge.</li>
+        <li>Cloudflare assigns your tunnel a hostname (or several).</li>
+        <li>When a visitor hits that hostname, traffic flows: visitor &rarr; Cloudflare edge &rarr; tunnel &rarr; your local service.</li>
+        <li>You configure an <strong>ingress rule</strong> that maps each public hostname to a local port, host, or path on your server.</li>
+      </ul>
+
+      <p>The visitor never sees your server's IP. The server never needs to accept inbound connections for the tunneled service. TLS is terminated at Cloudflare's edge (or you can configure end-to-end TLS with your own certificate if you need that).</p>
+
+      <h2>Prerequisites</h2>
+      <p>Before starting, you need:</p>
+
+      <ul>
+        <li>A Cloudflare account (free plan works).</li>
+        <li>A domain whose DNS is managed by Cloudflare.</li>
+        <li>A VPS with Docker installed (or the ability to install <code>cloudflared</code> directly).</li>
+        <li>At least one service running on the VPS that you want to expose.</li>
+      </ul>
+
+      <p>If you already have a <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS setup</a> for your VPS, you have most of this already. The tunnel does not replace your existing DNS records or proxied hostnames — it adds a parallel path for services you do not want to expose directly.</p>
+
+      <h2>Step 1: Create the tunnel</h2>
+      <p>You can create a tunnel from the Cloudflare dashboard (<strong>Zero Trust &rarr; Networks &rarr; Tunnels &rarr; Create a tunnel</strong>) or from the CLI. The dashboard approach is simpler for a first setup:</p>
+
+      <ol>
+        <li>Log into the Cloudflare dashboard, navigate to <strong>Zero Trust &rarr; Networks &rarr; Tunnels</strong>.</li>
+        <li>Click <strong>Create a tunnel</strong>.</li>
+        <li>Choose <strong>Cloudflared</strong> as the connector type.</li>
+        <li>Name the tunnel something descriptive — for example <code>vps-main</code> or <code>admin-services</code>.</li>
+        <li>Cloudflare will display an installation command for your server. Copy it.</li>
+      </ol>
+
+      <p>That command includes a tunnel token that authenticates the connector to your Cloudflare account. Do not commit that token to a public repository. On your VPS, run it directly or store it in an environment variable.</p>
+
+      <h2>Step 2: Install cloudflared on the VPS</h2>
+      <p>There are two approaches: run <code>cloudflared</code> directly on the host, or run it as a Docker container alongside your other services. On a Docker-based self-hosted setup — which is the norm for Coolify, mail servers, and most modern stacks — the container approach fits better.</p>
+
+      <h3>Docker approach (recommended for Docker-based stacks)</h3>
+      <p>After creating the tunnel in the dashboard, Cloudflare gives you a command like:</p>
+
+      <pre><code>docker run -d --name cloudflared \
+  --restart unless-stopped \
+  cloudflare/cloudflared:latest \
+  tunnel --no-autoupdate run \
+  --token YOUR_TUNNEL_TOKEN</code></pre>
+
+      <p>Replace <code>YOUR_TUNNEL_TOKEN</code> with the token from the dashboard. The <code>--restart unless-stopped</code> flag keeps the tunnel alive across Docker daemon restarts.</p>
+
+      <p>If you prefer a <code>docker-compose.yml</code> fragment:</p>
+
+      <pre><code>services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}</code></pre>
+
+      <p>Store the token in a <code>.env</code> file next to the compose file, and ensure that file is not committed to version control.</p>
+
+      <h3>Bare-metal approach</h3>
+      <p>If you do not use Docker for this service, install <code>cloudflared</code> directly:</p>
+
+      <pre><code>cloudflared tunnel run YOUR_TUNNEL_NAME</code></pre>
+
+      <p>This uses the CLI login flow instead of a token. Either approach produces the same tunnel; the token-based Docker method is just more portable on a Docker-centric VPS.</p>
+
+      <h2>Step 3: Configure public hostnames and ingress rules</h2>
+      <p>This is the step where you connect a public hostname to a service running on your VPS. In the Cloudflare dashboard, after creating the tunnel, you are prompted to add <strong>Public Hostnames</strong>. Each hostname has:</p>
+
+      <ul>
+        <li><strong>Subdomain:</strong> the public hostname (e.g. <code>admin.example.com</code>).</li>
+        <li><strong>Path:</strong> optional — you can route specific URL paths to different services.</li>
+        <li><strong>Service:</strong> the local destination — protocol, host, and port (e.g. <code>http://127.0.0.1:8000</code>).</li>
+      </ul>
+
+      <p>For a Coolify dashboard running on the VPS:</p>
+
+      <pre><code>Subdomain: admin.example.com
+Service:   http://127.0.0.1:8000</code></pre>
+
+      <p>For a local development app on a different port:</p>
+
+      <pre><code>Subdomain: staging.example.com
+Service:   http://127.0.0.1:3000</code></pre>
+
+      <p>The key insight: the <strong>Service</strong> field always points at a <em>local</em> address on the VPS. Since <code>cloudflared</code> runs on the same machine, it can reach <code>127.0.0.1</code> or any Docker network address. The visitor connects to <code>admin.example.com</code>, Cloudflare routes through the tunnel, and <code>cloudflared</code> forwards the request to the local port.</p>
+
+      <h2>Step 4: Add a Cloudflare DNS record</h2>
+      <p>Cloudflare can automatically create the DNS record for you when you add a public hostname in the tunnel configuration. If it does not, add a CNAME record manually:</p>
+
+      <pre><code>admin.example.com  CNAME  YOUR_TUNNEL_ID.cfargotunnel.com  proxied</code></pre>
+
+      <p>The tunnel ID is shown in the Cloudflare dashboard. The record should be <strong>proxied</strong> (orange cloud) — this is the only case where a tunnel-specific CNAME should be proxied. If you use DNS-only mode for a tunnel hostname, traffic will try to resolve to the tunnel target directly and will not work.</p>
+
+      <p>This is different from your normal <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">web and mail DNS records</a>, where the proxying decision depends on the protocol. Tunnel CNAMEs should always be proxied.</p>
+
+      <h2>Step 5: Add Cloudflare Access (optional but recommended)</h2>
+      <p>For admin interfaces, a tunnel gets you inbound-port avoidance. Cloudflare Access gets you identity-based access control on top. Without Access, anyone who guesses the hostname can reach the service. With Access, they also need to authenticate.</p>
+
+      <p>In the Cloudflare dashboard, under <strong>Zero Trust &rarr; Access &rarr; Applications</strong>:</p>
+
+      <ol>
+        <li>Create a new Self-hosted application.</li>
+        <li>Set the <strong>Application domain</strong> to your tunnel hostname (e.g. <code>admin.example.com</code>).</li>
+        <li>Add a policy: <strong>Allow</strong> emails matching your address (or a group, or a GitHub org).</li>
+        <li>The default action for everyone else is <strong>Deny</strong>.</li>
+      </ol>
+
+      <p>Now visiting <code>admin.example.com</code> shows a Cloudflare Access login page. After authenticating with your email (or another configured identity provider), you land on the actual service. The service itself never sees a raw unauthenticated connection.</p>
+
+      <p>This is the pattern I described in the <a href="/posts/practical-vps-hardening-checklist.html">VPS hardening checklist</a>: bind admin services to loopback, tunnel them through Cloudflare, and add an Access policy so only you can reach them.</p>
+
+      <h2>Handling websockets and real-time connections</h2>
+      <p>Some self-hosted services use websockets for real-time features — Coolify's dashboard uses them for live logs and terminal sessions. Cloudflare Tunnel supports websockets, but the path routing can be tricky if you need to send some paths to one service and others to a different port.</p>
+
+      <p>For Coolify specifically, you may need <em>multiple</em> public hostnames pointing at the same tunnel:</p>
+
+      <pre><code># Coolify dashboard (HTTP)
+admin.example.com          &rarr;  http://127.0.0.1:8000
+
+# Coolify realtime (websocket)
+realtime.admin.example.com &rarr;  http://127.0.0.1:6001
+
+# Coolify terminal websocket
+terminal.admin.example.com &rarr;  http://127.0.0.1:6002</code></pre>
+
+      <p>The dashboard itself loads at <code>admin.example.com</code>, while the websocket connections for live updates and terminal sessions go to their own hostnames. This avoids the common "Cannot connect to real-time service" error that occurs when websocket traffic is routed to the wrong port or blocked by the ingress rules.</p>
+
+      <p>For simpler services that just use websockets on the same port (like a chat app or a dev server with hot reload), no special configuration is needed. The tunnel handles upgrade requests transparently.</p>
+
+      <h2>TLS: what happens at each layer</h2>
+      <p>Cloudflare Tunnel handles TLS by default:</p>
+
+      <ul>
+        <li><strong>Visitor to Cloudflare:</strong> HTTPS, terminated at the edge with a Cloudflare-managed or custom SSL certificate.</li>
+        <li><strong>Cloudflare to cloudflared:</strong> encrypted with the tunnel's own TLS connection (QUIC or HTTPS).</li>
+        <li><strong>cloudflared to your service:</strong> HTTP by default (since it is local). You can configure this as HTTPS if your local service uses TLS.</li>
+      </ul>
+
+      <p>For most self-hosted apps on <code>127.0.0.1</code>, the local connection does not need TLS. The tunnel itself is already encrypted, and the visitor-to-edge leg is HTTPS. If you want end-to-end encryption all the way to your service, configure the service URL as <code>https://127.0.0.1:PORT</code> and ensure your local service has a certificate that <code>cloudflared</code> can validate.</p>
+
+      <h2>Tunnel vs. proxied DNS: when to use which</h2>
+      <p>My <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS checklist</a> covers the normal pattern: point a proxied A or CNAME record at your origin, and Cloudflare sits in front of nginx or Traefik on your VPS. That works great for public-facing websites and is how most Coolify apps are deployed.</p>
+
+      <p>Use a <strong>tunnel</strong> when:</p>
+
+      <ul>
+        <li>You do not want to open inbound ports for the service.</li>
+        <li>You want identity-based access (Cloudflare Access) rather than just network-level reachability.</li>
+        <li>Your server is behind NAT or a restrictive firewall.</li>
+        <li>You are exposing admin tools that should not be publicly discoverable.</li>
+      </ul>
+
+      <p>Use <strong>proxied DNS</strong> when:</p>
+
+      <ul>
+        <li>The service is a public website or API that anyone should be able to reach.</li>
+        <li>You already have a reverse proxy (nginx, Traefik, Caddy) handling routing.</li>
+        <li>You need full control over TLS certificates, caching rules, and headers at the proxy level.</li>
+      </ul>
+
+      <p>These are not mutually exclusive. On a typical VPS, the public website runs through proxied DNS and Traefik on port 443, while admin dashboards, dev instances, and monitoring tools run through a tunnel on a separate subdomain. Both paths share the same Cloudflare account and zone.</p>
+
+      <h2>Common pitfalls</h2>
+      <ul>
+        <li><strong>Tunnel hostname is DNS-only:</strong> The tunnel CNAME must be proxied (orange cloud). If it is grey-cloud, traffic bypasses Cloudflare entirely and the tunnel never sees the request.</li>
+        <li><strong>Service host is 0.0.0.0 instead of 127.0.0.1:</strong> The service address in the ingress rule should be <code>127.0.0.1</code> or <code>localhost</code>, not <code>0.0.0.0</code>. The latter may work but is a habit that leads to accidental public exposure on other configs.</li>
+        <li><strong>Missing websocket routes:</strong> If a dashboard loads but live updates or terminals do not work, check whether the service expects websocket connections on a different port or path. Add separate tunnel hostnames for those.</li>
+        <li><strong>Token in version control:</strong> The tunnel token is a secret. Store it in an environment variable or a <code>.env</code> file that is gitignored, not in a <code>docker-compose.yml</code> that gets pushed to a public repo.</li>
+        <li><strong>Tunnel container not restarting:</strong> If <code>cloudflared</code> crashes and does not restart, all tunneled services go dark silently. Use <code>--restart unless-stopped</code> in Docker or a systemd unit for bare-metal installs.</li>
+        <li><strong>Access policy blocking assets:</strong> If Cloudflare Access intercepts CSS, JS, or API requests and returns the login page instead of assets, add a bypass policy for static paths like <code>/build/assets/*</code>. Do not bypass the whole hostname — just the static asset paths.</li>
+        <li><strong>Multiple services on the same port:</strong> If two apps both listen on port 3000, the tunnel cannot route to both at once. Either change one app's port or run them in separate Docker networks with distinct ports.</li>
+      </ul>
+
+      <h2>Verification checklist</h2>
+      <p>After setting up the tunnel, verify each layer:</p>
+
+      <pre><code># Check the tunnel is running
+docker ps | grep cloudflared
+docker logs cloudflared --tail 20
+
+# Check DNS resolves to a Cloudflare address
+dig +short admin.example.com
+
+# Check the HTTPS response through the tunnel
+curl -I https://admin.example.com/
+
+# If using Cloudflare Access, check you get the login page
+curl -s https://admin.example.com/ | head -5
+
+# Check websocket upgrade if the service needs it
+curl -I -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  https://realtime.admin.example.com/</code></pre>
+
+      <p>If the tunnel is working, the DNS lookup returns a Cloudflare edge address, the <code>curl -I</code> shows a 200 or a Cloudflare Access redirect, and the tunnel logs show active connections. If the tunnel is not working, check the container logs first — they usually say exactly what is wrong.</p>
+
+      <h2>Running alongside an existing reverse proxy</h2>
+      <p>If your VPS already runs nginx or Traefik on ports 80/443 (as it would with Coolify), the tunnel does not conflict. <code>cloudflared</code> connects outbound to Cloudflare on port 443, and it forwards requests to local services on their existing ports. Nothing needs to change in your nginx or Traefik configuration for the tunnel to work.</p>
+
+      <p>The only consideration is that if you tunnel a hostname that is <em>also</em> configured as a proxied DNS record pointing at your nginx/Traefik, you will get two paths to the same service. That is not necessarily a problem, but it can be confusing when debugging. Pick one path per hostname: either proxied DNS through the reverse proxy, or tunnel.</p>
+
+      <h2>The practical summary</h2>
+      <ol>
+        <li>Create a tunnel in Cloudflare Zero Trust dashboard.</li>
+        <li>Run <code>cloudflared</code> on your VPS with the tunnel token (Docker recommended).</li>
+        <li>Add public hostnames in the tunnel configuration, each pointing at a local service.</li>
+        <li>Ensure the DNS records are proxied (orange cloud).</li>
+        <li>Add Cloudflare Access policies for admin hostnames.</li>
+        <li>Handle websocket paths separately if needed.</li>
+        <li>Verify with <code>curl -I</code> and tunnel logs.</li>
+      </ol>
+
+      <p>A tunnel does not replace your firewall or your reverse proxy. It is a complementary tool that lets you expose services without opening inbound ports, and adds identity-based access control through Cloudflare Access. On a well-organized VPS, the public website runs through the normal proxy path, and admin tools, staging instances, and internal services run through the tunnel. Both paths share the same domain, the same Cloudflare account, and the same goal: make services reachable to the right people without exposing them to everyone.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist for self-hosted apps</a><span>The full hardening sequence — including binding admin services to loopback and using tunnels for remote access.</span></li>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Which records to proxy, which to keep DNS-only, and how tunnel CNAMEs differ from normal proxied records.</span></li>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The full Hetzner, Hermes, Coolify, GitHub, and Cloudflare stack that the tunnel supplements.</span></li>
+          <li><a href="/posts/privacy-friendly-nginx-log-analytics.html">Privacy-friendly nginx log analytics</a><span>How to measure visitors on a static nginx blog — useful for verifying tunnel traffic separately from direct traffic.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>&copy; Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

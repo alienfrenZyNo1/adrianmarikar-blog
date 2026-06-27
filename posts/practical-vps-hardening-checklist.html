@@ -164,7 +164,7 @@ net.ipv4.tcp_syncookies = 1</code></pre>
 
       <p>The pattern: run Coolify's dashboard, your database, Redis, admin tools, and anything with a login on <code>127.0.0.1</code> or a private Docker network, and expose only the public apps through a reverse proxy on 80/443. Traefik (which Coolify ships with) and nginx both do this well.</p>
 
-      <p>If you need to reach an admin UI from outside your home, do not just open port 8000 to the world. Put it behind a Cloudflare Tunnel plus Cloudflare Access policy, or a WireGuard tunnel, and verify the login page works through that path before you close the raw port. <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">My Cloudflare DNS checklist</a> covers the related question of which records to proxy and which to keep DNS-only.</p>
+      <p>If you need to reach an admin UI from outside your home, do not just open port 8000 to the world. Put it behind a <a href="/posts/cloudflare-tunnel-self-hosted-vps.html">Cloudflare Tunnel</a> plus Cloudflare Access policy, or a WireGuard tunnel, and verify the login page works through that path before you close the raw port. <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">My Cloudflare DNS checklist</a> covers the related question of which records to proxy and which to keep DNS-only.</p>
 
       <h2>10. Backups you have actually restored from</h2>
       <p>A backup you have never restored is a rumour. For a one-box setup the realistic plan is:</p>
