@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes: https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html
+  - A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial hardening, installing Docker, and running a first self-hosted container.
 |- Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports: https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html
   - A practical guide to setting up Cloudflare Tunnel (cloudflared) on a VPS to expose self-hosted apps, admin panels, and web services without opening inbound firewall ports. Covers Docker setup, ingress rules, TLS, websocket paths, and common pitfalls.
 |- GitHub Actions CI/CD for Docker Builds and Coolify Deploys: https://adrianmarikar.com/posts/github-actions-docker-build-coolify-deploy.html

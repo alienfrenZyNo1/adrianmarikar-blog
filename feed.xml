@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes</title>
+      <link>https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html</link>
+      <guid>https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html</guid>
+      <pubDate>Sun, 29 Jun 2026 10:00:00 GMT</pubDate>
+      <description>A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial server hardening, installing Docker, and running your first self-hosted container on the public internet.</description>
+    </item>
+    <item>
       <title>Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports</title>
       <link>https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html</link>
       <guid>https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html</guid>

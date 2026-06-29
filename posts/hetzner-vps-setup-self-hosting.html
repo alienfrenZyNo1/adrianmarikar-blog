@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes — Adrian Marikar</title>
+  <meta name="description" content="A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial server hardening, installing Docker, and running your first self-hosted container.">
+  <meta name="keywords" content="hetzner vps setup, hetzner cloud self hosting, docker vps setup, hetzner vps docker, self hosting guide, linux vps setup, hetzner cloud tutorial, self hosted services setup">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes">
+  <meta property="og:description" content="A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial server hardening, installing Docker, and running your first self-hosted container.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html">
+  <meta property="article:published_time" content="2026-06-29T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Setting Up a Hetzner VPS for Self-Hosting">
+  <meta name="twitter:description" content="Provision a Hetzner Cloud VPS, harden it, install Docker, and run your first self-hosted container — a practical beginner-to-running guide.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes","description":"A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial server hardening, installing Docker, and running your first self-hosted container.","url":"https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html"},"datePublished":"2026-06-29T10:00:00Z","dateModified":"2026-06-29T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Hetzner VPS","self-hosting","Docker","VPS setup","Hetzner Cloud","Linux server setup","self-hosted services","Docker Compose"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">&#8592; Back home</a>
+      <header>
+        <p class="date">2026.06 / infrastructure guide 020</p>
+        <h1>Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes</h1>
+      </header>
+
+      <p>Hetzner Cloud offers some of the best price-to-performance ratios for self-hosting. A single shared-CPU instance with 4&nbsp;GB RAM costs roughly the same as a large coffee per month, and it can comfortably run Docker, a reverse proxy, a few web apps, a mail server, and a database.</p>
+
+      <p>This is the setup path I use. It covers picking the right server, provisioning it, applying the first hardening steps, installing Docker, and confirming a container is reachable on the public internet. Everything after that — Coolify, Traefik, mail, monitoring — is just more containers on the same foundation.</p>
+
+      <blockquote>Goal: go from "no server" to "a hardened Docker host running a reachable web service" in a single sitting.</blockquote>
+
+      <h2>Why Hetzner for self-hosting</h2>
+      <p>A few reasons it works well for independent projects and small services:</p>
+      <ul>
+        <li><strong>Price.</strong> A CX22 (2 vCPU, 4&nbsp;GB RAM, 40&nbsp;GB SSD) is affordable enough to experiment with. Scaling up or adding volumes is straightforward when needed.</li>
+        <li><strong>Performance.</strong> Hetzner's shared vCPU instances are faster than many competitors' equivalently-priced plans. Real-world Docker workloads benefit from the better single-thread performance.</li>
+        <li><strong>Simple billing.</strong> Hourly billing with a monthly cap, no surprise charges, and a clean console for managing servers, floating IPs, volumes, and firewalls.</li>
+        <li><strong>Data centres in Europe.</strong> Frankfurt, Nuremberg, and Helsinki give good latency for European audiences and decent latency for the eastern US.</li>
+        <li><strong>No vendor lock-in.</strong> Everything runs on standard Docker. If you move to another provider later, your containers and compose files travel with you.</li>
+      </ul>
+
+      <h2>Picking the right server size</h2>
+      <p>Start smaller than you think. A self-hosted setup with a static blog, a few web apps, and Docker Mailserver can run comfortably on 4&nbsp;GB RAM and 2&nbsp;vCPUs.</p>
+
+      <table>
+        <thead>
+          <tr><th>Workload</th><th>Minimum RAM</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Static sites + reverse proxy only</td><td>2&nbsp;GB</td><td>nginx or Caddy, a handful of HTML sites</td></tr>
+          <tr><td>Static sites + a few small apps</td><td>4&nbsp;GB</td><td>Good starting point for most self-hosters</td></tr>
+          <tr><td>Add Docker Mailserver + Postgres</td><td>4–8&nbsp;GB</td><td>Mail and databases are the real memory consumers</td></tr>
+          <tr><td>Full stack with Coolify</td><td>6–8&nbsp;GB</td><td>Coolify itself uses a couple of GB plus its dependencies</td></tr>
+        </tbody>
+      </table>
+
+      <p>Hetzner lets you resize later without reinstalling, so starting at 4&nbsp;GB and upgrading when monitoring shows pressure is a sensible approach.</p>
+
+      <h2>Creating the server</h2>
+      <p>In the Hetzner Cloud Console:</p>
+      <ol>
+        <li>Click <strong>Add Server</strong>.</li>
+        <li>Choose a location close to your audience.</li>
+        <li>Select <strong>Ubuntu 24.04</strong> (LTS, well-supported, Docker works cleanly).</li>
+        <li>Pick the CX22 or higher depending on the table above.</li>
+        <li>Add an SSH key (generate one locally if you do not have one). This is the only way to log in if you disable password auth later.</li>
+        <li>Name the server something meaningful — <code>prod-vps-1</code> is better than <code>server-1</code>.</li>
+        <li>Click <strong>Create</strong>. The IP address appears within seconds.</li>
+      </ol>
+
+      <p>Do not attach a floating IP yet unless you know you need one for a migration. The server's primary IPv4 is sufficient for most single-server setups.</p>
+
+      <h2>First SSH connection</h2>
+      <pre><code>ssh root@YOUR_SERVER_IP</code></pre>
+
+      <p>The first thing to do on a fresh server is create a non-root user with sudo access:</p>
+
+      <pre><code>adduser deploy
+usermod -aG sudo deploy
+su - deploy</code></pre>
+
+      <p>Test that sudo works:</p>
+      <pre><code>sudo whoami
+# should output: root</code></pre>
+
+      <h2>SSH key-only access</h2>
+      <p>Copy your public key to the new user:</p>
+      <pre><code>mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+# On your local machine:
+ssh-copy-id deploy@YOUR_SERVER_IP</code></pre>
+
+      <p>Then disable password authentication for SSH. Edit <code>/etc/ssh/sshd_config</code>:</p>
+      <pre><code>PasswordAuthentication no
+PermitRootLogin prohibit-password</code></pre>
+
+      <pre><code>sudo systemctl restart sshd</code></pre>
+
+      <p>Test the change in a separate terminal before closing the current session. If you get locked out, Hetzner's console rescue mode will let you fix it.</p>
+
+      <h2>Firewall basics</h2>
+      <p>Hetzner provides a firewall in the cloud console, and UFW runs inside the server. Using both is defence in depth.</p>
+
+      <p>Hetzner Cloud Firewall rules for a self-hosting server:</p>
+      <ul>
+        <li>Allow TCP 22 (SSH) from your IP only.</li>
+        <li>Allow TCP 80 and 443 from anywhere (web traffic through your reverse proxy).</li>
+        <li>Allow TCP 25 from anywhere (inbound SMTP if running a mail server).</li>
+        <li>Deny everything else.</li>
+      </ul>
+
+      <p>UFW inside the server:</p>
+      <pre><code>sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 25/tcp    # if self-hosting email
+sudo ufw enable</code></pre>
+
+      <p>For the complete hardening picture — fail2ban, swap, sysctl tuning, automatic security upgrades — see the <a href="/posts/practical-vps-hardening-checklist.html">VPS hardening checklist</a>.</p>
+
+      <h2>Installing Docker</h2>
+      <p>Docker's official install script is the fastest path on a fresh Ubuntu server:</p>
+
+      <pre><code>curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker deploy
+# Log out and back in, or:
+newgrp docker</code></pre>
+
+      <p>Verify:</p>
+      <pre><code>docker run --rm hello-world</code></pre>
+
+      <p>That should pull a tiny image, print a welcome message, and exit. If it does, Docker is working.</p>
+
+      <p>Docker Compose v2 is bundled with Docker's install script on modern Ubuntu, so <code>docker compose version</code> should also work without a separate install.</p>
+
+      <h2>Your first self-hosted container</h2>
+      <p>A good first container is a static web server that serves a simple test page. This confirms Docker networking works and that something is reachable from the public internet.</p>
+
+      <pre><code>mkdir -p ~/test-site
+echo '&lt;h1&gt;Hello from Hetzner&lt;/h1&gt;' > ~/test-site/index.html
+docker run -d \
+  --name test-nginx \
+  -p 80:80 \
+  -v ~/test-site:/usr/share/nginx/html:ro \
+  nginx:alpine</code></pre>
+
+      <p>Visit <code>http://YOUR_SERVER_IP</code> in a browser. If you see the test page, Docker and networking are working. Clean up afterward:</p>
+      <pre><code>docker stop test-nginx
+docker rm test-nginx</code></pre>
+
+      <h2>Docker Compose for real workloads</h2>
+      <p>For anything beyond a test, use Compose. A minimal <code>docker-compose.yml</code> for a web app:</p>
+
+      <pre><code>services:
+  app:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+    restart: unless-stopped</code></pre>
+
+      <pre><code>docker compose up -d</code></pre>
+
+      <p>The <code>restart: unless-stopped</code> policy means the container survives server reboots, which is important for a VPS that may be restarted for kernel upgrades.</p>
+
+      <h2>Reverse proxy considerations</h2>
+      <p>With multiple services, you need something to route traffic by hostname. Two common approaches for a single VPS:</p>
+      <ul>
+        <li><strong>Standalone Traefik or Caddy</strong> as the reverse proxy, with each container connecting via a Docker network. Clean, automatic TLS via Let's Encrypt.</li>
+        <li><strong>Coolify</strong>, which includes Traefik and manages routing, deployments, SSL, and health checks. More overhead, but a full PaaS experience. See <a href="/posts/ai-app-factory-vps-hermes-coolify.html">the AI app factory post</a> for how I use it.</li>
+      </ul>
+
+      <p>For a single-server self-hosting setup, either approach works. Coolify is worth the RAM if you want push-to-deploy without writing compose files by hand. Traefik or Caddy alone is lighter if you prefer managing infrastructure directly.</p>
+
+      <h2>DNS and public access</h2>
+      <p>Point your domain's A record at the Hetzner server IP:</p>
+      <pre><code>example.com.     A       YOUR_SERVER_IP
+*.example.com.  A       YOUR_SERVER_IP</code></pre>
+
+      <p>If you use Cloudflare as a DNS proxy, set the web records to <strong>Proxied</strong> (orange cloud) and keep mail records as <strong>DNS only</strong> (grey cloud). See the <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS checklist</a> for the full breakdown.</p>
+
+      <h2>What to set up next</h2>
+      <p>Once Docker is running and you can reach a container from the internet, the order I recommend is:</p>
+      <ol>
+        <li><strong>Reverse proxy</strong> — Traefik, Caddy, or Coolify's built-in proxy.</li>
+        <li><strong>SSL certificates</strong> — Let's Encrypt via the proxy or certbot.</li>
+        <li><strong>First real service</strong> — a blog, a dashboard, or whatever you are building.</li>
+        <li><strong>Fail2ban and automatic security upgrades</strong> — see the <a href="/posts/practical-vps-hardening-checklist.html">hardening checklist</a>.</li>
+        <li><strong>Backups</strong> — database dumps, volume snapshots, and Hetzner's snapshot feature.</li>
+        <li><strong>Monitoring</strong> — even a simple health check endpoint or uptime ping.</li>
+        <li><strong>Email</strong> (optional) — see <a href="/posts/self-hosted-email-on-the-vps.html">how email is handled on this VPS</a> and the <a href="/posts/docker-mailserver-multiple-domains.html">multi-domain Docker Mailserver guide</a>.</li>
+      </ol>
+
+      <h2>Cost reference</h2>
+      <p>These are approximate monthly prices in EUR for Hetzner Cloud shared-vCPU instances at the time of writing. Actual pricing may vary.</p>
+
+      <table>
+        <thead>
+          <tr><th>Plan</th><th>vCPU</th><th>RAM</th><th>Disk</th><th>Traffic</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CX11</td><td>2</td><td>2&nbsp;GB</td><td>20&nbsp;GB</td><td>20&nbsp;TB</td></tr>
+          <tr><td>CX22</td><td>2</td><td>4&nbsp;GB</td><td>40&nbsp;GB</td><td>20&nbsp;TB</td></tr>
+          <tr><td>CX32</td><td>4</td><td>8&nbsp;GB</td><td>80&nbsp;GB</td><td>20&nbsp;TB</td></tr>
+        </tbody>
+      </table>
+
+      <p>The 20&nbsp;TB monthly traffic allowance is generous. Most small self-hosted services use well under 100&nbsp;GB per month.</p>
+
+      <h2>Common first-day mistakes</h2>
+      <ul>
+        <li><strong>Forgetting to add SSH key before disabling passwords.</strong> Test key-based SSH in a second terminal before changing the config.</li>
+        <li><strong>Opening too many ports.</strong> Only 22, 80, 443, and optionally 25 need to be public. Everything else should stay closed.</li>
+        <li><strong>Not setting up automatic security upgrades.</strong> Ubuntu's <code>unattended-upgrades</code> package handles this; see the <a href="/posts/practical-vps-hardening-checklist.html">hardening checklist</a>.</li>
+        <li><strong>Running everything as root.</strong> Use a deploy user, Docker socket permissions, and sudo only when needed.</li>
+        <li><strong>Ignoring backups until something breaks.</strong> Hetzner snapshots are cheap. Set up a weekly schedule from day one.</li>
+      </ul>
+
+      <h2>Practical checklist</h2>
+      <ol>
+        <li>Choose a Hetzner Cloud server size (CX22 or higher for most self-hosted setups).</li>
+        <li>Provision with Ubuntu 24.04 LTS and an SSH key.</li>
+        <li>Create a non-root sudo user and disable password SSH.</li>
+        <li>Apply firewall rules (Hetzner cloud firewall + UFW).</li>
+        <li>Install Docker and verify with a test container.</li>
+        <li>Run your first real service behind a reverse proxy.</li>
+        <li>Point your domain's DNS at the server IP.</li>
+        <li>Set up fail2ban, automatic upgrades, and backups.</li>
+        <li>Expand from there — email, monitoring, more services, CI/CD.</li>
+      </ol>
+
+      <p>The whole process, from creating the server to running a reachable container, takes about 30 minutes. The remaining steps — hardening, monitoring, backup schedules — are incremental. The important thing is getting the foundation right: a properly sized server, key-only SSH, basic firewall, and a working Docker environment. Everything else builds on top.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>How this Hetzner VPS, Hermes agents, Coolify, GitHub, and Cloudflare work together to ship apps.</span></li>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>SSH hardening, fail2ban, UFW, swap, sysctl, backups — the full ordered checklist.</span></li>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Which records to proxy, which to keep DNS-only, and how to avoid leaking origin details.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>Docker Mailserver, SPF, DKIM, DMARC, and terminal email on the same server.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static HTML, GitHub, Docker, Coolify, and nginx pipeline behind this site.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>&copy; Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
