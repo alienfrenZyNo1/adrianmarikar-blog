@@ -4,20 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel? — Adrian Marikar</title>
-  <meta name="description" content="A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.">
-  <meta name="keywords" content="Phi Memory, AI agent memory governance, LLM memory lifecycle, agent memory hygiene, memory governance layer, golden ratio memory, Fibonacci memory decay, MemGPT, Mem0, Zep, Graphiti, LangMem, LlamaIndex, AI agents">
+  <meta name="description" content="A prior-art, product-positioning, and implementation note for Phi Memory: a Hermes plugin for phi/Fibonacci AI-agent memory governance with a curl installer.">
+  <meta name="keywords" content="Phi Memory, Hermes plugin, AI agent memory governance, LLM memory lifecycle, agent memory hygiene, memory governance layer, golden ratio memory, Fibonacci memory decay, MemGPT, Mem0, Zep, Graphiti, LangMem, LlamaIndex, AI agents">
   <link rel="canonical" href="https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html">
   <!-- SEO discovery metadata -->
   <meta property="og:site_name" content="Adrian Marikar">
   <meta property="og:type" content="article">
   <meta property="og:title" content="Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?">
-  <meta property="og:description" content="A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.">
+  <meta property="og:description" content="A prior-art, product-positioning, and implementation note for Phi Memory: a Hermes plugin for phi/Fibonacci AI-agent memory governance with a curl installer.">
   <meta property="og:url" content="https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html">
   <meta property="article:published_time" content="2026-06-30T10:00:00Z">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Phi Memory prior art and novelty assessment">
-  <meta name="twitter:description" content="A careful look at whether phi/Fibonacci memory governance for AI agents is genuinely differentiated.">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?","description":"A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.","url":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html"},"datePublished":"2026-06-30T10:00:00Z","dateModified":"2026-06-30T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Phi Memory","AI agent memory governance","LLM memory lifecycle","agent memory hygiene","memory governance layer","golden ratio memory","Fibonacci memory decay","MemGPT","Mem0","Zep","Graphiti","LangMem","LlamaIndex","AI agents"],"inLanguage":"en"}</script>
+  <meta name="twitter:description" content="A careful look at Phi Memory as a Hermes plugin and whether phi/Fibonacci memory governance for AI agents is genuinely differentiated.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?","description":"A prior-art, product-positioning, and implementation note for Phi Memory: a Hermes plugin for phi/Fibonacci AI-agent memory governance with a curl installer.","url":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html"},"datePublished":"2026-06-30T10:00:00Z","dateModified":"2026-06-30T15:30:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Phi Memory","Hermes plugin","AI agent memory governance","LLM memory lifecycle","agent memory hygiene","memory governance layer","golden ratio memory","Fibonacci memory decay","MemGPT","Mem0","Zep","Graphiti","LangMem","LlamaIndex","AI agents"],"inLanguage":"en"}</script>
   <!-- /SEO discovery metadata -->
 
   <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
@@ -40,6 +40,56 @@
       <p>This post is adapted from a Deep Research pass on <strong>Phi Memory</strong>: the idea of using phi/golden-ratio thresholds and Fibonacci-style review cadence as a governance policy for long-term AI-agent memory. The narrow question was not “does agent memory exist?” It obviously does. The question was whether this particular framing — a portable memory-governance layer organised around phi/Fibonacci policies — has a defensible novelty angle.</p>
 
       <blockquote>Short answer: I found no public exact match for a phi/golden-ratio AI memory-governance system, but most of the non-mathematical pieces already exist elsewhere. The strongest position is therefore narrow: <strong>Phi Memory as a backend-agnostic governance layer for deciding what memory should be kept, compressed, archived, deleted, or proceduralised.</strong></blockquote>
+
+      <h2>Update: Phi Memory now exists as a Hermes plugin</h2>
+      <p>Since the original research note, I have built and pushed a working <strong>Phi Memory plugin for Hermes Agent</strong>. That matters because it moves the idea out of the “interesting category thesis” bucket and into something closer to a real implementation path: a plugin that can be installed into an existing Hermes setup and used to inspect, review, recall, compress, and govern the built-in memory files.</p>
+
+      <p>The plugin lives on the <a href="https://github.com/alienfrenZyNo1/hermes-agent/tree/feature/phi-memory" rel="noopener">feature/phi-memory branch of my Hermes Agent fork</a>. The current installer is intentionally curl-style, because the target user is someone who already has Hermes installed and wants to try Phi Memory without replacing their whole agent setup.</p>
+
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/alienfrenZyNo1/hermes-agent/feature/phi-memory/scripts/install-phi-memory.sh | bash</code></pre>
+
+      <p>To force an update of already-copied plugin files:</p>
+
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/alienfrenZyNo1/hermes-agent/feature/phi-memory/scripts/install-phi-memory.sh | bash -s -- --force</code></pre>
+
+      <p>To install into a non-default Hermes home:</p>
+
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/alienfrenZyNo1/hermes-agent/feature/phi-memory/scripts/install-phi-memory.sh | bash -s -- --hermes-home /path/to/.hermes</code></pre>
+
+      <h3>What the installer does</h3>
+      <ol>
+        <li>Requires an existing <code>hermes</code> CLI on <code>PATH</code>.</li>
+        <li>Clones the Phi Memory branch.</li>
+        <li>Copies only <code>plugins/phi-memory/</code> into <code>~/.hermes/plugins/phi-memory/</code>.</li>
+        <li>Enables the plugin with <code>hermes plugins enable phi-memory</code>.</li>
+        <li>Runs a smoke check with <code>hermes phi-memory status --target memory</code>.</li>
+        <li>Does <strong>not</strong> edit <code>MEMORY.md</code> or <code>USER.md</code>.</li>
+      </ol>
+
+      <h3>What the plugin currently exposes</h3>
+      <p>The README describes Phi Memory as an optional Hermes plugin/add-on that provides golden-ratio memory governance for the built-in <code>MEMORY.md</code> and <code>USER.md</code> files. It is not a replacement memory provider backend. It layers review, scoring, recall, CLI and slash commands, a model tool, metadata sidecars, Fibonacci review scheduling, and optional deterministic write governance over the existing files.</p>
+
+      <p>Example CLI commands include:</p>
+      <pre><code>hermes phi-memory status --target memory
+hermes phi-memory review --target user
+hermes phi-memory compress --target memory
+hermes phi-memory compress --target memory --apply-safe
+hermes phi-memory explain "User prefers concise deployment summaries" --target user
+hermes phi-memory recall "deployment coolify" --target memory --include-session
+hermes phi-memory dashboard --target memory
+hermes phi-memory review-due --target memory
+hermes phi-memory schedule --target memory
+hermes phi-memory skills candidates --target memory</code></pre>
+
+      <p>The plugin also registers a model tool named <code>phi_memory</code> with actions such as <code>status</code>, <code>review</code>, <code>compress</code>, <code>explain</code>, <code>recall</code>, <code>dashboard</code>, <code>review_due</code>, <code>schedule</code>, and <code>skill_candidates</code>.</p>
+
+      <h3>The safety model is conservative</h3>
+      <p>This is important: default compression is proposal-only. It does not mutate <code>MEMORY.md</code> or <code>USER.md</code>. The automatic apply path is deliberately narrow: <code>--apply-safe</code> may remove exact or normalised duplicates, trim whitespace, remove empty/broken fragments, and redact obvious sensitive values or <code>.secrets</code> paths. It does not use an LLM to rewrite memory, merge unrelated facts, or delete unique project facts.</p>
+
+      <p>Before any safe cleanup write, the plugin creates a timestamped backup beside the original file. That turns the original product-positioning claim in this article into a concrete design constraint: memory governance should be auditable and reversible where possible.</p>
+
+      <p>So the novelty assessment below still stands, but the product position is now sharper. Phi Memory is no longer just a proposed category. It is a Hermes plugin prototype for governed long-term memory hygiene, with a curl installer and a smoke-tested path into a real agent runtime.</p>
+
 
       <h2>The core finding</h2>
       <p>The strongest novelty claim is not “persistent memory for agents” and not “memory consolidation”. Those are already well explored. Current systems already do long-term storage, retrieval, summarisation, compaction, deduplication, decay, expiration, temporal invalidation, reflection, and skill extraction in various forms.</p>
@@ -177,7 +227,7 @@
 
       <p>The novelty case is therefore narrow and practical: <strong>Phi Memory as a governance-first, backend-agnostic lifecycle layer with an explicit phi/Fibonacci policy engine.</strong></p>
 
-      <p>That is a plausible wedge. It just needs to be built and measured as infrastructure, not marketed as mystical memory science.</p>
+      <p>That is a plausible wedge. The Hermes plugin is the first concrete implementation step: enough to install, inspect, smoke-test, and start measuring, but still intentionally conservative about automatic memory mutation.</p>
 
       <section class="related-posts" aria-label="Related posts">
         <p class="eyebrow">// keep reading</p>
@@ -186,6 +236,7 @@
           <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>How I use Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to ship apps with AI.</span></li>
           <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>The deployment pipeline behind many of these experiments.</span></li>
           <li><a href="/posts/newbizfeed-codex-company-register-review.html">Using multiple Codex agents to review company-register data</a><span>A practical example of multi-agent review lanes and quality gates.</span></li>
+          <li><a href="https://github.com/alienfrenZyNo1/hermes-agent/tree/feature/phi-memory" rel="noopener">Phi Memory plugin branch</a><span>The Hermes Agent branch containing the plugin, README, and curl installer.</span></li>
           <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static HTML workflow used to publish this note.</span></li>
         </ul>
       </section>
