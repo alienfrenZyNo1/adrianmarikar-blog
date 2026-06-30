@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel? — Adrian Marikar</title>
+  <meta name="description" content="A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.">
+  <meta name="keywords" content="Phi Memory, AI agent memory governance, LLM memory lifecycle, agent memory hygiene, memory governance layer, golden ratio memory, Fibonacci memory decay, MemGPT, Mem0, Zep, Graphiti, LangMem, LlamaIndex, AI agents">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?">
+  <meta property="og:description" content="A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html">
+  <meta property="article:published_time" content="2026-06-30T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Phi Memory prior art and novelty assessment">
+  <meta name="twitter:description" content="A careful look at whether phi/Fibonacci memory governance for AI agents is genuinely differentiated.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?","description":"A prior-art and positioning assessment for Phi Memory: AI agent memory governance, phi/Fibonacci review policies, competing memory systems, and the safest novelty claim.","url":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html"},"datePublished":"2026-06-30T10:00:00Z","dateModified":"2026-06-30T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Phi Memory","AI agent memory governance","LLM memory lifecycle","agent memory hygiene","memory governance layer","golden ratio memory","Fibonacci memory decay","MemGPT","Mem0","Zep","Graphiti","LangMem","LlamaIndex","AI agents"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/categories/ai-agents.html">AI agents</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/categories/ai-agents.html">View AI agents category →</a>
+      <header>
+        <p class="date">2026.06 / AI agents research 021</p>
+        <h1>Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?</h1>
+      </header>
+
+      <p>This post is adapted from a Deep Research pass on <strong>Phi Memory</strong>: the idea of using phi/golden-ratio thresholds and Fibonacci-style review cadence as a governance policy for long-term AI-agent memory. The narrow question was not “does agent memory exist?” It obviously does. The question was whether this particular framing — a portable memory-governance layer organised around phi/Fibonacci policies — has a defensible novelty angle.</p>
+
+      <blockquote>Short answer: I found no public exact match for a phi/golden-ratio AI memory-governance system, but most of the non-mathematical pieces already exist elsewhere. The strongest position is therefore narrow: <strong>Phi Memory as a backend-agnostic governance layer for deciding what memory should be kept, compressed, archived, deleted, or proceduralised.</strong></blockquote>
+
+      <h2>The core finding</h2>
+      <p>The strongest novelty claim is not “persistent memory for agents” and not “memory consolidation”. Those are already well explored. Current systems already do long-term storage, retrieval, summarisation, compaction, deduplication, decay, expiration, temporal invalidation, reflection, and skill extraction in various forms.</p>
+
+      <p>The more defensible claim is this:</p>
+
+      <blockquote><strong>Phi Memory is a memory-governance layer for AI agents.</strong><br>It helps long-term memory stay useful by reviewing, consolidating, compressing, archiving, retiring, and proceduralising memories over time. It is designed to sit above existing memory backends and answer a different question from retrieval systems: <em>should this memory still exist, and in what form?</em></blockquote>
+
+      <p>That is meaningfully narrower than claiming to have invented agent memory. It also maps better to the direction the field is moving: from “how do I store and retrieve agent memory?” toward “how do I keep persistent memory accurate, safe, compact, useful, auditable, and reversible over time?”</p>
+
+      <h2>What appears genuinely differentiated</h2>
+      <p>The research did not find a mainstream public paper, product, patent, or framework that says, in effect: “we govern agent memory using golden-ratio thresholds such as 0.618, 0.809, and 0.95, combined with Fibonacci review intervals.”</p>
+
+      <p>There are close neighbours:</p>
+      <ul>
+        <li><strong>Forgetting curves</strong> and spaced-repetition-like memory reinforcement.</li>
+        <li><strong>Importance scoring</strong>, recency, relevance, and confidence thresholds.</li>
+        <li><strong>Age-dependent decay</strong> and archival movement in patents and older lifecycle systems.</li>
+        <li><strong>Fibonacci-like decay</strong> in adjacent open-source memory tools.</li>
+      </ul>
+
+      <p>But the exact combination of phi thresholds, Fibonacci review intervals, and explicit keep/compress/archive/delete/proceduralise governance was not found as a public exact match.</p>
+
+      <h2>What is already anticipated</h2>
+      <p>Most of the underlying mechanics are not novel individually. That matters for positioning. A serious Phi Memory pitch should not overclaim.</p>
+
+      <table>
+        <thead><tr><th>Capability</th><th>Novel?</th><th>Comment</th></tr></thead>
+        <tbody>
+          <tr><td>Persistent long-term memory for agents</td><td>No</td><td>Common across agent frameworks and memory products.</td></tr>
+          <tr><td>Summarisation and compaction</td><td>No</td><td>Used by systems such as Letta/MemGPT, LlamaIndex, and many dialogue-memory approaches.</td></tr>
+          <tr><td>Deduplication and consolidation</td><td>No</td><td>Seen in Mem0, Zep/Graphiti, and curation workflows.</td></tr>
+          <tr><td>Decay, forgetting, expiry</td><td>No</td><td>Well established in research and increasingly present in production systems.</td></tr>
+          <tr><td>Temporal validity and stale fact handling</td><td>No</td><td>Zep/Graphiti-style temporal graphs are especially relevant here.</td></tr>
+          <tr><td>Converting experiences into reusable skills</td><td>Partly anticipated</td><td>Voyager, ProcMEM, ReMe, and Anything2Skill are close prior art.</td></tr>
+          <tr><td>Backend-agnostic governance API</td><td>Less saturated</td><td>Promising if implemented as a layer above existing backends rather than another memory store.</td></tr>
+          <tr><td>Phi/Fibonacci policy engine</td><td>Most distinctive</td><td>Best novelty angle, as long as it is framed as a tunable policy design rather than magic.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>The systems Phi Memory must be compared against</h2>
+      <p>The competitive set is broad. Some systems are memory stores. Some are context layers. Some are research prototypes. Some are governance or security papers. Phi Memory sits in the overlap.</p>
+
+      <h3>Letta / MemGPT</h3>
+      <p>Letta and MemGPT popularised an OS-like view of agent memory, separating in-context memory blocks from searchable archival memory and compacting older context when needed. That is strong prior art for tiered memory and compaction, but it is not the same as a cross-backend governance layer that audits memories after the fact.</p>
+
+      <h3>Mem0</h3>
+      <p>Mem0 is highly relevant because it focuses on extracting, consolidating, deduplicating, scoring, expiring, and retrieving memory. It already handles many memory-hygiene concerns inside an integrated memory engine. Phi Memory should therefore avoid sounding like “Mem0 with a different metaphor”. The difference has to be governance across backends, auditability, and explicit lifecycle decisions.</p>
+
+      <h3>Zep / Graphiti</h3>
+      <p>Zep and Graphiti are probably among the strongest production-grade analogues for temporal validity and governed context. They preserve historical state, invalidate outdated facts, merge evidence, and use temporal graphs to keep context fresher. Phi Memory’s distinction would be less “we know facts change” and more “we provide a portable policy engine that can govern memory wherever it lives”.</p>
+
+      <h3>LangGraph, LangMem, and LlamaIndex</h3>
+      <p>These frameworks already provide memory concepts, namespaces, background memory managers, fact extraction, memory blocks, summarisation, prioritisation, and truncation. They prove that memory management belongs in the agent stack. They also make it harder to claim broad novelty. Phi Memory has to be complementary: a governance plane rather than a replacement framework.</p>
+
+      <h3>Academic memory systems</h3>
+      <p>Generative Agents, MemoryBank, RMM, FSFM, Voyager, ProcMEM, ReMe, and Anything2Skill cover importance scoring, reflection, forgetting, memory refinement, and procedural skill conversion. That research makes the general lifecycle story well anticipated. The opportunity is packaging these concerns into an operational policy layer developers can actually plug into production agents.</p>
+
+      <h2>The governance angle is the real category</h2>
+      <p>The more interesting market category is not “AI memory database”. That space is already crowded with vector stores, graph memories, retrieval systems, context platforms, and framework-native memory tools.</p>
+
+      <p>A better category is one of these:</p>
+      <ul>
+        <li>AI agent memory governance</li>
+        <li>LLM memory lifecycle management</li>
+        <li>agent memory hygiene</li>
+        <li>governed context layer</li>
+        <li>persistent memory maintenance for AI agents</li>
+        <li>memory consolidation and forgetting layer</li>
+        <li>backend-agnostic agent memory policy API</li>
+      </ul>
+
+      <p>That category asks a different set of questions from retrieval:</p>
+      <ul>
+        <li>Is this memory still true?</li>
+        <li>Is it duplicated by a better memory?</li>
+        <li>Should it remain pinned, be compressed, be archived, or be deleted?</li>
+        <li>Should it be turned into a procedural skill?</li>
+        <li>What evidence created it?</li>
+        <li>When should it be reviewed again?</li>
+        <li>Can a destructive memory action be audited or reversed?</li>
+      </ul>
+
+      <p>That is a real problem. Agents accumulate cruft. They remember stale preferences. They keep outdated project facts. They overfit to temporary context. They preserve things that should have been procedures. They retrieve old state after the world has changed. A governance layer is the part that says memory has a lifecycle, not just a vector embedding.</p>
+
+      <h2>How the phi/Fibonacci policy could be framed</h2>
+      <p>The phi part is interesting, but it needs careful language. It should not sound mystical. The strongest framing is:</p>
+
+      <blockquote>Phi/Fibonacci scheduling is a simple, memorable policy heuristic for memory review and compaction. It gives a structured cadence and threshold vocabulary, but it should be tunable, measurable, and replaceable.</blockquote>
+
+      <p>Possible policy layers might look like this:</p>
+      <table>
+        <thead><tr><th>Policy signal</th><th>Example interpretation</th></tr></thead>
+        <tbody>
+          <tr><td>Below ~0.618 confidence/usefulness</td><td>Candidate for review, compression, or retirement.</td></tr>
+          <tr><td>Around ~0.809</td><td>Strong enough to keep, but still review on schedule.</td></tr>
+          <tr><td>Above ~0.95</td><td>High-confidence durable memory, possibly pinned or promoted.</td></tr>
+          <tr><td>Fibonacci cadence</td><td>Review after 1, 2, 3, 5, 8, 13, 21… interactions/days/events, depending on memory type.</td></tr>
+        </tbody>
+      </table>
+
+      <p>The important caveat: those thresholds need empirical feedback. If a simpler policy performs better, the product should allow it. The phi language can make the system memorable, but measurable outcomes make it trustworthy.</p>
+
+      <h2>Risks and objections</h2>
+      <p>The biggest objection is obvious: Phi Memory could be dismissed as a collection of known memory techniques with a golden-ratio wrapper. That objection is fair unless the architecture is genuinely governance-first.</p>
+
+      <p>There are four risks I would take seriously:</p>
+      <ol>
+        <li><strong>Overclaiming novelty.</strong> Do not claim to have invented agent memory, consolidation, forgetting, or procedural memory.</li>
+        <li><strong>Decorative math.</strong> Phi thresholds must be useful policy defaults, not numerology.</li>
+        <li><strong>Bad forgetting.</strong> Incorrectly retiring memories can damage continuity, safety, and user trust.</li>
+        <li><strong>Category confusion.</strong> Buyers will ask whether Mem0, Zep, Letta, or LangMem already do this. The answer is “partly, but not as a portable governance layer.”</li>
+      </ol>
+
+      <h2>The safest product position</h2>
+      <p>The strongest product order looks like this:</p>
+      <ol>
+        <li><strong>Best:</strong> backend-agnostic governance API or plugin.</li>
+        <li><strong>Second-best:</strong> framework feature inside an agent stack.</li>
+        <li><strong>Third-best:</strong> managed governance service for enterprise agent fleets.</li>
+        <li><strong>Weakest:</strong> another standalone memory store.</li>
+      </ol>
+
+      <p>The storage layer is crowded. The retrieval layer is crowded. The governance layer is less settled. That is where Phi Memory has the cleanest wedge.</p>
+
+      <h2>Suggested positioning copy</h2>
+      <p>If I were describing Phi Memory publicly, I would use something like this:</p>
+
+      <blockquote><strong>Phi Memory is a governance layer for long-term AI-agent memory.</strong> It reviews, consolidates, compresses, archives, retires, and proceduralises memories over time, using explicit lifecycle policies and optional phi/Fibonacci-inspired review thresholds. It works above existing memory backends and focuses on the question retrieval systems usually skip: should this memory still exist, and in what form?</blockquote>
+
+      <p>That is specific enough to be differentiated, but careful enough not to overclaim.</p>
+
+      <h2>Bottom line</h2>
+      <p>No public exact match was found for a phi/golden-ratio AI agent memory-governance system. But the general ingredients — persistent memory, compaction, decay, stale detection, deduplication, reflection, and procedural skill extraction — are all substantially anticipated.</p>
+
+      <p>The novelty case is therefore narrow and practical: <strong>Phi Memory as a governance-first, backend-agnostic lifecycle layer with an explicit phi/Fibonacci policy engine.</strong></p>
+
+      <p>That is a plausible wedge. It just needs to be built and measured as infrastructure, not marketed as mystical memory science.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related notes</h2>
+        <ul>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>How I use Hermes agents, Coolify, GitHub, Cloudflare, and Telegram to ship apps with AI.</span></li>
+          <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>The deployment pipeline behind many of these experiments.</span></li>
+          <li><a href="/posts/newbizfeed-codex-company-register-review.html">Using multiple Codex agents to review company-register data</a><span>A practical example of multi-agent review lanes and quality gates.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>The static HTML workflow used to publish this note.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>&copy; Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
