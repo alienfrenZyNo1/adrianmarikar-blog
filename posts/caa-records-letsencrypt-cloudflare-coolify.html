@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises — Adrian Marikar</title>
+  <meta name="description" content="A practical CAA record checklist for self-hosted VPS and Coolify sites: allow Let’s Encrypt and Cloudflare certificates, avoid renewal failures, and verify DNS safely.">
+  <meta name="keywords" content="CAA records self hosted, Let's Encrypt CAA record, Cloudflare CAA records, Coolify SSL certificate, DNS certificate authorization, VPS TLS renewal, self-hosted HTTPS checklist">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises">
+  <meta property="og:description" content="A practical checklist for using CAA records on self-hosted VPS and Coolify sites without breaking Let’s Encrypt renewals or Cloudflare edge certificates.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html">
+  <meta property="article:published_time" content="2026-07-01T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-01T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="CAA Records for Self-Hosted Sites">
+  <meta name="twitter:description" content="How to add CAA records for a self-hosted VPS, Coolify apps, Let’s Encrypt, and Cloudflare without causing certificate renewal failures.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises","description":"A practical CAA record checklist for self-hosted VPS and Coolify sites: allow Let’s Encrypt and Cloudflare certificates, avoid renewal failures, and verify DNS safely.","url":"https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html"},"datePublished":"2026-07-01T10:00:00Z","dateModified":"2026-07-01T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["CAA records","Let's Encrypt","Cloudflare","Coolify","self-hosted HTTPS","VPS TLS","DNS security","certificate renewal"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">&larr; Back home</a>
+      <header>
+        <p class="date">2026.07 / DNS CHECKLIST 022</p>
+        <h1>CAA records for self-hosted sites: let Let’s Encrypt and Cloudflare issue certificates without surprises</h1>
+      </header>
+
+      <p>CAA records are one of those DNS settings that sound more exotic than they are. They do not encrypt traffic. They do not replace TLS. They simply tell public certificate authorities which issuers are allowed to create certificates for your domain.</p>
+
+      <p>That matters on a self-hosted VPS because the certificate path is often split across layers. Coolify or Traefik may request a Let’s Encrypt certificate for the origin. Cloudflare may issue an edge certificate for the public hostname. A mail server may use its own certificate for SMTP, IMAP, or webmail. If CAA records are added too aggressively, the site can look secure today and then fail the next renewal.</p>
+
+      <blockquote>Goal: use CAA records as a small safety rail, not as a mysterious DNS spell that breaks your next Coolify or Cloudflare certificate renewal.</blockquote>
+
+      <h2>What CAA records actually do</h2>
+      <p>The IETF’s <a href="https://www.rfc-editor.org/rfc/rfc8659" rel="noopener">RFC 8659</a> defines CAA as a DNS resource record that lets a domain holder specify which certificate authorities are authorized to issue certificates for that domain. Let’s Encrypt’s <a href="https://letsencrypt.org/docs/caa/" rel="noopener">CAA documentation</a> explains the practical motivation clearly: without CAA, any public CA can attempt issuance if it validates control of the domain; with CAA, you narrow the set of acceptable issuers.</p>
+
+      <p>The common tags are:</p>
+      <ul>
+        <li><code>issue</code> — which CA may issue normal certificates.</li>
+        <li><code>issuewild</code> — which CA may issue wildcard certificates.</li>
+        <li><code>iodef</code> — where CAs can send incident or violation reports, if supported.</li>
+      </ul>
+
+      <p>For a small self-hosted site, <code>issue</code> is the one that matters most. It is also the one most likely to break renewals if you forget a certificate issuer that your stack actually uses.</p>
+
+      <h2>The self-hosted certificate map</h2>
+      <p>Before adding CAA records, write down who issues certificates for each layer:</p>
+
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Typical issuer</th><th>Why it matters</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Coolify / Traefik origin HTTPS</td><td>Let’s Encrypt</td><td>Apps may renew automatically through ACME.</td></tr>
+          <tr><td>Cloudflare edge HTTPS</td><td>Cloudflare-managed CA set</td><td>Visitors hit Cloudflare first when the DNS record is proxied.</td></tr>
+          <tr><td>Mail server TLS</td><td>Often Let’s Encrypt</td><td>SMTP/IMAP certificates may renew separately from the web app.</td></tr>
+          <tr><td>Manual or provider certificates</td><td>Provider-specific</td><td>Some platforms use their own CA relationships.</td></tr>
+        </tbody>
+      </table>
+
+      <p>If all public web traffic is proxied through Cloudflare but your origin still uses Let’s Encrypt, the DNS policy needs to allow both the edge path and the origin renewal path. Do not assume “visitors only see Cloudflare” means Let’s Encrypt is no longer involved.</p>
+
+      <h2>A safe starting shape</h2>
+      <p>For many self-hosted domains that use Cloudflare DNS/proxying and Let’s Encrypt on the origin, a conservative starting point looks like this:</p>
+
+      <pre><code>example.com.  CAA 0 issue "letsencrypt.org"
+example.com.  CAA 0 issue "pki.goog"
+example.com.  CAA 0 issue "digicert.com"
+example.com.  CAA 0 issuewild ";"
+example.com.  CAA 0 iodef "mailto:security@example.com"</code></pre>
+
+      <p>The exact issuer list should match the platform you use. Let’s Encrypt covers the common ACME origin-certificate path used by many reverse proxies. Cloudflare edge certificates may involve certificate authorities such as Google Trust Services or DigiCert depending on the certificate product and account state. If you use a different host, CDN, or managed platform, check that provider’s current documentation before restricting CAA.</p>
+
+      <p>The <code>issuewild ";"</code> line means “do not issue wildcard certificates unless another explicit wildcard issuer is allowed.” Only use it if you do not need wildcard certificates. If you do use wildcard certificates, replace it with the wildcard issuer you actually use.</p>
+
+      <h2>What not to do</h2>
+      <ul>
+        <li><strong>Do not copy another site’s CAA records blindly.</strong> Their issuer set may not match your Cloudflare, Coolify, mail, or DNS setup.</li>
+        <li><strong>Do not add only one CA if two layers issue certificates.</strong> A proxied web app can still need both an edge certificate and an origin certificate.</li>
+        <li><strong>Do not forget mail hostnames.</strong> If <code>mail.example.com</code> inherits restrictive CAA records from <code>example.com</code>, your mail TLS renewal path must still be allowed.</li>
+        <li><strong>Do not publish operational secrets in examples.</strong> CAA records are public DNS. Keep examples generic and never include account IDs, tokens, private hostnames, or mailbox passwords.</li>
+        <li><strong>Do not treat CAA as a firewall.</strong> It reduces certificate mis-issuance risk; it does not hide your origin or protect a weak app.</li>
+      </ul>
+
+      <h2>How inheritance can surprise you</h2>
+      <p>CAA is checked up the DNS tree. If a CA is evaluating <code>app.example.com</code> and there is no CAA record there, it may find the CAA policy at <code>example.com</code>. That is usually what you want: one policy for the zone. It becomes surprising when a subdomain uses a different platform.</p>
+
+      <p>For example, the apex domain might be a Coolify app using Let’s Encrypt, while <code>docs.example.com</code> is hosted elsewhere and needs another CA. If the apex CAA policy allows only Let’s Encrypt, that other platform may fail certificate issuance. The fix is not to delete CAA entirely; it is to add the issuer that the subdomain actually needs, or place a more specific CAA record where appropriate.</p>
+
+      <h2>Verification commands</h2>
+      <p>Use DNS queries before and after every change. These examples use placeholders so the pattern is safe to share publicly.</p>
+
+      <pre><code># Show CAA records at the apex
+ dig +short CAA example.com
+
+# Show whether a subdomain has its own CAA policy
+ dig +short CAA app.example.com
+
+# Check the public certificate currently served
+ echo | openssl s_client -servername example.com -connect example.com:443 2>/dev/null \
+   | openssl x509 -noout -issuer -subject -dates
+
+# Check the proxied public hostname still responds
+ curl -I https://example.com/
+
+# If Coolify exposes a health endpoint, verify it after cert changes
+ curl -fsS https://example.com/health || true</code></pre>
+
+      <p>The most important test is not just “does DNS show the CAA record?” It is “can the systems that renew certificates still renew them?” After a DNS change, watch the next renewal window or trigger a staging/test certificate where your tooling supports it.</p>
+
+      <h2>Coolify-specific checklist</h2>
+      <ol>
+        <li>List every public hostname configured on the Coolify application.</li>
+        <li>Confirm whether Coolify/Traefik is requesting Let’s Encrypt certificates for those hostnames.</li>
+        <li>Confirm whether Cloudflare is proxying the same hostnames and issuing edge certificates.</li>
+        <li>Add CAA records only after the issuer map is clear.</li>
+        <li>Keep DNS examples generic in documentation and blog posts.</li>
+        <li>Verify live HTTPS, RSS, sitemap, and canonical URLs after deploy.</li>
+      </ol>
+
+      <p>This fits the same operating habit as the <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS checklist</a>, the <a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static-site deploy checklist</a>, and the <a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain guide</a>: make the public DNS shape explicit, then verify each dependent service instead of trusting the dashboard.</p>
+
+      <h2>The practical rule</h2>
+      <p>If you are unsure, start with no CAA record rather than a wrong restrictive one. Once you know the certificate issuers for your origin, edge, and mail paths, add the narrowest records that still allow all legitimate renewals. CAA is useful when it reflects your real architecture. It is risky when it reflects a copied snippet.</p>
+
+      <p>For a self-hosted VPS, the win is small but real: fewer certificate authorities are allowed to issue for your domain, and your DNS documentation becomes a little more intentional. Just keep the issuer map current as you add Coolify apps, Cloudflare tunnels, mail domains, and managed services.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Which records to proxy, which to keep DNS-only, and how to avoid useful origin leaks.</span></li>
+          <li><a href="/posts/cloudflare-tunnel-self-hosted-vps.html">Cloudflare Tunnel for self-hosted VPS apps</a><span>When a tunnel is better than a raw public port for admin and staging services.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>How mail DNS, DKIM, SPF, DMARC, and TLS fit into the same domain hygiene picture.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

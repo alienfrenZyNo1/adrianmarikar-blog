@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises: https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html
+  - Practical CAA record checklist for self-hosted VPS, Coolify, Cloudflare, Let’s Encrypt, mail TLS, and safe certificate-renewal verification.
 |- Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes: https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html
   - A practical walkthrough of provisioning a Hetzner Cloud VPS, choosing the right plan, initial hardening, installing Docker, and running a first self-hosted container.
 |- Cloudflare Tunnel for Self-Hosted VPS Apps: Expose Services Without Opening Ports: https://adrianmarikar.com/posts/cloudflare-tunnel-self-hosted-vps.html

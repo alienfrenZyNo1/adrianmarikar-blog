@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises</title>
+      <link>https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html</link>
+      <guid>https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html</guid>
+      <pubDate>Wed, 01 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical CAA record checklist for self-hosted VPS and Coolify sites: allow Let’s Encrypt and Cloudflare certificates, avoid renewal failures, and verify DNS safely.</description>
+    </item>
+    <item>
       <title>Phi Memory Prior Art: Is a Golden-Ratio Memory Governance Layer Actually Novel?</title>
       <link>https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html</link>
       <guid>https://adrianmarikar.com/posts/phi-memory-prior-art-novelty-assessment.html</guid>

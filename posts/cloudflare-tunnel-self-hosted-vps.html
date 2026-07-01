@@ -78,7 +78,7 @@
         <li>At least one service running on the VPS that you want to expose.</li>
       </ul>
 
-      <p>If you already have a <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS setup</a> for your VPS, you have most of this already. The tunnel does not replace your existing DNS records or proxied hostnames — it adds a parallel path for services you do not want to expose directly.</p>
+      <p>If you already have a <a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS setup</a> for your VPS, you have most of this already. The tunnel does not replace your existing DNS records or proxied hostnames — it adds a parallel path for services you do not want to expose directly. If you later restrict certificate authorities, keep the <a href="/posts/caa-records-letsencrypt-cloudflare-coolify.html">CAA record checklist</a> aligned with both tunnel/edge certificates and any origin certificates.</p>
 
       <h2>Step 1: Create the tunnel</h2>
       <p>You can create a tunnel from the Cloudflare dashboard (<strong>Zero Trust &rarr; Networks &rarr; Tunnels &rarr; Create a tunnel</strong>) or from the CLI. The dashboard approach is simpler for a first setup:</p>
