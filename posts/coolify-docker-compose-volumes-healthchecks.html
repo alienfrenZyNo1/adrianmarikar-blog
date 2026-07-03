@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Docker Compose Volumes and Healthchecks Before You Deploy a Database App — Adrian Marikar</title>
+  <meta name="description" content="A practical pre-deploy checklist for Coolify Docker Compose apps that need persistent volumes, database storage, startup order, healthchecks, backups, and safe verification.">
+  <meta name="keywords" content="Coolify Docker Compose volumes, Coolify persistent storage, Docker Compose healthcheck, self hosted database backup, Coolify database app deploy, Docker volume backup checklist, VPS self hosting">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Docker Compose Volumes and Healthchecks Before You Deploy a Database App">
+  <meta property="og:description" content="A practical checklist for deploying stateful Docker Compose apps through Coolify without losing data, racing startup order, or trusting a container that is not healthy yet.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html">
+  <meta property="article:published_time" content="2026-07-03T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-03T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Docker Compose Volumes and Healthchecks">
+  <meta name="twitter:description" content="Before deploying a stateful app in Coolify, make volumes, healthchecks, startup order, and backup verification explicit.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Docker Compose Volumes and Healthchecks Before You Deploy a Database App","description":"A practical pre-deploy checklist for Coolify Docker Compose apps that need persistent volumes, database storage, startup order, healthchecks, backups, and safe verification.","url":"https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html"},"datePublished":"2026-07-03T10:00:00Z","dateModified":"2026-07-03T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Docker Compose","persistent volumes","healthchecks","database backups","self-hosting","VPS","deployment checklist"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">&larr; Back home</a>
+      <header>
+        <p class="date">2026.07 / COMPOSE CHECKLIST 023</p>
+        <h1>Coolify Docker Compose volumes and healthchecks before you deploy a database app</h1>
+      </header>
+
+      <p>Static sites are forgiving. If a container is replaced, the source files are still in Git. A stateful app is different. The database, uploads, queues, and generated files may live outside the image, and a “successful” deploy can still be wrong if the app starts before the database is ready.</p>
+
+      <p>This is the checklist I would run before moving a small database-backed app into Coolify with Docker Compose. It is aimed at the practical long-tail problem: “I have a Compose file that works locally; what do I check before Coolify is allowed to manage it on a VPS?”</p>
+
+      <blockquote>Goal: make the data paths, startup rules, healthchecks, and restore path explicit before the first production deploy, not after the first broken redeploy.</blockquote>
+
+      <h2>The reliable mental model</h2>
+      <p>A Docker image should be disposable. A database volume is not. Docker’s own volume documentation describes volumes as the preferred way to persist data generated and used by containers. Coolify’s Docker Compose documentation supports multi-container Compose apps, persistent storage, healthchecks, and predefined network connections. The shape is familiar, but the stakes are higher once the app stores real data.</p>
+
+      <pre><code>Git repository
+  ├─ docker-compose.yml      # service shape
+  ├─ app image/Dockerfile    # disposable build artifact
+  └─ migrations/scripts      # repeatable app changes
+
+Coolify server
+  ├─ app container           # replaceable
+  ├─ database container      # replaceable
+  └─ named volumes/storage   # protect and back up</code></pre>
+
+      <p>If you cannot point to where the important data lives, you are not ready to deploy. “It is somewhere inside Docker” is not enough.</p>
+
+      <h2>Start by naming every stateful path</h2>
+      <p>Before importing a Compose file, mark each path as either disposable or persistent:</p>
+
+      <table>
+        <thead>
+          <tr><th>Path</th><th>Usually persistent?</th><th>Why it matters</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Postgres/MySQL data directory</td><td>Yes</td><td>Losing it means losing the app.</td></tr>
+          <tr><td>Uploaded files</td><td>Yes</td><td>Often missed when only the database is backed up.</td></tr>
+          <tr><td>Redis cache</td><td>Usually no</td><td>Depends whether Redis is used as a cache or durable queue.</td></tr>
+          <tr><td>Build artifacts</td><td>No</td><td>Should be recreated from Git and the build pipeline.</td></tr>
+          <tr><td>Logs</td><td>Maybe</td><td>Useful for debugging, but not always production data.</td></tr>
+        </tbody>
+      </table>
+
+      <p>That table should decide the Compose <code>volumes:</code> section. Do not mount the whole project directory into production just because it made local development convenient. Bind mounts are handy for development; named volumes or explicit persistent storage are usually cleaner for production.</p>
+
+      <h2>A safer Compose skeleton</h2>
+      <p>The exact image names and commands will change, but this pattern is the one I look for: named database storage, an app healthcheck, a database readiness check, and an app dependency that waits for health rather than merely container creation.</p>
+
+      <pre><code>services:
+  app:
+    image: ghcr.io/example/app:latest
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  db_data:</code></pre>
+
+      <p>Docker’s Compose startup-order documentation is explicit that Compose does not wait until a service is “ready” unless you model that readiness with conditions and healthchecks. The app container starting is not the same thing as the database accepting connections.</p>
+
+      <h2>Healthchecks should test the app, not just the process</h2>
+      <p>A weak healthcheck asks “is the process running?” A useful one asks “can the app answer the smallest request a real router or operator cares about?” For a web app, that is often <code>/health</code>. For a worker, it might be a lightweight command that checks dependencies without mutating data.</p>
+
+      <p>Keep the endpoint boring:</p>
+      <ul>
+        <li>return <code>200</code> only when the app is ready to serve,</li>
+        <li>avoid leaking environment variables, versions, hostnames, or internal IPs,</li>
+        <li>avoid expensive database scans,</li>
+        <li>make it stable enough that deploys do not flap.</li>
+      </ul>
+
+      <p>Then verify the healthcheck in Coolify after deploy. A green container list is useful, but the live application URL and the application logs still matter.</p>
+
+      <h2>Backups are part of the deploy, not a later chore</h2>
+      <p>The first production deploy should already have a restore story. For a small single-VPS setup, I want at least three layers:</p>
+
+      <ol>
+        <li><strong>Database dumps:</strong> scheduled logical backups that can be restored into a clean database version.</li>
+        <li><strong>Volume or storage backups:</strong> uploaded files and other non-database state copied off the server.</li>
+        <li><strong>VPS/provider snapshots:</strong> useful for fast rollback, but not a substitute for app-level backups.</li>
+      </ol>
+
+      <p>The test is simple: can you create a throwaway environment, restore the dump and files, start the app, and log in without touching production? If not, the backup process is still theoretical.</p>
+
+      <h2>Coolify-specific pre-deploy checks</h2>
+      <ol>
+        <li>Confirm the Compose file uses production-safe images, not a development bind mount.</li>
+        <li>Confirm every persistent path has a named volume or explicit persistent storage entry.</li>
+        <li>Store secrets as Coolify environment variables, not committed values.</li>
+        <li>Make the app listen on the expected internal port and expose only the web service publicly.</li>
+        <li>Add healthchecks for the database and web service.</li>
+        <li>Run migrations deliberately and know whether they are reversible.</li>
+        <li>Take a backup before the first real deploy and before every risky migration.</li>
+        <li>After deploy, verify logs, health, public HTTPS, and one real user path.</li>
+      </ol>
+
+      <p>This sits next to my <a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static-site deploy checklist</a>, but the emphasis changes. For static HTML I mostly worry about discovery files, cache busting, and live-page verification. For a stateful app I care most about data ownership, startup order, health, migrations, and recovery.</p>
+
+      <h2>Common mistakes</h2>
+      <ul>
+        <li><strong>Only backing up the database.</strong> User uploads, generated invoices, and import files may live in separate volumes.</li>
+        <li><strong>Using <code>latest</code> without control.</strong> Pin versions for databases and critical services so a rebuild does not silently change major versions.</li>
+        <li><strong>Letting the app race the database.</strong> Use healthchecks and readiness-aware dependencies.</li>
+        <li><strong>Publishing internal details in docs.</strong> Use placeholders for domains, tokens, network names, and host paths.</li>
+        <li><strong>Never restoring a backup.</strong> A backup that has not been restored is just a file with good intentions.</li>
+      </ul>
+
+      <h2>The practical rule</h2>
+      <p>Before Coolify manages a stateful Compose app, make this sentence true: “I know where the data lives, I know when the app is healthy, and I know how to restore it somewhere else.” If that sentence feels vague, keep the app in staging and tighten the Compose file first.</p>
+
+      <p>That discipline is not glamorous, but it is what lets a small VPS run real projects without turning every redeploy into a gamble.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/hetzner-vps-setup-self-hosting.html">Setting up a Hetzner VPS for self-hosting</a><span>The base server, Docker, and Coolify foundation that stateful apps sit on.</span></li>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>SSH, firewalling, automatic updates, and backup habits before production apps matter.</span></li>
+          <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>When the image build belongs in CI and Coolify should redeploy a known artifact.</span></li>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The simpler stateless version of the same deploy-and-verify habit.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

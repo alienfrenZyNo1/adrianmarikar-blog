@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Docker Compose Volumes and Healthchecks Before You Deploy a Database App: https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html
+  - Practical checklist for stateful Coolify Compose apps: persistent volumes, database readiness, healthchecks, backups, restores, migrations, and production verification.
 |- CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises: https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html
   - Practical CAA record checklist for self-hosted VPS, Coolify, Cloudflare, Let’s Encrypt, mail TLS, and safe certificate-renewal verification.
 |- Setting Up a Hetzner VPS for Self-Hosting: From Bare Metal to Docker in 30 Minutes: https://adrianmarikar.com/posts/hetzner-vps-setup-self-hosting.html
