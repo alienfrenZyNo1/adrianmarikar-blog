@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard: https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html
+  - Detailed build log for bitcoin.adrianmarikar.com covering live BTC price context, conservative bottom scoring, reliability tracking, live proof, strategy backtests, diagnostics, mobile dashboard UX, and no-secret deployment discipline.
 |- Coolify Docker Compose Volumes and Healthchecks Before You Deploy a Database App: https://adrianmarikar.com/posts/coolify-docker-compose-volumes-healthchecks.html
   - Practical checklist for stateful Coolify Compose apps: persistent volumes, database readiness, healthchecks, backups, restores, migrations, and production verification.
 |- CAA Records for Self-Hosted Sites: Let Let’s Encrypt and Cloudflare Issue Certificates Without Surprises: https://adrianmarikar.com/posts/caa-records-letsencrypt-cloudflare-coolify.html

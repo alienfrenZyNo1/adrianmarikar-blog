@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard — Adrian Marikar</title>
+  <meta name="description" content="A detailed build log for bitcoin.adrianmarikar.com: an evidence-first Bitcoin bottom signal dashboard using on-chain metrics, market context, live proof tracking, strategy backtests, diagnostics, and browser-live BTC price updates.">
+  <meta name="keywords" content="Bitcoin bottom signal, BTC bottom dashboard, Bitcoin cycle bottom, Bitcoin bottom indicator, on-chain Bitcoin metrics, Bitcoin market cycle research, BTC live price chart, Bitcoin research dashboard, crypto sentiment dashboard, Bitcoin cycle analysis">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard">
+  <meta property="og:description" content="Inside bitcoin.adrianmarikar.com: a Bitcoin bottom signal dashboard built around conservative evidence, live BTC price context, on-chain research, backtests, guard regimes, diagnostics, and no-secret deployment discipline.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html">
+  <meta property="article:published_time" content="2026-07-04T08:16:46Z">
+  <meta property="article:modified_time" content="2026-07-04T08:16:46Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard">
+  <meta name="twitter:description" content="A detailed build log for bitcoin.adrianmarikar.com: conservative Bitcoin bottom research, reliability scoring, live proof, diagnostics, and browser-live BTC price updates.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard","description":"A detailed build log for bitcoin.adrianmarikar.com: an evidence-first Bitcoin bottom signal dashboard using on-chain metrics, market context, live proof tracking, strategy backtests, diagnostics, and browser-live BTC price updates.","url":"https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html"},"datePublished":"2026-07-04T08:16:46Z","dateModified":"2026-07-04T08:16:46Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Bitcoin bottom signal","BTC bottom dashboard","Bitcoin cycle bottom","Bitcoin bottom indicator","on-chain Bitcoin metrics","Bitcoin market cycle research","BTC live price chart","crypto sentiment dashboard","Bitcoin research dashboard"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">&larr; Back home</a>
+      <header>
+        <p class="date">2026.07 / Bitcoin research build log 024</p>
+        <h1>Bitcoin Bottom Signal: building an evidence-first BTC cycle dashboard</h1>
+      </header>
+
+      <p><a href="https://bitcoin.adrianmarikar.com/" rel="noopener">bitcoin.adrianmarikar.com</a> is a live research dashboard for one narrow question: is Bitcoin showing the kind of rare, high-confidence bottom evidence that has historically appeared before a long bull run?</p>
+
+      <p>That wording matters. The site is not a trading bot, not a price target machine, not a leverage signal, and not financial advice. It is an evidence engine. Its job is to watch a set of Bitcoin cycle, market, publication, social, on-chain, and diagnostic signals, score them conservatively, and stay quiet unless the evidence becomes unusually strong. Most of the time the correct output should be boring: no alert, keep watching, collect more proof.</p>
+
+      <p>This post is a detailed build log of what the dashboard now does, how the research is structured, why the signal is deliberately conservative, and how the public pages are designed. I am leaving out credentials, tokens, webhook URLs, API keys, private runtime values, and anything that would weaken the system operationally. The goal is transparency about the method, not exposure of secrets.</p>
+
+      <blockquote>Short version: bitcoin.adrianmarikar.com is a mobile-friendly Bitcoin bottom signal dashboard with live BTC price context, a 0–100 bottom score, reliability scoring, backtests, guard-regime checks, diagnostic signal families, a live proof ledger, and a strict “do not alert unless evidence is strong” posture.</blockquote>
+
+      <h2>Why build a Bitcoin bottom signal at all?</h2>
+      <p>Bitcoin market cycles create a strange research problem. The most useful moments are rare. Durable cycle bottoms do not happen every week, and the most attractive long-term opportunities are often surrounded by boredom, disbelief, broken narratives, low attention, and uncomfortable drawdowns. If you only look at the price, you can easily confuse a normal correction with a deeper bottoming process. If you only look at sentiment, you can mistake noisy panic for real exhaustion. If you only look at one on-chain indicator, you can overfit the past.</p>
+
+      <p>The dashboard exists because I wanted a repeatable way to separate “Bitcoin is down” from “Bitcoin is showing a historically interesting bottom-zone cluster.” Those are very different claims. A drawdown alone is not enough. A bearish social mood alone is not enough. A single valuation band is not enough. The dashboard tries to combine several categories of evidence while making the limits visible.</p>
+
+      <p>The starting philosophy is simple: false positives are expensive. A good Bitcoin bottom signal should not shout constantly. It should be comfortable saying “watch” for weeks or months. It should prefer missing a weak setup over producing confident-looking nonsense. It should also show why it is quiet, not just return a black-box answer.</p>
+
+      <h2>The dashboard in one sentence</h2>
+      <p>The live site is a research deck for Bitcoin cycle-bottom evidence: it collects fresh inputs, scores the current setup, compares the signal against historical bottom windows and false-positive guard regimes, reports what would need to improve, tracks live proof over time, and publishes a compact public dashboard at <a href="https://bitcoin.adrianmarikar.com/" rel="noopener">bitcoin.adrianmarikar.com</a>.</p>
+
+      <p>At the time of this write-up, the live dashboard is in a <strong>Watch</strong> regime, not a bottom-likely regime. The headline bottom score is around the mid-50s, confidence is low, and the alert decision is “No.” That is not a failure. That is the system doing what it is supposed to do: avoid overclaiming when the full bottom evidence stack is incomplete.</p>
+
+      <h2>The public pages</h2>
+      <p>The first version of the dashboard tried to fit too much onto one page. The current version is split into lightweight app-style pages so it works better on a phone. The mobile interface uses a sticky icon-based bottom menu, and the pages are separated by purpose:</p>
+
+      <ul>
+        <li><strong>Overview:</strong> the headline Bitcoin bottom score, live price context, BTC chart, component scores, reliability scorecard, live proof tracker, live proof ledger, reliability change log, confidence, historical percentiles, score ceiling, and alert suppression reasons.</li>
+        <li><strong>Live:</strong> the latest collector counts, social trends, publication source classes, ChartInspect on-chain metrics, stacked shadow signal, independent confirmation gates, “what would raise each score,” and reasoning signals.</li>
+        <li><strong>Research:</strong> walk-forward ranking, strategy backtest, false-positive guard regimes, source coverage audit, historical social/news coverage, external benchmark coverage, and benchmark comparison.</li>
+        <li><strong>Diagnostics:</strong> non-primary evidence families such as derivatives stress, miner capitulation, price valuation, stablecoin liquidity, and stacked ensemble diagnostics.</li>
+        <li><strong>Ops:</strong> deployment metadata, cron schedule, data inventory, generated time, repository metadata, and safety flags.</li>
+      </ul>
+
+      <p>This split is more than a design choice. It helps keep the research honest. The Overview page is for the answer. The Live page is for current evidence. The Research page is for validation. The Diagnostics page is for things that are interesting but not promoted. The Ops page is for proving that the data and deployment are actually being refreshed.</p>
+
+      <h2>Live BTC price and chart context</h2>
+      <p>The most visible recent addition is the live BTC price context near the top of the Overview page. The dashboard now shows the latest Bitcoin price, the latest date, the one-day change, the seven-day change, and the drawdown from all-time high. Further down the Overview page there is a compact BTC price chart, currently using a recent price window so the viewer can understand the market context without leaving the dashboard.</p>
+
+      <p>The browser version now updates while the page is open. The public dashboard keeps its static collector value as a fallback, but the browser also polls a public, no-key BTCUSDT feed every 60 seconds. That means a viewer can leave the page open and see the top price card and chart update without waiting for the daily dashboard rebuild. The live browser update is context only. It does not change the bottom score, reliability score, alert state, promotion logic, or any of the historical research numbers.</p>
+
+      <p>That separation is important. A live price display is useful for orientation, but a serious bottom signal should not twitch every time Bitcoin moves a few dollars. The scoring model is deliberately slower and evidence-based. Intraday price noise may update the chart, but it should not be allowed to turn a research dashboard into a dopamine slot machine.</p>
+
+      <h2>The four original signal families</h2>
+      <p>The first version of the project was built around four broad signal families. They are still visible in the current dashboard as component scores:</p>
+
+      <ol>
+        <li><strong>Cycle structure:</strong> where Bitcoin sits relative to cycle-top timing and halving context.</li>
+        <li><strong>Market capitulation:</strong> drawdown depth, duration below all-time high, volatility compression, lower-low failure, and broad price stress.</li>
+        <li><strong>Publication quality:</strong> whether crypto coverage looks sober, practical, dismissive, useful, bored, hype-heavy, or euphoric.</li>
+        <li><strong>Social capitulation:</strong> whether public attention, post volume, hype language, despair, and dead-energy conditions resemble prior washed-out periods.</li>
+      </ol>
+
+      <p>The key idea is that a durable Bitcoin bottom should usually be visible in more than one place. Price should be damaged. Attention should be lower. Hype should be washed out. Practical infrastructure and custody discussions should become more common than get-rich listicles. The cycle should be mature enough for a bottom to be plausible. None of those conditions is perfect alone, but together they can create a more useful picture.</p>
+
+      <p>The dashboard exposes the component scores instead of hiding them. On the current live page, cycle structure is stronger than market capitulation, publication quality is high, and social capitulation is moderate. That mixed picture explains why the system is in a watch state rather than a bottom-likely state. It is not enough for one bucket to look good. The whole stack has to be strong enough.</p>
+
+      <h2>ChartInspect and the primary on-chain signal</h2>
+      <p>The strongest promoted research family today is the ChartInspect on-chain pressure signal. The Live page shows current on-chain metrics such as MVRV Z-Score, NUPL, SOPR, Puell Multiple, Reserve Risk, RHODL Ratio, LTH and STH holder metrics, realized profit/loss, and supply in profit. The dashboard translates these into bottom-pressure readings and explains the reasons in plain language.</p>
+
+      <p>The important part is not simply that these metrics exist. The important part is that the primary on-chain signal has been tested against historical bottom windows and explicit false-positive guard regimes. In the current research view, the recommended walk-forward candidate is the ChartInspect on-chain signal. It has shown event recall across known bottom windows in the test harness while keeping guard-regime alert days at zero for the promoted primary candidate.</p>
+
+      <p>This is why ChartInspect is treated differently from many other diagnostics. It is not promoted because it sounds sophisticated; it is promoted because, in the current research harness, it is the cleanest evidence family. The dashboard still treats the result with caution because Bitcoin only gives us a small number of true cycle bottoms. Small-sample success is useful, but it is not the same thing as certainty.</p>
+
+      <h2>Bottom score, regime, confidence, and alert suppression</h2>
+      <p>The public dashboard produces a 0–100 bottom score, a regime, a confidence label, and an alert decision. The regimes are designed to be plain enough to understand:</p>
+
+      <ul>
+        <li><strong>Avoid:</strong> evidence is weak or conditions are not bottom-like.</li>
+        <li><strong>Watch:</strong> some evidence is interesting, but the full bottom setup is not strong enough.</li>
+        <li><strong>Accumulation watch:</strong> a stronger setup may be forming, but alert gates still matter.</li>
+        <li><strong>Bottom likely:</strong> the rare high-confidence state the monitor is actually built to catch.</li>
+      </ul>
+
+      <p>The monitor does not alert just because the score moves. Alerts are suppressed unless the regime, evidence, and source coverage are strong enough. On the current live dashboard, the alert reason is straightforward: the regime is watch, not bottom_likely. That is the kind of sentence I want the system to show. It should be easy to understand why an alert did not fire.</p>
+
+      <p>The dashboard also shows a score ceiling for today. This is a useful guardrail against wishful interpretation. The ceiling explains why the score cannot realistically be much higher given current drawdown, days since all-time high, lower-low failure duration, cycle age, and other evidence. Instead of asking “why is the score not bullish?”, the page shows what would actually have to change.</p>
+
+      <h2>What would raise each score?</h2>
+      <p>The Live page includes a section called “What Would Raise Each Score?” It lists the blockers and thresholds behind the component readings. For cycle structure, the dashboard looks at months since cycle top and months since last halving. For market capitulation, it looks at drawdown from all-time high, days since all-time high, lower-low failure days, and price relative to long-term moving averages. For publication quality, it looks at the ratio of practical articles, dismissive or bored coverage, and low hype. For social capitulation, it looks at posting percentiles, despair/apathy language, and washed-out hype language.</p>
+
+      <p>This section is one of my favourite parts of the project because it stops the dashboard becoming mystical. A score should not be a vibe. If the score is lower than expected, the user should be able to see why. If the score rises, the user should be able to trace which evidence bucket changed.</p>
+
+      <h2>The reliability score is separate from today’s Bitcoin score</h2>
+      <p>The dashboard has two different ideas that are easy to confuse. The <strong>bottom score</strong> asks, “How bottom-like is Bitcoin today?” The <strong>signal reliability score</strong> asks, “How much should we trust this signal framework as a research system?”</p>
+
+      <p>The current reliability scorecard rates the signal at about <strong>7.3 out of 10</strong>, with a <strong>B</strong> grade and a “research grade” label. It is capped below 10 because market signals cannot be guaranteed. A true 10/10 Bitcoin bottom signal is not realistic. Markets change, sample sizes are small, macro regimes shift, liquidity structures evolve, and any backtest can be fooled by the future.</p>
+
+      <p>The scorecard breaks reliability into dimensions: backtest quality, false-positive control, strategy usefulness, independent confirmation, live validation, and benchmark coverage. That breakdown is deliberately more useful than a single number. Backtest quality and false-positive control are strong, strategy usefulness has been added, benchmark coverage is mapped, independent confirmation is still observing, and live validation is still early. The reliability score should not increase just because a new table exists. It should only improve when new evidence earns it.</p>
+
+      <h2>Live proof ledger and reliability change log</h2>
+      <p>One of the most important recent additions is the Live Proof Ledger. Backtests are necessary, but they are not enough. A model can look clean historically and still fail in the next market regime. The live proof ledger records monitor runs after the system is built, including score, regime, primary alert state, shadow alert state, false-setup status, and whether the run was clean.</p>
+
+      <p>The current ledger has started collecting observations. It records watch-level setups that were correctly rejected, clean runs, false-setup candidates, and whether the shadow signal is behaving without forcing any promotion. The dashboard also includes a reliability change log that explains why the reliability score did or did not move. Right now the message is conservative: reliability stays at 7.3 because no future live capitulation proof has completed yet.</p>
+
+      <p>That is exactly how it should work. You cannot complete live proof instantly. A future capitulation or false-setup follow-up has to happen in the real world, after the model has been defined. Until then, the dashboard can collect evidence, but it should not pretend that time has passed.</p>
+
+      <h2>Research backtests and guard regimes</h2>
+      <p>The Research page is where the dashboard earns its right to exist. It includes walk-forward ranking, strategy backtests, false-positive guard regimes, source coverage audit, social/news coverage, external benchmark coverage, and benchmark comparison.</p>
+
+      <p>Walk-forward testing matters because it reduces hindsight bias. The model should not choose thresholds using the future and then congratulate itself for seeing the past. The research harness uses prior-only walk-forward validation: each fold trains only on earlier rows and evaluates later bottom periods with a defined lead/lag tolerance. This is still not perfect, but it is a major improvement over fitting a signal to known bottoms after the fact.</p>
+
+      <p>False-positive guard regimes matter just as much. The dashboard explicitly tests candidate signals against periods that are not supposed to be bottom alerts: bull-top cooling, current-cycle high-price consolidation, ETF liquidity hype drawdowns, macro panic windows, mid-cycle corrections, and post-bottom recoveries. A signal that catches bottoms but also fires across noisy guard windows is not promoted. It may remain diagnostic, but it does not get to drive the alert.</p>
+
+      <h2>Strategy backtest: useful, but not a promise</h2>
+      <p>The strategy backtest asks a practical question: if this signal had been used as an entry framework around historical bottom windows, what would the forward outcomes have looked like? The current Research page includes a ChartInspect on-chain alert strategy and simple drawdown-trigger baselines such as 60% and 70% drawdown triggers.</p>
+
+      <p>The live research page currently reports that the ChartInspect alert strategy detected 4 out of 4 historical bottom windows in the test set, with a median 365-day return around 62.11% and a worst 365-day post-alert drawdown around -44.30%. A 90-day DCA-after-signal version shows a higher median 365-day return in the current artifact. These are historical research numbers, not promises. They are useful because they put the signal next to simple baselines and make the trade-offs visible.</p>
+
+      <p>The drawdown baselines are important because a fancy signal should be compared with obvious alternatives. If “buy after a 60% drawdown” does nearly the same thing with less complexity, the dashboard should admit it. In the current benchmark comparison, the promoted on-chain signal has the cleanest guard-regime behaviour, while drawdown triggers remain useful reference baselines.</p>
+
+      <h2>Diagnostics are not automatically promoted</h2>
+      <p>The Diagnostics page contains some of the most interesting data, but also some of the strongest discipline. Miner capitulation, price valuation, stablecoin liquidity, derivatives stress, and stacked ensemble candidates are all tracked. They are not automatically promoted just because they are interesting.</p>
+
+      <p>Miner capitulation has historical coverage, but the modern post-2020 regime is noisier. Price valuation baselines such as two-year and 200-week moving-average stress are transparent and useful, but broad and guard-noisy by themselves. Stablecoin liquidity is a public modern liquidity proxy, but it has coverage and recall limits. Derivatives stress uses late-history funding data, so it cannot prove itself across earlier Bitcoin cycles. The stacked ensemble is promising enough to observe, but it remains a shadow candidate until it earns a promotion through clean live runs and manual review.</p>
+
+      <p>This is the pattern throughout the site: show the data, label the role, explain the limitation, and do not promote a signal simply because it has a chart. The dashboard is allowed to say “diagnostic only.” In fact, that is one of the best things it can say.</p>
+
+      <h2>Independent confirmation gates</h2>
+      <p>The Live page includes independent confirmation gates so the viewer can see which layers are primary, shadow-only, diagnostic-only, or excluded from promotion. The primary layer is ChartInspect on-chain. The non-social stacked shadow signal is in observation. Miner, valuation, stablecoin, and derivatives evidence remain diagnostic. Social/news evidence is context only for promotion purposes because it is sparse, windowed, or guard-noisy in the current archive.</p>
+
+      <p>Auto-promotion is disabled. Manual review is required before any confirmation role changes. The shadow signal needs clean live observation, fresh diagnostics, no false shadow alerts, and review before it can become more than a shadow. This is intentionally slow. A bottom signal does not become better because it has more moving parts. It becomes better only when additional parts improve accuracy without adding noise.</p>
+
+      <h2>External benchmark coverage</h2>
+      <p>The dashboard also tracks external Bitcoin bottom frameworks and competitor-style indicators. The purpose is not to copy them. The purpose is to make sure the project is compared against known alternatives instead of living in its own bubble. The Research page currently tracks a set of public benchmark categories, including on-chain profitability bundles, valuation-style indicators, miner stress concepts, liquidity proxies, derivatives stress, and drawdown baselines.</p>
+
+      <p>This matters for SEO readers too: “Bitcoin bottom indicator” is a crowded topic. There are many colourful charts and confident claims. The only useful way to participate is to be explicit about what is being measured, what is not being measured, where the signal has evidence, and where it does not.</p>
+
+      <h2>Data sources and no-secret discipline</h2>
+      <p>The project uses a mix of public and private-runtime inputs. Public market data paths include CoinGecko-style price collection, Yahoo fallback price history, browser-side public BTCUSDT updates for the visible chart, public stablecoin supply data, public miner-related data, and archived public research datasets. The live monitor also handles social and publication-side collection, including fallbacks where direct sources block VPS traffic.</p>
+
+      <p>Some optional providers require tokens or app credentials in production. Those are kept outside the repository and outside this post. No API keys, bearer tokens, webhook URLs, private environment variables, service credentials, or secret endpoint values are published here. Where a provider requires a key, the public explanation is limited to the shape of the evidence and the safety model: credentials live in the runtime environment, not in committed code and not in blog posts.</p>
+
+      <p>This matters because “transparent” does not mean “reckless.” A research dashboard can explain methodology, thresholds, roles, failures, and limitations without leaking the operational materials needed to abuse or break the deployment.</p>
+
+      <h2>Deployment architecture</h2>
+      <p>The dashboard is generated as static HTML plus machine-readable data. That keeps the public site fast, simple, and robust. The production version is served at bitcoin.adrianmarikar.com and refreshed by the monitor workflow. The daily monitor runs on a schedule, rebuilds the dashboard, and records metadata such as the repository commit and generated time. The Ops page shows this information so the viewer can confirm the site is fresh.</p>
+
+      <p>The project fits the broader self-hosted pattern I use elsewhere: GitHub for source control, Docker/Coolify-style deployment, a VPS as the runtime, Cloudflare for the public edge, and automated verification after changes. The monitor is quiet by default. It does not need to send a message every day. It should only emit a meaningful alert when rare bottom-likely conditions appear and the source coverage is strong enough.</p>
+
+      <h2>Why the UI is deliberately explanatory</h2>
+      <p>A lot of financial dashboards fail because they show numbers without context. This project tries to make every major number answer three questions: what is it, why is it here, and what would change it? The dashboard uses native details/summary help panels, explanatory text, compact tables, mobile-first cards, and clear labels such as “diagnostic only,” “shadow active,” “manual review required,” and “not financial advice.”</p>
+
+      <p>The mobile work matters because the dashboard is likely to be checked from a phone. The first page needs to answer the obvious questions quickly: what is BTC doing, what is the bottom score, are alerts quiet, is the system reliable, and why is the score not higher? The deeper pages can carry the research tables, but the Overview page should not require a desktop monitor to be useful.</p>
+
+      <h2>Current limitations</h2>
+      <p>The biggest limitation is sample size. Bitcoin has only a handful of true cycle bottoms. Any model claiming mathematical certainty from that small history should be treated carefully. The dashboard handles this by capping its reliability rating, separating diagnostic evidence from promoted evidence, and requiring live proof before reliability improves.</p>
+
+      <p>The second limitation is source coverage. Some historical social and publication evidence is windowed rather than continuous. Some data families only begin in later market history. Some sources are public proxies rather than perfect institutional feeds. The dashboard shows these coverage issues instead of hiding them.</p>
+
+      <p>The third limitation is regime change. Bitcoin in 2015 is not Bitcoin in 2026. ETFs, stablecoins, derivatives markets, institutional flows, mining economics, regulation, and macro liquidity have changed. That does not make historical research useless, but it does mean the system must be conservative about promotion and live validation.</p>
+
+      <p>The fourth limitation is that price can move faster than research confidence. A browser-live chart can update every minute, but an evidence-grade bottom signal should not pretend to have minute-by-minute precision. This is a broad bottom-zone warning framework, not an exact-entry machine.</p>
+
+      <h2>What comes next</h2>
+      <p>The next phase is not to make the dashboard louder. It is to keep collecting proof. The live proof ledger should accumulate clean runs, false-setup follow-ups, and future capitulation-event evidence. Diagnostics should keep being tested, but promotion should remain locked behind strict gates. Strategy backtests can be expanded with staged buying, DCA windows, recovery triggers, monthly DCA baselines, and buy-and-hold comparisons. External benchmark coverage can be improved where better source access is available.</p>
+
+      <p>The ideal future state is a dashboard that is boring most days and extremely useful on the few days that matter. If Bitcoin is not in a strong bottom setup, it should say so. If the evidence improves, it should show exactly which evidence improved. If a shadow signal wants promotion, it should earn it slowly. If a diagnostic fails a guard regime, it should remain diagnostic.</p>
+
+      <h2>Final thought</h2>
+      <p>bitcoin.adrianmarikar.com is not an attempt to predict every Bitcoin move. It is an attempt to build a disciplined, auditable, public research system around one specific market question: when is Bitcoin showing rare bottom-zone evidence before a potential long bull run?</p>
+
+      <p>The site is useful to me because it does not just show a signal. It shows the signal’s confidence, its blockers, its research history, its live proof, its diagnostic alternatives, its deployment state, and its own limitations. That is the standard I want for any automated market research project: not perfect certainty, but honest evidence, conservative alerts, and enough transparency that a future mistake can be studied instead of hand-waved away.</p>
+
+      <p>If you want to follow the live research view, the dashboard is here: <a href="https://bitcoin.adrianmarikar.com/" rel="noopener">bitcoin.adrianmarikar.com</a>.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related build notes</h2>
+        <ul>
+          <li><a href="/posts/ai-app-factory-vps-hermes-coolify.html">My AI app factory</a><span>The VPS, Hermes, GitHub, Coolify, Cloudflare, and Telegram workflow behind projects like this.</span></li>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The static-site deploy and verification habits used across these public dashboards.</span></li>
+          <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>How source control, image builds, and redeploys stay repeatable.</span></li>
+          <li><a href="/posts/railside-ratings-evidence-ladder.html">The RailSide Ratings evidence ladder</a><span>A similar research-first approach applied to a different signal problem.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
