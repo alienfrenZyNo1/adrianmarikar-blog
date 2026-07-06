@@ -2,6 +2,8 @@
 !Dockerfile
 !nginx.conf
 !index.html
+!404.html
+!how-this-blog-is-built-and-maintained.html
 !styles.css
 !script.js
 !robots.txt
