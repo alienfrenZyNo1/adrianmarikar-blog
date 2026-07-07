@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Security Headers for a Static Nginx Site Behind Cloudflare and Coolify</title>
+      <link>https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html</link>
+      <guid>https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html</guid>
+      <pubDate>Tue, 07 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical security-header checklist for static nginx sites deployed through Coolify and Cloudflare: CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, testing, and rollback.</description>
+    </item>
+    <item>
       <title>Put Coolify Admin Behind Cloudflare Access Without Breaking Realtime Logs</title>
       <link>https://adrianmarikar.com/posts/coolify-admin-cloudflare-access-realtime.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-admin-cloudflare-access-realtime.html</guid>

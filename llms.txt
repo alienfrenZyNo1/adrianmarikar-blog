@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Security Headers for a Static Nginx Site Behind Cloudflare and Coolify: https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html
+  - Practical browser-header baseline for static HTML sites deployed through nginx, Coolify, and Cloudflare, including CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, local testing, live verification, and rollback.
 |- Put Coolify Admin Behind Cloudflare Access Without Breaking Realtime Logs: https://adrianmarikar.com/posts/coolify-admin-cloudflare-access-realtime.html
   - Practical checklist for putting a Coolify dashboard behind Cloudflare Tunnel and Access while preserving realtime logs, terminal websockets, public asset loading, and safe raw-port lockdown.
 |- Bitcoin Bottom Signal: Building an Evidence-First BTC Cycle Dashboard: https://adrianmarikar.com/posts/bitcoin-bottom-signal-dashboard-build-log.html
