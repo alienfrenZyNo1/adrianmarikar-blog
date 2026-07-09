@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist — Adrian Marikar</title>
+  <meta name="description" content="A practical checklist for debugging a Coolify app when GitHub has the new commit but production still serves the old page or image.">
+  <meta name="keywords" content="Coolify deploy not updating, GitHub push Coolify, Coolify deployment logs, static site deploy debugging, Docker image stale, self hosted CI CD">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html">
+  <!-- SEO discovery metadata -->
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist">
+  <meta property="og:description" content="What to check when GitHub has your new commit but a Coolify-managed app still serves the old HTML, CSS, container image, or route.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html">
+  <meta property="article:published_time" content="2026-07-09T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-09T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Deploy Not Updating After a GitHub Push">
+  <meta name="twitter:description" content="A field checklist for proving whether the problem is GitHub, Coolify, Docker build cache, routing, or browser/CDN cache.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist","description":"A practical checklist for debugging a Coolify app when GitHub has the new commit but production still serves the old page or image.","url":"https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html"},"datePublished":"2026-07-09T10:00:00Z","dateModified":"2026-07-09T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","GitHub deployments","deployment debugging","Docker","static sites","CI/CD","self-hosting"],"inLanguage":"en"}</script>
+  <!-- /SEO discovery metadata -->
+
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / DEPLOY DEBUGGING</p>
+        <h1>Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist</h1>
+      </header>
+
+      <p>You push a fix to GitHub, wait a minute, refresh the site, and nothing changes. The commit is definitely on the main branch. The page is definitely still old. This is one of the most common self-hosted deployment frustrations because there are several honest places for the update to get stuck.</p>
+
+      <p>This checklist is for the boring but useful question: <strong>where did the new version stop?</strong> It is written for GitHub-to-Coolify deployments, static sites served by nginx, Dockerfile apps, and small VPS projects where you would rather prove the deploy path than repeatedly click “Redeploy” and hope.</p>
+
+      <blockquote>Do not debug from the browser tab alone. Prove the commit, the Coolify deployment, the built container, the live route, and the cache layer separately.</blockquote>
+
+      <h2>1. Confirm the commit reached the branch Coolify watches</h2>
+      <p>Start with source control, not production. If the Coolify application is configured for <code>main</code>, prove that <code>origin/main</code> contains the commit you expect. If you deploy from another branch, check that exact branch instead.</p>
+
+      <pre><code>git fetch origin
+      git log --oneline -5 origin/main
+      git status --short --branch</code></pre>
+
+      <p>This catches simple mistakes: committing locally without pushing, pushing to a feature branch, or rebasing after Coolify already built a different revision. For private repositories, also remember that Coolify needs a working GitHub App or deploy-key path. GitHub's Actions documentation makes a related point for CI/CD workflows: secrets and tokens should be stored as repository or environment secrets, not pasted into workflow logs or source files.</p>
+
+      <h2>2. Check whether Coolify actually queued a deployment</h2>
+      <p>A successful Git push and a successful Coolify deployment are different events. If auto-deploy did not fire, the application may be perfectly healthy while still running yesterday's image.</p>
+
+      <p>In the Coolify UI, check the application's deployment list and compare the latest deployment time with the GitHub push time. If you automate via the API, trigger or inspect a deployment using the app UUID and a token that has the right team-scoped permissions. Keep the token out of shell history and reports.</p>
+
+      <pre><code># Shape only: do not paste real tokens into public docs
+curl -sS -X POST https://coolify.example.com/api/v1/deploy \
+  -H 'Authorization: Bearer REDACTED_TOKEN_VALUE' \
+  -H 'Content-Type: application/json' \
+  --data '{"uuid":"APP_UUID","force_rebuild":false}'</code></pre>
+
+      <p>If the request returns a deployment UUID, poll or open that specific deployment. If it fails, read the deployment log before changing anything else. Build logs usually point to the real layer: missing files, a bad Dockerfile, an unavailable package, or an app health check that never passes.</p>
+
+      <h2>3. Separate “build succeeded” from “new version is running”</h2>
+      <p>A green build is encouraging, but it is not proof that the new container is the one serving traffic. For static nginx sites, put a harmless version marker somewhere you can fetch: the new post URL, a metadata timestamp, or a visible heading. Then test production with a cache-busting query string.</p>
+
+      <pre><code>curl -I 'https://example.com/new-page.html?v=deploy-check'
+curl -sS 'https://example.com/new-page.html?v=deploy-check' | grep 'Expected heading'</code></pre>
+
+      <p>If the page returns <code>404</code>, the file may not be in the Docker build context, the route may be wrong, or the container may still be old. If it returns <code>200</code> but the content is old, continue down the chain instead of editing the article again.</p>
+
+      <h2>4. Look for Docker build-context and cache mistakes</h2>
+      <p>Static sites are especially easy to misread because the home page may update while a new folder or generated file is missing. Check the Dockerfile and <code>.dockerignore</code>. If the container only copies selected paths, make sure your new file is included.</p>
+
+      <pre><code>FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY . /usr/share/nginx/html</code></pre>
+
+      <p>When in doubt, build locally and inspect the container instead of assuming the local working tree matches production:</p>
+
+      <pre><code>docker build -t site-deploy-check .
+docker run --rm -p 8080:80 site-deploy-check</code></pre>
+
+      <p>For non-static apps, the same principle applies. Confirm that the image tag, build arguments, generated assets, migrations, and health check all describe the version you think you deployed.</p>
+
+      <h2>5. Check health checks and startup order</h2>
+      <p>Coolify may build a new image but keep traffic on the previous working container if the new one fails to become healthy. That is a good safety behaviour, but it can look like “Coolify ignored my push” from the outside.</p>
+
+      <ul>
+        <li>Read the failing deployment log, not just the app status badge.</li>
+        <li>Check whether the app listens on the expected port inside the container.</li>
+        <li>For Compose apps, confirm databases and queues have persistent volumes and realistic readiness checks.</li>
+        <li>Make sure <code>/health</code> or the configured health path does not redirect to a login page or a canonical domain.</li>
+      </ul>
+
+      <p>Health checks should prove the app is ready, not merely that a process exists. They should also avoid requiring secrets or user sessions.</p>
+
+      <h2>6. Eliminate browser, CDN, and asset caching</h2>
+      <p>If HTML is new but CSS or JavaScript is old, you are probably looking at an asset-cache problem rather than a failed deployment. Version static assets by filename or query string, and fetch them directly.</p>
+
+      <pre><code>curl -I 'https://example.com/styles.css?v=20260709'
+curl -sS 'https://example.com/' | grep 'styles.css?v=20260709'</code></pre>
+
+      <p>For Cloudflare-fronted sites, separate origin behaviour from edge behaviour where possible. The safest public guidance is generic: purge only when you understand what is cached, prefer versioned assets for routine changes, and avoid disabling caching globally just to fix one stale file.</p>
+
+      <h2>7. Verify discovery files after the app is live</h2>
+      <p>For blogs and documentation sites, the deploy is not finished when the new page returns <code>200</code>. RSS, sitemap, and LLM-readable summary files need to point at the same version. Otherwise a human can read the page while feed readers and crawlers miss it.</p>
+
+      <pre><code>curl -fsS https://example.com/feed.xml | grep 'New post title'
+curl -fsS https://example.com/sitemap.xml | grep 'new-post.html'
+curl -fsS https://example.com/llms.txt | grep 'New post title'</code></pre>
+
+      <p>I do this after the Coolify deployment finishes, not before. Submitting a URL to discovery systems before the live site serves it is an easy way to create noisy crawl failures.</p>
+
+      <h2>8. Keep the rollback path boring</h2>
+      <p>The best time to think about rollback is before you need it. A clean Git commit, a deployment UUID, and a small set of live checks make rollback straightforward: revert the commit, trigger a new deployment, and verify the same URLs again.</p>
+
+      <p>Avoid hot-swapping containers by hand unless there is a real production incident and the normal GitHub-to-Coolify path is blocked. Manual swaps can be useful in an emergency, but they create drift from the deployment ledger and should be synced back to Git immediately afterwards.</p>
+
+      <h2>The short checklist</h2>
+      <ol>
+        <li>Prove the expected commit is on the branch Coolify watches.</li>
+        <li>Confirm a Coolify deployment was queued after that commit.</li>
+        <li>Read the specific deployment log if it failed or stalled.</li>
+        <li>Build locally if the problem may be Docker context, generated files, or permissions.</li>
+        <li>Check health checks, app ports, and startup dependencies.</li>
+        <li>Fetch live HTML and assets with cache-busting query strings.</li>
+        <li>Verify RSS, sitemap, and other discovery files after production changes.</li>
+        <li>Rollback through Git and Coolify rather than inventing a second deployment path.</li>
+      </ol>
+
+      <p>The habit that matters is traceability. A GitHub push is one checkpoint; a Coolify deployment UUID is another; the live HTML is another. Once you treat those as separate proofs, “my deploy did nothing” usually becomes a smaller, fixable problem.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related deployment notes</h2>
+        <ul>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The normal publish path for static HTML, nginx, RSS, sitemap, Docker, and live verification.</span></li>
+          <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>Use a workflow and deployment webhook when GitHub should build the image before Coolify runs it.</span></li>
+          <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Stateful apps need persistent storage and readiness checks before a deploy can be trusted.</span></li>
+          <li><a href="/posts/security-headers-static-nginx-cloudflare-coolify.html">Security headers for a static nginx site</a><span>After deployment is reliable, add and verify a browser-security header baseline.</span></li>
+          <li><a href="/posts/indexnow-static-site-coolify.html">IndexNow for static sites after a Coolify deploy</a><span>Discovery pings belong after the live site, feed, and sitemap prove the new URL exists.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

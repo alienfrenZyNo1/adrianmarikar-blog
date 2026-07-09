@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist</title>
+      <link>https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html</guid>
+      <pubDate>Thu, 09 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical checklist for debugging a Coolify app when GitHub has the new commit but production still serves old HTML, CSS, container images, routes, or cached assets.</description>
+    </item>
+    <item>
       <title>Security Headers for a Static Nginx Site Behind Cloudflare and Coolify</title>
       <link>https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html</link>
       <guid>https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html</guid>
