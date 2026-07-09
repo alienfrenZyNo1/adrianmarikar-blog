@@ -98,8 +98,8 @@ a:hover { color: var(--green); }
   box-shadow: 0 0 32px rgba(0,217,146,.22), inset 0 0 18px rgba(0,217,146,.08);
 }
 .brand-mark::after { content: ''; position: absolute; inset: -4px; border: 1px solid rgba(0,217,146,.16); border-radius: .9rem; }
-nav { display: flex; gap: .45rem; color: var(--muted); font-size: .92rem; }
-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: .4rem .75rem; border: 1px solid transparent; border-radius: 999px; text-decoration: none; }
+nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; color: var(--muted); font-size: .92rem; }
+nav a { min-height: 44px; display: inline-flex; align-items: center; padding: .4rem .62rem; border: 1px solid transparent; border-radius: 999px; text-decoration: none; }
 nav a:hover { border-color: rgba(0,217,146,.28); background: rgba(0,217,146,.06); }
 
 .hero {

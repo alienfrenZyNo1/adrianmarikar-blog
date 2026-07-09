@@ -25,9 +25,20 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
-    <nav><a href="/">Home</a><a href="/feed.xml">RSS</a><a href="mailto:hello@adrianmarikar.com">Contact</a></nav>
-  </header>
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
 
   <main>
     <article class="article">
@@ -303,7 +314,7 @@ Do not expose secrets. Commit everything and report the repo and URL.</code></pr
         <p class="eyebrow">// keep reading</p>
         <h2>Related build notes</h2>
         <ul>
-          <li><a href="/posts/how-this-blog-is-built-and-maintained.html\">How this blog is built and maintained</a><span>A practical example of the same deployment loop applied to this static blog.</span></li>
+          <li><a href="/posts/how-this-blog-is-built-and-maintained.html">How this blog is built and maintained</a><span>A practical example of the same deployment loop applied to this static blog.</span></li>
           <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>How to build images in GitHub Actions, push to GHCR, and trigger a Coolify redeploy via webhook.</span></li>
           <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The self-hosted mail layer that supports projects on the VPS.</span></li>
         </ul>
