@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets</title>
+      <link>https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html</link>
+      <guid>https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html</guid>
+      <pubDate>Sat, 11 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical Cache-Control policy for static nginx sites behind Cloudflare: short-lived HTML and discovery files, long-lived versioned assets, targeted purges, and live header checks.</description>
+    </item>
+    <item>
       <title>Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist</title>
       <link>https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html</guid>

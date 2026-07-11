@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets — Adrian Marikar</title>
+  <meta name="description" content="A practical Cache-Control policy for a static nginx site behind Cloudflare: keep HTML fresh, cache versioned CSS and JavaScript hard, and avoid routine full-cache purges.">
+  <meta name="keywords" content="Cache-Control static HTML Cloudflare, nginx cache control static site, Cloudflare stale CSS fix, immutable cache versioned assets, static site deployment caching">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets">
+  <meta property="og:description" content="An nginx and Cloudflare caching policy that keeps new posts visible while preserving long-lived caching for versioned CSS and JavaScript.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html">
+  <meta property="article:published_time" content="2026-07-11T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-11T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Cache-Control for Static HTML Behind Cloudflare">
+  <meta name="twitter:description" content="Keep HTML fresh, cache versioned assets hard, and stop treating full CDN purges as a normal deploy step.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets","description":"A practical Cache-Control policy for a static nginx site behind Cloudflare: keep HTML fresh, cache versioned CSS and JavaScript hard, and avoid routine full-cache purges.","url":"https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html"},"datePublished":"2026-07-11T10:00:00Z","dateModified":"2026-07-11T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Cache-Control","Cloudflare","nginx","static sites","deployment caching","web performance"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav aria-label="Primary navigation">
+      <a href="/#writing">Writing</a><a href="/categories/ai-agents.html">AI agents</a><a href="/categories/newbizfeed.html">NewBizFeed</a><a href="/categories/dryhomeadvice.html">Dry Home Advice</a><a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a><a href="/#about">About</a><a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </header>
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header><p class="date">2026.07 / STATIC SITE OPERATIONS</p><h1>Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets</h1></header>
+
+      <p>A new post is live at the origin, but a reader gets yesterday’s homepage or a broken-looking mix of new HTML and old CSS. That is usually not a Cloudflare problem to “solve” by purging everything. It is a cache-policy problem: HTML and versioned assets have different jobs and should not share one lifetime.</p>
+
+      <p>This is a practical policy for a small static site served by nginx and fronted by Cloudflare. It answers the long-tail question I keep seeing in deploy incidents: <strong>what Cache-Control headers should static HTML, CSS, and JavaScript use so a release is fresh without throwing away CDN performance?</strong></p>
+
+      <blockquote>Cache documents conservatively. Cache assets aggressively only when their URL changes with their contents.</blockquote>
+
+      <h2>The policy in one table</h2>
+      <table>
+        <thead><tr><th>Response</th><th>Useful starting policy</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>HTML, RSS, sitemap, robots</td><td><code>public, max-age=300</code></td><td>Five minutes is short enough for a normal publishing loop while still allowing browser and edge reuse.</td></tr>
+          <tr><td>CSS and JavaScript with a bumped version or content hash</td><td><code>public, max-age=2592000, immutable</code></td><td>Clients can reuse the same immutable URL for 30 days because a changed file gets a changed URL.</td></tr>
+          <tr><td>Images with stable filenames that might be replaced</td><td>Shorter TTL, or rename/version them</td><td><code>immutable</code> is a promise; do not make it for a URL whose bytes may change.</td></tr>
+        </tbody>
+      </table>
+
+      <p>The exact numbers are a product decision, not a law. The split is the important part. MDN describes <code>max-age</code> as a freshness lifetime and <code>immutable</code> as a signal that a fresh response will not change during that lifetime. Cloudflare’s cache documentation recommends targeted purges such as a single URL when a purge is genuinely needed. Those two ideas fit well together: use predictable URLs and headers first; use a narrow purge for the exception.</p>
+
+      <h2>Why HTML should not be immutable</h2>
+      <p>For a hand-maintained blog, <code>/</code>, post pages, <code>feed.xml</code>, and <code>sitemap.xml</code> are the discovery surface. They can change at the same URL. Sending a year-long immutable header for them makes a deploy look unreliable even when the container is correct.</p>
+
+      <p>A small shared default works well in nginx:</p>
+      <pre><code>server {
+  # Other server and security settings omitted.
+  add_header Cache-Control "public, max-age=300" always;
+
+  location / {
+    try_files $uri $uri/ =404;
+  }
+}</code></pre>
+
+      <p>This lets ordinary documents revalidate or become fresh again quickly. It also means a new page does not require a global CDN purge just because the homepage now links to it. If the site has a genuine editorial requirement for instant HTML changes, reduce the value further or use targeted invalidation; do not silently turn every file into a long-lived immutable object.</p>
+
+      <h2>Long-lived assets require changed URLs</h2>
+      <p>Long caching pays off most for CSS and JavaScript. The safe condition is simple: when the contents change, the public URL must change too. A build system may produce <code>app.3f8c2a.css</code>. A small hand-written site can use an explicit version query:</p>
+      <pre><code>&lt;link rel="stylesheet" href="/styles.css?v=20260711-cache1"&gt;
+&lt;script src="/script.js?v=20260711-cache1"&gt;&lt;/script&gt;</code></pre>
+
+      <p>Then nginx can give those asset responses a long freshness lifetime:</p>
+      <pre><code>location ~* \.(css|js|png|jpg|jpeg|gif|svg|webp|ico)$ {
+  expires 30d;
+  add_header Cache-Control "public, max-age=2592000, immutable" always;
+  try_files $uri =404;
+}</code></pre>
+
+      <p>Do not add <code>immutable</code> to <code>/styles.css</code> if you plan to overwrite that URL and leave every HTML page pointing to it. A query string is part of the cache key in normal HTTP caching, but it only helps if the HTML references the new string. Prefer filename hashes in a generated site; a deliberate query bump is a reasonable low-tech equivalent for a manual one.</p>
+
+      <h2>Cloudflare: origin headers first, purge second</h2>
+      <p>Cloudflare may cache at the edge according to your configuration and origin response headers. Before changing a setting, inspect the actual response rather than relying on a dashboard toggle or one browser tab:</p>
+      <pre><code>curl -sSI https://example.com/ | grep -Ei 'cache-control|age|cf-cache-status'
+curl -sSI 'https://example.com/styles.css?v=20260711-cache1' | grep -Ei 'cache-control|age|cf-cache-status'</code></pre>
+
+      <p>The first request after an edge miss can show a different cache status from later requests. That is normal. What matters is that the HTML response has the short policy and the versioned asset has the long policy you intended. Test the body too when debugging a release:</p>
+      <pre><code>curl -fsS 'https://example.com/?v=release-check' | grep 'Expected new heading'
+curl -fsS 'https://example.com/?v=release-check' | grep 'styles.css?v=20260711-cache1'</code></pre>
+
+      <p>If an emergency purge is necessary, purge the one changed URL or a deliberately scoped set. A full purge drops useful cached content for every visitor and can hide the real issue: an unchanged asset URL, a deployment that never ran, or a Cloudflare cache rule that overrides the origin.</p>
+
+      <h2>Release sequence for a static blog</h2>
+      <ol>
+        <li>Change HTML and update the CSS/JS URL if those assets changed.</li>
+        <li>Build the same nginx image that production will run.</li>
+        <li>Fetch local HTML and assets; confirm the post exists and the expected asset version is referenced.</li>
+        <li>Push and wait for the named Coolify deployment to finish.</li>
+        <li>Fetch the live post, homepage, <code>feed.xml</code>, and <code>sitemap.xml</code> with a harmless query string.</li>
+        <li>Inspect live cache headers. Only then use a targeted Cloudflare purge if a specific URL remains stale beyond its policy.</li>
+      </ol>
+
+      <p>This fits the broader deploy-debugging approach: a Git commit, a successful Coolify deployment, an origin response, and an edge response are separate checks. Treating them as one event makes cache failures look mysterious.</p>
+
+      <h2>Two common mistakes</h2>
+      <h3>“Disable caching everywhere”</h3>
+      <p>This makes a one-off stale page disappear but gives up a major benefit of a static site. Keep cacheable assets cacheable. Keep documents short-lived enough for your publishing cadence.</p>
+      <h3>“Purge everything after every commit”</h3>
+      <p>A routine full purge turns cache invalidation into an operational dependency and can create a performance dip for visitors. It is a poor substitute for versioned assets. Reserve it for a real incident, and prefer the narrowest purge Cloudflare supports.</p>
+
+      <h2>A boring policy is a reliable policy</h2>
+      <p>Static-site caching does not need a complicated stack. Give changeable documents a short TTL. Give content-addressed or deliberately versioned assets a long immutable TTL. Verify headers and live content after each release. With that division in place, Cloudflare becomes a useful edge cache rather than another guess in the deployment chain.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p><h2>Related deployment notes</h2>
+        <ul>
+          <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Trace a stale release through GitHub, Coolify, Docker, routing, and cache layers.</span></li>
+          <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>A complete GitHub-to-nginx production checklist for a small HTML site.</span></li>
+          <li><a href="/posts/security-headers-static-nginx-cloudflare-coolify.html">Security headers for a static nginx site</a><span>Add browser security headers without confusing them with caching policy.</span></li>
+          <li><a href="/posts/indexnow-static-site-coolify.html">IndexNow for static sites after a Coolify deploy</a><span>Send discovery pings only after the new page and its discovery files are live.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

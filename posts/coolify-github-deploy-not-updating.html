@@ -152,6 +152,7 @@ curl -fsS https://example.com/llms.txt | grep 'New post title'</code></pre>
         <h2>Related deployment notes</h2>
         <ul>
           <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The normal publish path for static HTML, nginx, RSS, sitemap, Docker, and live verification.</span></li>
+          <li><a href="/posts/cache-control-static-html-cloudflare.html">Cache-Control for static HTML behind Cloudflare</a><span>Set short-lived document caching and long-lived versioned asset caching before reaching for a full CDN purge.</span></li>
           <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>Use a workflow and deployment webhook when GitHub should build the image before Coolify runs it.</span></li>
           <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Stateful apps need persistent storage and readiness checks before a deploy can be trusted.</span></li>
           <li><a href="/posts/security-headers-static-nginx-cloudflare-coolify.html">Security headers for a static nginx site</a><span>After deployment is reliable, add and verify a browser-security header baseline.</span></li>

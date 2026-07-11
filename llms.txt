@@ -10,7 +10,9 @@
 
 ## Current posts and categories
 
-|- Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist: https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html
+|- Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets: https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html
+  - Practical nginx and Cloudflare cache policy for static sites: short-lived HTML, RSS, and sitemaps; long-lived versioned CSS/JS; targeted purge discipline; and live header verification.
+| - Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist: https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html
   - Practical debug checklist for stale Coolify deployments after GitHub pushes, covering watched branches, deployment UUIDs and logs, Docker build context, health checks, cache-busted live verification, RSS/sitemap checks, and safe rollback.
 |- Security Headers for a Static Nginx Site Behind Cloudflare and Coolify: https://adrianmarikar.com/posts/security-headers-static-nginx-cloudflare-coolify.html
   - Practical browser-header baseline for static HTML sites deployed through nginx, Coolify, and Cloudflare, including CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, local testing, live verification, and rollback.
