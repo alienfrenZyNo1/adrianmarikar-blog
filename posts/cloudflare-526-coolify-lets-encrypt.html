@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS — Adrian Marikar</title>
+  <meta name="description" content="A safe cutover checklist for fixing Cloudflare 526 errors when a new Coolify app does not yet have a valid origin certificate.">
+  <meta name="keywords" content="Cloudflare error 526 Coolify, invalid SSL certificate Coolify, Let's Encrypt Coolify Cloudflare, Full strict 526, Traefik certificate troubleshooting">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS">
+  <meta property="og:description" content="A practical DNS, Traefik, and certificate checklist for a safe Cloudflare-to-Coolify hostname cutover.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html">
+  <meta property="article:published_time" content="2026-07-13T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-13T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix Cloudflare Error 526 on a Coolify App">
+  <meta name="twitter:description" content="Prove DNS, routing, and the origin certificate before restoring Cloudflare Full (strict).">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS","description":"A safe cutover checklist for fixing Cloudflare 526 errors when a new Coolify app does not yet have a valid origin certificate.","url":"https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html"},"datePublished":"2026-07-13T10:00:00Z","dateModified":"2026-07-13T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Cloudflare error 526","Coolify","Let's Encrypt","Traefik","Full strict TLS","self-hosting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / TLS TROUBLESHOOTING</p>
+        <h1>Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS</h1>
+      </header>
+
+      <p>A Cloudflare <strong>526 Invalid SSL certificate</strong> error often appears during a custom-domain move: DNS now sends visitors toward the new VPS, Cloudflare can reach port 443, but Coolify’s Traefik proxy is still serving a default, expired, untrusted, or wrong-host certificate.</p>
+
+      <p>The tempting fix is to turn off strict certificate validation and move on. That may hide the symptom, but it removes the proof that Cloudflare is talking to the intended origin. A better fix is to separate the three systems involved—Cloudflare’s edge certificate, the origin certificate, and Coolify’s hostname routing—and verify each one.</p>
+
+      <blockquote>A 526 is usually not an edge-certificate problem. Cloudflare accepted the browser connection, then rejected the certificate presented by the origin.</blockquote>
+
+      <h2>What Cloudflare 526 actually means</h2>
+      <p>Cloudflare’s <a href="https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-526/" rel="noopener noreferrer">526 documentation</a> says the error occurs when the zone uses <code>Full (strict)</code> and Cloudflare cannot validate the origin certificate. Its <a href="https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/" rel="noopener noreferrer">Full (strict) requirements</a> include an unexpired certificate from a publicly trusted CA or Cloudflare Origin CA, a matching hostname, and HTTPS availability on port 443.</p>
+
+      <p>This is different from a 525, where the TLS handshake itself fails. With a 526, the useful question is: <strong>which certificate does the origin present for this exact hostname?</strong></p>
+
+      <h2>1. Stop and preserve the last known-good route</h2>
+      <p>If this is a live hostname migration, write down the old DNS target before changing anything. Do not delete the old application or origin while diagnosing the new one. A quick rollback is safer than stacking speculative DNS, proxy, and TLS changes.</p>
+
+      <p>Also check that the hostname was added to the intended Coolify application before the DNS cutover. Traefik selects routers and certificates using the requested hostname; a healthy container without a matching domain can still produce a default certificate or a 404.</p>
+
+      <h2>2. Confirm public DNS points where you think it does</h2>
+      <pre><code>dig +short A app.example.com
+      dig +short AAAA app.example.com
+      dig +short CNAME app.example.com</code></pre>
+
+      <p>Check all record types, not only the A record. A stale AAAA record can send some validation requests and visitors to an old IPv6 origin. A leftover CNAME can produce the same split behaviour. Compare the answer with your intended destination privately; never publish a real origin address in a troubleshooting post or ticket.</p>
+
+      <h2>3. Give Let’s Encrypt a reachable validation path</h2>
+      <p>For a normal public Coolify application, the least surprising cutover is often:</p>
+      <ol>
+        <li>Add the final hostname to the Coolify application.</li>
+        <li>Make sure inbound ports 80 and 443 reach Coolify’s proxy.</li>
+        <li>Temporarily set that web DNS record to <strong>DNS only</strong>.</li>
+        <li>Deploy or restart the proxy/app so certificate issuance runs.</li>
+        <li>Wait for a valid certificate for the exact hostname.</li>
+        <li>Verify the certificate directly, then restore the Cloudflare proxy.</li>
+      </ol>
+
+      <p><a href="https://letsencrypt.org/docs/challenge-types/" rel="noopener noreferrer">Let’s Encrypt documents</a> that HTTP-01 validation starts on port 80. Coolify’s own <a href="https://coolify.io/docs/troubleshoot/dns-and-domains/lets-encrypt-not-working" rel="noopener noreferrer">Let’s Encrypt troubleshooting guide</a> likewise calls out ports 80/443, correct DNS, and Cloudflare proxy settings. If your firewall blocks port 80, HTTP-01 issuance cannot be rescued by opening a random alternative port.</p>
+
+      <p>DNS-only mode is a temporary issuance and diagnosis step, not a reason to leave an origin exposed indefinitely. If your architecture deliberately uses Cloudflare Tunnel or DNS-01 validation, follow that architecture’s certificate path instead of mixing it with HTTP-01 advice.</p>
+
+      <h2>4. Inspect the origin certificate with SNI</h2>
+      <p>A generic request to the server’s address is not enough. TLS virtual hosting depends on Server Name Indication, so test with the real hostname while privately directing the connection to the intended origin:</p>
+
+      <pre><code>openssl s_client \
+        -connect ORIGIN_IP_HERE:443 \
+        -servername app.example.com \
+        -verify_hostname app.example.com \
+        -showcerts &lt;/dev/null</code></pre>
+
+      <p>Look for a successful verification result, a validity period covering the current date, and a Subject Alternative Name containing <code>app.example.com</code>. Do not paste the full output into public reports without reviewing it first.</p>
+
+      <p>You can also prove the HTTP route while bypassing public DNS:</p>
+
+      <pre><code>curl --resolve app.example.com:443:ORIGIN_IP_HERE \
+        -I https://app.example.com/health</code></pre>
+
+      <p>A certificate-name error means issuance or SNI routing is still wrong. A valid certificate plus a Traefik 404 suggests the hostname does not match a router. A 502 or 503 usually moves the investigation behind Traefik, toward the application port, network, or health state.</p>
+
+      <h2>5. Check Coolify and Traefik, not just the container</h2>
+      <p>In Coolify, verify the application’s domain list, deployment status, exposed port, and health check. Then inspect proxy logs around the certificate request. Useful failure classes include:</p>
+      <ul>
+        <li>DNS resolves to a different server than the one requesting the certificate.</li>
+        <li>Port 80 or 443 is blocked or occupied by another proxy.</li>
+        <li>The hostname is missing from the application’s domains.</li>
+        <li>A restrictive CAA record does not allow the chosen certificate authority.</li>
+        <li>Rate limits were reached after repeated retries.</li>
+        <li>The certificate exists, but Traefik has not loaded it for this router.</li>
+      </ul>
+
+      <p>If you recently tightened CAA records, use the checks in my <a href="/posts/caa-records-letsencrypt-cloudflare-coolify.html">CAA guide for Coolify and Cloudflare</a>. Do not keep hammering redeploy while the same DNS or firewall prerequisite remains broken.</p>
+
+      <h2>6. Re-enable Cloudflare only after direct origin proof</h2>
+      <p>Once direct SNI verification succeeds, turn the Cloudflare proxy back on and keep the zone at <code>Full (strict)</code>. Then test the public path from a clean client:</p>
+
+      <pre><code>curl -sS -o /dev/null -w '%{http_code}\n' https://app.example.com/
+      curl -I https://app.example.com/health</code></pre>
+
+      <p>Expect the application’s normal status and confirm that any canonical redirect lands on the intended HTTPS hostname. If Cloudflare still returns 526 after the origin test passes, allow for DNS propagation, confirm Cloudflare now resolves the intended origin, and re-check that the hostname tested is exactly the hostname requested by visitors.</p>
+
+      <h2>Should you switch from Full (strict) to Full?</h2>
+      <p>Cloudflare lists <code>Full</code> as a possible temporary workaround because it encrypts the origin connection without validating the origin certificate. That can restore availability during an incident, but it should be time-bounded and paired with a rollback plan. It is not the completed fix.</p>
+
+      <p>Never use <code>Flexible</code> for this pattern. Flexible mode leaves the Cloudflare-to-origin leg on HTTP and can create redirect loops when the application expects HTTPS.</p>
+
+      <h2>A safe 526 recovery checklist</h2>
+      <ol>
+        <li>Preserve the previous DNS target and rollback option.</li>
+        <li>Add the exact hostname to the correct Coolify application.</li>
+        <li>Check A, AAAA, CNAME, CAA, and inbound ports 80/443.</li>
+        <li>Use DNS-only mode temporarily when HTTP-01 needs direct reachability.</li>
+        <li>Inspect the origin certificate with SNI and hostname verification.</li>
+        <li>Prove Traefik routes the hostname to a healthy application.</li>
+        <li>Re-enable Cloudflare proxying and retain Full (strict).</li>
+        <li>Verify the public page, redirects, health endpoint, and certificate path.</li>
+      </ol>
+
+      <p>The core lesson is sequencing. Configure the Coolify hostname first, make validation reachable, prove the origin certificate, and only then put the strict Cloudflare proxy path back in front. That turns a vague 526 page into a small set of testable conditions without permanently weakening TLS.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related infrastructure notes</h2>
+        <ul>
+          <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Choose proxied and DNS-only records without breaking web or mail services.</span></li>
+          <li><a href="/posts/caa-records-letsencrypt-cloudflare-coolify.html">CAA records for self-hosted sites</a><span>Allow the certificate authorities your real issuance paths require.</span></li>
+          <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Separate source, build, health, routing, and cache failures.</span></li>
+          <li><a href="/posts/cloudflare-tunnel-self-hosted-vps.html">Cloudflare Tunnel for self-hosted VPS apps</a><span>Use a tunnel when services should not accept direct public inbound traffic.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS</title>
+      <link>https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html</link>
+      <guid>https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html</guid>
+      <pubDate>Mon, 13 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A safe cutover checklist for fixing Cloudflare 526 errors by proving Coolify hostname routing, Let’s Encrypt reachability, and the origin certificate before restoring Full (strict).</description>
+    </item>
+    <item>
       <title>Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets</title>
       <link>https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html</link>
       <guid>https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html</guid>

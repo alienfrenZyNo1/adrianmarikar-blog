@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS: https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html
+  - Safe recovery checklist for Cloudflare Full (strict) origin-certificate failures, covering DNS-only HTTP-01 issuance, Coolify/Traefik hostname routing, SNI verification, rollback, and public-path checks.
 |- Cache-Control for Static HTML Behind Cloudflare: Fresh Pages, Fast Assets: https://adrianmarikar.com/posts/cache-control-static-html-cloudflare.html
   - Practical nginx and Cloudflare cache policy for static sites: short-lived HTML, RSS, and sitemaps; long-lived versioned CSS/JS; targeted purge discipline; and live header verification.
 | - Coolify Deploy Not Updating After a GitHub Push: A Practical Debug Checklist: https://adrianmarikar.com/posts/coolify-github-deploy-not-updating.html
