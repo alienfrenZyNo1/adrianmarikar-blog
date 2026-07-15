@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Emails Going to Spam: A Deliverability Checklist — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver deliverability checklist for diagnosing Gmail or Outlook spam placement using PTR, SPF, DKIM, DMARC alignment, TLS, logs, and message headers.">
+  <meta name="keywords" content="Docker Mailserver emails going to spam, Docker Mailserver deliverability, SPF DKIM DMARC, reverse DNS PTR, self-hosted email Gmail spam">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Emails Going to Spam: A Deliverability Checklist">
+  <meta property="og:description" content="Diagnose self-hosted mail placement in the right order: identity, PTR, authentication, alignment, reputation, headers, and controlled tests.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html">
+  <meta property="article:published_time" content="2026-07-15T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-15T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Emails Going to Spam: A Deliverability Checklist">
+  <meta name="twitter:description" content="A practical PTR, SPF, DKIM, DMARC, TLS, reputation, logs, and message-header checklist for self-hosted mail.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Emails Going to Spam: A Deliverability Checklist","description":"A practical Docker Mailserver deliverability checklist for diagnosing Gmail or Outlook spam placement using PTR, SPF, DKIM, DMARC alignment, TLS, logs, and message headers.","url":"https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html"},"datePublished":"2026-07-15T10:00:00Z","dateModified":"2026-07-15T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver deliverability","email going to spam","SPF","DKIM","DMARC alignment","PTR reverse DNS","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Adrian Marikar home">
+      <span class="brand-mark">AM</span>
+      <span>Adrian Marikar</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / EMAIL DELIVERABILITY 030</p>
+        <h1>Docker Mailserver Emails Going to Spam: A Deliverability Checklist</h1>
+      </header>
+
+      <p>Your Docker Mailserver container is healthy. SMTP accepts the message. The recipient server returns <code>250 OK</code>. Then the email lands in spam.</p>
+
+      <p>That is not one problem with one switch. Delivery proves that a receiving server accepted the message; inbox placement is a later trust decision. The useful way to debug it is to work from machine identity and authentication outward, using the received message headers as evidence instead of changing DNS records at random.</p>
+
+      <blockquote>Start with one controlled message, inspect what the recipient actually saw, and fix failed checks before trying to “improve reputation.”</blockquote>
+
+      <h2>First: distinguish rejection, deferral, and spam placement</h2>
+      <p>These outcomes need different investigations:</p>
+      <ul>
+        <li><strong>Rejected:</strong> the remote SMTP server returns a permanent <code>5xx</code> response. Read the enhanced status code and provider link in the bounce.</li>
+        <li><strong>Deferred:</strong> the server returns a temporary <code>4xx</code> response. Postfix should queue and retry; inspect the queue and logs rather than repeatedly resending.</li>
+        <li><strong>Accepted into spam:</strong> SMTP completed, but filtering classified the message. Inspect the recipient copy’s full headers.</li>
+      </ul>
+      <p>Do not run dozens of test sends. Repetition from a new or misconfigured host adds noise and may make reputation signals worse.</p>
+
+      <h2>1. Make the server identity internally consistent</h2>
+      <p>A self-hosted mail server should have one stable, fully qualified hostname such as <code>mail.example.com</code>. Four views of that identity should agree:</p>
+      <ol>
+        <li>The server’s public address has a PTR (reverse-DNS) record returning <code>mail.example.com</code>.</li>
+        <li><code>mail.example.com</code> resolves forward to that same sending address.</li>
+        <li>Postfix announces that hostname in its SMTP banner and EHLO.</li>
+        <li>The SMTP TLS certificate is valid for that hostname.</li>
+      </ol>
+      <p>PTR is normally configured in the VPS provider’s control panel, not at your ordinary DNS host. Do not invent a second PTR per mailbox domain: one server can send for several domains while keeping one machine identity.</p>
+
+      <pre><code># Forward lookup
+      dig +short A mail.example.com
+
+# Reverse lookup — use your own address, never a copied example
+      dig +short -x &lt;server-address&gt;
+
+# Check STARTTLS, certificate, and SMTP conversation
+      openssl s_client -starttls smtp \
+        -connect mail.example.com:25 \
+        -servername mail.example.com</code></pre>
+
+      <p><a href="https://support.google.com/a/answer/81126?hl=en" rel="noopener noreferrer">Google’s sender guidelines</a> explicitly require valid forward and reverse DNS for sending domains or IPs. A PTR is not a substitute for message authentication, but a missing or generic PTR is a foundational fault.</p>
+
+      <h2>2. Publish one accurate SPF policy</h2>
+      <p>SPF says which systems may use a domain in the SMTP envelope sender. For a simple host whose MX is the only sender, the policy might be:</p>
+
+      <pre><code>example.com.  TXT  "v=spf1 mx -all"</code></pre>
+
+      <p>That is an example, not a value to copy blindly. If a website, helpdesk, newsletter provider, or transactional relay also sends as the domain, the policy must authorize the real mail flow. Publish <strong>one</strong> SPF record: two separate <code>v=spf1</code> TXT records produce a permanent error rather than a stricter policy.</p>
+
+      <pre><code>dig +short TXT example.com</code></pre>
+
+      <p>SPF can pass yet fail DMARC alignment when the authenticated envelope domain differs from the address visible in <code>From:</code>. That distinction matters more than a green “SPF pass” badge.</p>
+
+      <h2>3. Confirm DKIM is signing the message you sent</h2>
+      <p>DKIM attaches a cryptographic signature to the message. Docker Mailserver can generate the key material, but three things still have to line up:</p>
+      <ul>
+        <li>the outbound message contains a <code>DKIM-Signature</code> header;</li>
+        <li>its <code>d=</code> signing domain is the intended domain;</li>
+        <li>the selector in <code>s=</code> resolves to the matching public key in DNS.</li>
+      </ul>
+
+      <pre><code># If the signature says s=mail and d=example.com
+dig +short TXT mail._domainkey.example.com</code></pre>
+
+      <p>With multi-domain setups, generating a key is not always the same as enabling signing for that domain—especially when a custom Rspamd signing map already exists. Preserve working domain entries and add the new domain beside them. The Docker Mailserver project’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC, and SPF guide</a> documents the current signing workflow.</p>
+
+      <h2>4. Check DMARC alignment, not merely record presence</h2>
+      <p>DMARC evaluates whether the visible <code>From:</code> domain aligns with a domain authenticated by SPF or DKIM. At least one aligned path must pass. A practical rollout begins with reporting rather than an immediate reject policy:</p>
+
+      <pre><code>_dmarc.example.com. TXT \
+  "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"</code></pre>
+
+      <p>Create the report mailbox or alias before publishing it, and remember that aggregate reports may contain metadata about your mail flows. After observing every legitimate sender and fixing alignment, move deliberately toward <code>quarantine</code> or <code>reject</code>. A stricter policy does not repair broken alignment.</p>
+
+      <p>Google requires SPF or DKIM for all senders to personal Gmail accounts and imposes SPF, DKIM, DMARC, alignment, and additional requirements on bulk senders. Even a low-volume personal server benefits from deploying all three correctly.</p>
+
+      <h2>5. Read the recipient’s Authentication-Results header</h2>
+      <p>In Gmail, use <em>Show original</em>. Other clients usually expose “view source” or “view message details.” Look for a block shaped like this:</p>
+
+      <pre><code>Authentication-Results: recipient.example;
+  spf=pass smtp.mailfrom=example.com;
+  dkim=pass header.d=example.com;
+  dmarc=pass header.from=example.com</code></pre>
+
+      <p>The recipient’s result is more useful than a DNS checker alone because it evaluates the message that really arrived. Diagnose each failure literally:</p>
+      <ul>
+        <li><code>spf=fail</code>: the observed sender was not authorized, or DNS returned the wrong policy.</li>
+        <li><code>dkim=none</code>: the message was not signed.</li>
+        <li><code>dkim=fail</code>: selector/key mismatch, malformed DNS, or message modification broke the signature.</li>
+        <li><code>dmarc=fail</code>: neither passing mechanism aligned with the visible From domain.</li>
+      </ul>
+
+      <h2>6. Inspect Docker Mailserver and Postfix evidence</h2>
+      <p>Use your actual Compose service or container name. Keep message IDs and remote SMTP responses; redact addresses before sharing logs publicly.</p>
+
+      <pre><code># Recent mail logs
+docker logs --since 30m mailserver
+
+# Queue summary
+docker exec mailserver postqueue -p
+
+# Confirm the effective hostname
+docker exec mailserver postconf myhostname
+
+# List Docker Mailserver accounts
+docker exec mailserver setup email list</code></pre>
+
+      <p>A log line showing <code>status=sent</code> and a remote <code>250</code> response confirms handoff, not inbox placement. A queue full of deferred mail points back to connectivity, DNS, rate, or remote-policy errors before content filtering.</p>
+
+      <h2>7. Check reputation without chasing magic scores</h2>
+      <p>A new VPS address has little or no sending history. A recycled address may have bad history. Authentication proves authorization; it does not guarantee reputation.</p>
+      <ul>
+        <li>Check whether the sending address appears on reputable blocklists, then investigate the cause before requesting removal.</li>
+        <li>Use provider postmaster tooling when you send enough volume for it to show useful data.</li>
+        <li>Keep volumes low, steady, and expected. Do not “warm” an address with fake conversations or purchased lists.</li>
+        <li>Secure every account and watch for unexpected queue growth; a compromised mailbox can destroy reputation quickly.</li>
+        <li>If the provider assigns an address with entrenched bad history, document the evidence and ask for a clean replacement.</li>
+      </ul>
+      <p>Google advises senders to keep user-reported spam rates below 0.1% and avoid ever reaching 0.3%. For a personal server, the simpler rule is to send only wanted mail and make unsubscribing easy wherever messages are subscription-based.</p>
+
+      <h2>8. Use a boring controlled test message</h2>
+      <p>Test one variable at a time with a message that resembles legitimate correspondence:</p>
+      <ul>
+        <li>a real From address and display name;</li>
+        <li>a plain subject that describes the message;</li>
+        <li>both text and HTML parts if your application normally sends both;</li>
+        <li>no URL shorteners, tracking tricks, oversized images, or surprise attachments;</li>
+        <li>a valid <code>Message-ID</code> and sensible <code>Date</code> header.</li>
+      </ul>
+      <p>Content matters, but rewriting copy before SPF, DKIM, DMARC, and PTR pass is debugging in the wrong order. Likewise, marking your own test as “not spam” may train one mailbox without proving that the infrastructure is correct.</p>
+
+      <h2>A compact order of operations</h2>
+      <ol>
+        <li>Stop repeated tests and save one recipient message source.</li>
+        <li>Confirm the SMTP result: rejected, deferred, or accepted.</li>
+        <li>Verify PTR → hostname → forward DNS, EHLO, and TLS certificate.</li>
+        <li>Verify the single SPF policy matches every legitimate sender.</li>
+        <li>Confirm the received message has a valid DKIM signature.</li>
+        <li>Confirm DMARC passes through SPF or DKIM alignment.</li>
+        <li>Inspect Postfix logs and the queue using the message ID.</li>
+        <li>Only then assess address/domain reputation and message construction.</li>
+        <li>Send one new controlled test and compare headers.</li>
+      </ol>
+
+      <p>Self-hosted email deliverability is never guaranteed, and inbox algorithms are intentionally not fully public. But the investigation does not have to be mystical. Build a coherent server identity, authenticate the exact message, read the receiving system’s verdict, and change only the layer the evidence says is broken.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related mail and VPS guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Add another domain without changing a working PTR, hostname, certificate, or DKIM map.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The practical architecture behind the generic troubleshooting checklist.</span></li>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Protect the host and accounts whose security directly affects sender reputation.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Emails Going to Spam: A Deliverability Checklist</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html</guid>
+      <pubDate>Wed, 15 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver deliverability checklist for diagnosing Gmail or Outlook spam placement using PTR, SPF, DKIM, DMARC alignment, TLS, logs, reputation, and received-message headers.</description>
+    </item>
+    <item>
       <title>Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS</title>
       <link>https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html</link>
       <guid>https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html</guid>
