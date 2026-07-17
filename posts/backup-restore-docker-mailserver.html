@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Back Up and Restore Docker Mailserver: A Tested Recovery Runbook — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver backup and restore runbook covering mail, mail-state, configuration, Compose files, encryption, retention, and a disposable recovery test.">
+  <meta name="keywords" content="Docker Mailserver backup restore, back up Docker Mailserver, restore Docker Mailserver mail volume, Docker mail server disaster recovery, DMS backup test">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Back Up and Restore Docker Mailserver: A Tested Recovery Runbook">
+  <meta property="og:description" content="Back up the data that matters, restore it without ownership surprises, and prove recovery away from production before an incident.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html">
+  <meta property="article:published_time" content="2026-07-17T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-17T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Back Up and Restore Docker Mailserver: A Tested Recovery Runbook">
+  <meta name="twitter:description" content="A practical recovery drill for Docker Mailserver mail, state, configuration, Compose files, retention, and verification.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Back Up and Restore Docker Mailserver: A Tested Recovery Runbook","description":"A practical Docker Mailserver backup and restore runbook covering mail, mail-state, configuration, Compose files, encryption, retention, and a disposable recovery test.","url":"https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html"},"datePublished":"2026-07-17T10:00:00Z","dateModified":"2026-07-17T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver backup","Docker Mailserver restore","mail volume recovery","disaster recovery","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / MAIL RECOVERY 031</p>
+        <h1>Back Up and Restore Docker Mailserver: A Tested Recovery Runbook</h1>
+      </header>
+
+      <p>A tar file called <code>mail-backup.tar.gz</code> is not yet a backup strategy. For Docker Mailserver, recovery depends on knowing which mounts hold messages and state, preserving the configuration that explains those files, keeping the copy away from the VPS, and proving that another container can read it.</p>
+
+      <p>This runbook is for a conventional Docker Compose installation with bind mounts. The paths are generic on purpose: compare them with your own Compose file before running anything. If you use named volumes, the inventory step changes, but the recovery principles do not.</p>
+
+      <blockquote>The useful test is not “did tar exit zero?” It is “can a clean, isolated Docker Mailserver instance start and expose a known mailbox from this archive?”</blockquote>
+
+      <h2>What must be recoverable?</h2>
+      <p>A typical Docker Mailserver service persists four areas:</p>
+      <ul>
+        <li><code>/var/mail</code>: users’ Maildir messages and mailbox indexes;</li>
+        <li><code>/var/mail-state</code>: persistent service state, including data used by enabled components;</li>
+        <li><code>/var/log/mail</code>: mail logs, useful for an incident but not usually required to recover messages;</li>
+        <li><code>/tmp/docker-mailserver</code>: accounts, aliases, quotas, DKIM material and other DMS configuration.</li>
+      </ul>
+      <p>The official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/faq/#how-to-backup-and-restore-dms" rel="noopener noreferrer">Docker Mailserver backup FAQ</a> demonstrates archiving those mounts with a temporary container. Also preserve your Compose file, non-secret environment template, exact image version, and any external certificate arrangement. Treat the real environment file, account hashes and DKIM private keys as secrets.</p>
+
+      <h2>1. Inventory the real mounts before copying</h2>
+      <p>Do not assume that a directory named <code>mail-data</code> is the mounted directory. Ask Docker what the service currently uses:</p>
+      <pre><code>docker compose config
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}'
+
+docker image inspect mailserver/docker-mailserver:latest \
+  --format '{{index .RepoDigests 0}}'</code></pre>
+      <p>Use the actual service or container name and record the immutable image digest. Avoid putting an unredacted <code>docker compose config</code> dump in a ticket or public repository because interpolated secrets can appear in its output.</p>
+
+      <p>For the examples below, assume this project layout:</p>
+      <pre><code>mail-stack/
+├── compose.yaml
+├── mailserver.env
+└── docker-data/dms/
+    ├── config/
+    ├── mail-data/
+    ├── mail-state/
+    └── mail-logs/</code></pre>
+
+      <h2>2. Choose a consistency level deliberately</h2>
+      <p>A live archive can be useful for frequent snapshots, and the DMS FAQ shows that pattern. However, files can change while tar walks the tree. For a simple server, a short controlled shutdown gives the clearest recovery point:</p>
+      <pre><code>cd /srv/mail-stack
+
+docker compose down
+
+tar --xattrs --acls --numeric-owner -czf \
+  ../mail-backups/dms-$(date -u +%Y%m%dT%H%M%SZ).tar.gz \
+  compose.yaml mailserver.env docker-data/dms/
+
+docker compose up -d</code></pre>
+      <p>Use <code>docker compose down</code>, not <code>down -v</code>; the latter can remove named volumes. Docker Mailserver’s usage documentation recommends Compose <code>up</code>/<code>down</code> rather than relying on container start/stop semantics.</p>
+
+      <p>If inbound downtime is unacceptable, make frequent filesystem snapshots or live archives and schedule a less frequent quiesced recovery point. A remote sender normally queues and retries after a temporary failure, but maintenance still deserves monitoring and a defined window.</p>
+
+      <h2>3. Validate and protect the archive</h2>
+      <p>Run checks before moving or rotating the file:</p>
+      <pre><code>BACKUP=../mail-backups/dms-20260717T100000Z.tar.gz
+
+tar -tzf "$BACKUP" >/dev/null
+sha256sum "$BACKUP" > "$BACKUP.sha256"
+chmod 600 "$BACKUP" "$BACKUP.sha256"</code></pre>
+      <p>The checksum detects damage; it does not provide confidentiality or prove who created the archive. Mail backups contain private correspondence, password hashes and signing keys. Encrypt the archive with a tool whose recovery key is stored separately, then copy it to storage outside the mail host. Do not publish the archive name, remote destination, key location or encryption secret.</p>
+
+      <p>A practical retention policy might keep several daily, weekly and monthly recovery points, but capacity is not the only consideration. Retention should also match users’ privacy expectations and any legal obligations. At least one copy should survive loss of the VPS account or disk.</p>
+
+      <h2>4. Restore into an empty staging directory</h2>
+      <p>Never test by extracting over production. On an isolated recovery host with a compatible Docker installation:</p>
+      <pre><code>mkdir -p /srv/dms-restore-test
+cd /srv/dms-restore-test
+
+sha256sum --check dms-backup.tar.gz.sha256
+
+tar --xattrs --acls --numeric-owner -xzf dms-backup.tar.gz
+
+find docker-data/dms -maxdepth 2 -type d -print</code></pre>
+      <p>Inspect paths before starting anything. A common restore mistake creates an extra directory level such as <code>docker-data/dms/docker-data/dms/</code>, leaving the container attached to an apparently empty mailbox.</p>
+
+      <p>Restore with the same DMS image version or digest first. An incident is a poor time to combine data recovery with a major upgrade. Once the recovered service works, upgrade it as a separate, reversible change.</p>
+
+      <h2>5. Keep the recovery test off the public mail network</h2>
+      <p>A clone with production accounts and DKIM keys must not accidentally receive or send real mail. Use an isolated Docker network, do not publish SMTP ports, and disable outbound network access where practical. At minimum, do not change public MX records and do not attach the test to a public reverse proxy.</p>
+
+      <p>Create a recovery-only Compose override rather than editing the archived production file:</p>
+      <pre><code># compose.restore.yaml
+services:
+  mailserver:
+    image: mailserver/docker-mailserver:&lt;recorded-version&gt;
+    ports: []
+    networks:
+      - recovery
+
+networks:
+  recovery:
+    internal: true</code></pre>
+      <p>Then render the merged configuration and check that every source path points inside the staging tree:</p>
+      <pre><code>docker compose -f compose.yaml -f compose.restore.yaml config
+
+docker compose -f compose.yaml -f compose.restore.yaml up -d</code></pre>
+      <p>Some DMS features need DNS or package-independent network access during startup, so a fully internal network may require a recovery-specific adjustment. If you allow egress temporarily, continue to leave all inbound ports unpublished and prevent outbound SMTP at the host firewall.</p>
+
+      <h2>6. Prove mailbox and configuration recovery</h2>
+      <p>A green container is only the first check:</p>
+      <pre><code>docker compose -f compose.yaml -f compose.restore.yaml ps
+
+docker compose -f compose.yaml -f compose.restore.yaml logs --tail 200
+
+docker compose -f compose.yaml -f compose.restore.yaml \
+  exec mailserver setup email list
+
+docker compose -f compose.yaml -f compose.restore.yaml \
+  exec mailserver doveadm mailbox list -u user@example.com
+
+docker compose -f compose.yaml -f compose.restore.yaml \
+  exec mailserver doveadm force-resync -u user@example.com INBOX</code></pre>
+      <p>Use a designated test mailbox and replace the example address. Confirm that expected folders exist, a known old message can be found through IMAP or Dovecot tooling, aliases are present, and account authentication works locally. Do not paste message bodies, account lists, logs or hashes into public build output.</p>
+
+      <p>If mail exists on disk but folders look wrong, stop and investigate mount paths, numeric ownership and extraction options before recursively changing permissions. A broad <code>chown</code> can make a mismatched layout harder to diagnose.</p>
+
+      <h2>7. Document the production cutover, but do not improvise it</h2>
+      <p>A real replacement-host recovery normally follows this order:</p>
+      <ol>
+        <li>Provision and harden the replacement host.</li>
+        <li>Install a compatible Docker and Compose version.</li>
+        <li>Verify the encrypted archive and restore it while DMS is stopped.</li>
+        <li>Start the recorded DMS image and run local mailbox checks.</li>
+        <li>Recreate required TLS, firewall and DNS conditions without exposing admin services.</li>
+        <li>Change public mail routing only after SMTP, IMAP, authentication and TLS tests pass.</li>
+        <li>Watch logs and queues, then keep the old host unavailable but intact during the rollback window.</li>
+      </ol>
+      <p>DNS is not part of the tar archive. Record the intended MX, SPF, DKIM selector, DMARC, mail-host address and PTR relationships in a redacted runbook. PTR is controlled at the server provider and may need separate work after a host move.</p>
+
+      <h2>Failure modes worth testing</h2>
+      <ul>
+        <li><strong>Missing configuration:</strong> messages were copied, but accounts, aliases or DKIM keys were not.</li>
+        <li><strong>Backup stored only on the VPS:</strong> disk or account loss removes production and recovery together.</li>
+        <li><strong>Unpinned image:</strong> the restore silently pulls a newer major release.</li>
+        <li><strong>Wrong directory depth:</strong> mounts are valid but point at empty nested folders.</li>
+        <li><strong>Untested encryption key:</strong> the off-site archive exists but cannot be decrypted during the drill.</li>
+        <li><strong>Public recovery clone:</strong> duplicated identities send mail or expose private inboxes.</li>
+        <li><strong>Checksums beside a corrupt copy:</strong> one storage failure damages both; retain independent copies and provider integrity checks.</li>
+      </ul>
+
+      <h2>A compact quarterly recovery drill</h2>
+      <ol>
+        <li>Inventory mounts and record the running image digest.</li>
+        <li>Create a controlled archive and restart production.</li>
+        <li>Verify tar readability and checksum.</li>
+        <li>Encrypt and transfer a copy off-host.</li>
+        <li>Restore into a fresh staging directory.</li>
+        <li>Start without public ports or outbound SMTP.</li>
+        <li>Verify one test account, folders, a known message, aliases and logs.</li>
+        <li>Destroy the recovery clone securely and record drill date, duration and fixes.</li>
+      </ol>
+
+      <p>Docker’s <a href="https://docs.docker.com/engine/storage/volumes/#back-up-restore-or-migrate-data-volumes" rel="noopener noreferrer">volume documentation</a> describes the general temporary-container archive pattern. Docker Mailserver’s own FAQ provides the DMS-specific paths. The missing operational step is the recovery drill: an archive becomes trustworthy only when a clean environment can use it without touching production.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related mail and infrastructure guides</h2>
+        <ul>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The Docker Mailserver architecture and DNS relationships this recovery runbook protects.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Accounts, DKIM signing and DNS checks to repeat after restoring several domains.</span></li>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver deliverability checklist</a><span>Verify identity, authentication and recipient evidence after a server migration.</span></li>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Secure the replacement host before restoring private mail data.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

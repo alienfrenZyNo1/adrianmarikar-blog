@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Back Up and Restore Docker Mailserver: A Tested Recovery Runbook: https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html
+  - Tested recovery workflow for Docker Mailserver mail, state, configuration, image pinning, encrypted off-site copies, isolated restores, mailbox checks, and production cutover planning.
 |- Docker Mailserver Emails Going to Spam: A Deliverability Checklist: https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html
   - Evidence-led troubleshooting for self-hosted email placement, covering SMTP outcomes, PTR and forward DNS, SPF, DKIM, DMARC alignment, TLS, Postfix logs, reputation, and received-message headers.
 |- Fix Cloudflare Error 526 on a Coolify App Without Weakening TLS: https://adrianmarikar.com/posts/cloudflare-526-coolify-lets-encrypt.html
