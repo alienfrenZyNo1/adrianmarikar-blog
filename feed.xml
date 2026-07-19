@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html</guid>
+      <pubDate>Sun, 19 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver TLS renewal checklist for tracing a renewed certificate through Certbot, the host, the container mount, Postfix, Dovecot, SMTP, and IMAP.</description>
+    </item>
+    <item>
       <title>Back Up and Restore Docker Mailserver: A Tested Recovery Runbook</title>
       <link>https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html</link>
       <guid>https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html</guid>

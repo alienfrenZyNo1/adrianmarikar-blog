@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Still Serving an Old Let’s Encrypt Certificate? — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver TLS renewal checklist for when Certbot renewed successfully but SMTP, IMAP, Postfix, or Dovecot still serves the old certificate.">
+  <meta name="keywords" content="Docker Mailserver old certificate, Docker Mailserver Let's Encrypt renewal, Certbot renewed but old certificate, Postfix Dovecot reload certificate, SMTP IMAP TLS certificate">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?">
+  <meta property="og:description" content="Trace the certificate from Certbot’s files through the container mount to the live SMTP and IMAP handshakes, then make renewal reload safely.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">
+  <meta property="article:published_time" content="2026-07-19T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-19T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?">
+  <meta name="twitter:description" content="A certificate-path, container-mount, service-reload, and live-handshake checklist for Docker Mailserver TLS renewal.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?","description":"A practical Docker Mailserver TLS renewal checklist for when Certbot renewed successfully but SMTP, IMAP, Postfix, or Dovecot still serves the old certificate.","url":"https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html"},"datePublished":"2026-07-19T10:00:00Z","dateModified":"2026-07-19T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Let’s Encrypt renewal","Certbot deploy hook","Postfix TLS","Dovecot TLS","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Adrian Marikar home">
+      <span class="brand-mark">AM</span>
+      <span>Adrian Marikar</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / MAIL TLS 032</p>
+        <h1>Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?</h1>
+      </header>
+
+      <p>Certbot says renewal succeeded, the certificate file on the host has a new expiry date, but a mail client still warns that Docker Mailserver is presenting the old certificate. This is usually not a certificate-authority problem. It is a handoff problem between four separate layers: the ACME client, the host filesystem, the container mount, and the long-running Postfix or Dovecot process accepting the connection.</p>
+
+      <p>The fastest way to fix it is to compare the same certificate at each layer instead of repeatedly requesting another one. The examples below use <code>mail.example.com</code>, a generic Compose service called <code>mailserver</code>, and placeholder paths. Match them to your own deployment without printing private keys, DNS credentials, account data, or an unredacted Compose environment.</p>
+
+      <blockquote>A successful renewal only proves that new certificate files were written. It does not prove the container can see them or that SMTP and IMAP have loaded them.</blockquote>
+
+      <h2>The certificate path from issuer to client</h2>
+      <p>A healthy renewal has to complete this whole chain:</p>
+      <pre><code>ACME renewal succeeds
+  → renewed files exist on the host
+  → the full certificate directory is mounted into the container
+  → Docker Mailserver selects the intended mail FQDN
+  → Postfix and Dovecot reload the files
+  → public SMTP and IMAP handshakes serve the new leaf certificate</code></pre>
+      <p>Checking only one arrow creates false confidence. A browser test is not useful here either: the HTTPS certificate on a web proxy may be completely separate from the certificate served by SMTP submission or IMAPS.</p>
+
+      <h2>1. Record what the public mail ports actually serve</h2>
+      <p>Start outside the container. Query the exact hostname and protocol used by clients:</p>
+      <pre><code># IMAPS: TLS begins immediately
+openssl s_client -connect mail.example.com:993 \
+  -servername mail.example.com -showcerts &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -noout -subject -issuer -serial -dates -fingerprint -sha256
+
+# SMTP submission: upgrade with STARTTLS
+openssl s_client -starttls smtp -connect mail.example.com:587 \
+  -servername mail.example.com -showcerts &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -noout -subject -issuer -serial -dates -fingerprint -sha256</code></pre>
+      <p>Test both protocols. Postfix and Dovecot are separate services and can disagree if only one reloaded. The leaf certificate should cover the hostname clients connect to; mailbox domains do not each need their own mail-server certificate when they all use one shared mail FQDN.</p>
+
+      <p>Keep the serial number, SHA-256 fingerprint, and <code>notAfter</code> date for comparison. Do not use the expiry date alone: two different certificates can share a similar validity window.</p>
+
+      <h2>2. Check Certbot’s selected lineage on the host</h2>
+      <p>Ask Certbot which certificate lineage it manages, then inspect the leaf certificate without displaying private-key contents:</p>
+      <pre><code>sudo certbot certificates
+
+sudo openssl x509 \
+  -in /etc/letsencrypt/live/mail.example.com/fullchain.pem \
+  -noout -subject -issuer -serial -dates -fingerprint -sha256
+
+sudo readlink -f /etc/letsencrypt/live/mail.example.com/fullchain.pem</code></pre>
+      <p>If the host fingerprint is still old, the problem is upstream of Docker. Review the renewal log and the certificate name Certbot actually renewed. Duplicate lineages such as a suffixed certificate name can leave the mail container pointed at an older directory even though Certbot renewed a different one.</p>
+
+      <p>Do not force repeated production renewals as a diagnostic step. They can consume certificate-authority rate limits while leaving a bad mount or reload untouched. Use Certbot’s dry run to test renewal configuration:</p>
+      <pre><code>sudo certbot renew --dry-run</code></pre>
+      <p>Let’s Encrypt no longer sends certificate-expiration notification emails, so working automation and independent monitoring matter more than inbox reminders. Its announced move toward shorter certificate lifetimes is another reason to avoid calendar-based manual renewal.</p>
+
+      <h2>3. Verify the complete certificate tree is mounted</h2>
+      <p>Let’s Encrypt’s <code>live/</code> files are normally symlinks into <code>archive/</code>. Mounting only one symlink or only the <code>live/</code> directory can produce a broken or frozen view inside the container. Docker Mailserver’s TLS documentation shows mounting the certificate directory so both sides of those links remain available.</p>
+
+      <p>A generic Compose shape is:</p>
+      <pre><code>services:
+  mailserver:
+    image: mailserver/docker-mailserver:&lt;pinned-version&gt;
+    hostname: mail.example.com
+    environment:
+      SSL_TYPE: letsencrypt
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro</code></pre>
+      <p>Render the actual Compose configuration before changing it, but avoid sharing output that contains secrets:</p>
+      <pre><code>docker compose config
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}'</code></pre>
+      <p>Then compare the certificate from inside the running container:</p>
+      <pre><code>docker compose exec mailserver openssl x509 \
+  -in /etc/letsencrypt/live/mail.example.com/fullchain.pem \
+  -noout -serial -dates -fingerprint -sha256
+
+# Confirm the symlink target resolves inside the container
+docker compose exec mailserver readlink -f \
+  /etc/letsencrypt/live/mail.example.com/fullchain.pem</code></pre>
+      <p>If the host is new and the container is old, inspect the mount first. If the path is absent, the Compose source path, destination path, certificate name, or symlink target is wrong. Recreating certificates will not repair any of those.</p>
+
+      <h2>4. Reload only after the files agree</h2>
+      <p>Once the host and in-container fingerprints match, make the running mail services load the renewed certificate. A controlled Compose restart is simple and reliable for a small installation:</p>
+      <pre><code>docker compose restart mailserver
+docker compose ps
+docker compose logs --since 5m mailserver</code></pre>
+      <p>A restart causes a short interruption, so schedule it sensibly and watch health and startup logs. Do not run <code>docker compose down -v</code>; removing volumes is unrelated to TLS and risks persisted mail data. If your pinned Docker Mailserver version documents a supported service reload procedure, that can reduce interruption, but verify both Postfix and Dovecot rather than assuming one signal refreshed everything.</p>
+
+      <p>Immediately repeat the public tests on ports 993 and 587. The public fingerprint—not the file timestamp—is the acceptance test.</p>
+
+      <h2>5. Use a deploy hook, not an unconditional restart loop</h2>
+      <p>Certbot’s official user guide supports deploy hooks that run only after a successful renewal. That is the right place to reload or restart the mail service. A daily command that restarts Docker Mailserver regardless of whether anything renewed adds needless disruption and can hide a failing renewal behind a healthy restart.</p>
+
+      <p>Keep the hook small, root-owned, and non-secret. Its job is only to make the already renewed files active:</p>
+      <pre><code>#!/bin/sh
+set -eu
+cd /srv/example-mail-stack
+/usr/bin/docker compose restart mailserver</code></pre>
+      <p>Store this as a Certbot renewal deploy hook according to your Certbot installation method. Use a generic stack path in public documentation, keep permissions restrictive, and do not embed a Cloudflare token, mailbox password, webhook, or private-key data in the script. Some containerised Certbot setups need a different handoff because the Certbot container cannot control the host Docker daemon; in that case, keep renewal and host-side reload as separate, least-privilege steps.</p>
+
+      <h2>6. Test the automation without waiting for expiry</h2>
+      <p>A useful test proves more than “the timer exists”:</p>
+      <ol>
+        <li>Run <code>certbot renew --dry-run</code> and confirm the simulated ACME challenge succeeds.</li>
+        <li>Review the systemd timer, cron entry, or container schedule that launches renewal.</li>
+        <li>Confirm the deploy hook’s working directory and Compose service name are correct.</li>
+        <li>Run the hook manually during a maintenance window.</li>
+        <li>Check container health and recent logs.</li>
+        <li>Query public IMAPS and STARTTLS and record their fingerprints and expiry dates.</li>
+      </ol>
+      <p>A dry run may not exercise deploy hooks by default on every Certbot version and invocation. Read the output and the documentation for your installed version rather than inferring that a simulated renewal also restarted Docker Mailserver.</p>
+
+      <h2>Common reasons the old certificate survives</h2>
+      <ul>
+        <li><strong>Wrong certificate lineage:</strong> Certbot renewed a similarly named certificate directory while DMS still reads the original.</li>
+        <li><strong>Partial mount:</strong> <code>live/</code> is mounted but its relative symlinks into <code>archive/</code> cannot resolve.</li>
+        <li><strong>Stale bind source:</strong> Compose mounts a copied certificate directory that Certbot never updates.</li>
+        <li><strong>No post-renewal reload:</strong> the new file is visible, but Postfix or Dovecot still holds the old certificate in memory.</li>
+        <li><strong>Only one protocol tested:</strong> IMAP is current while SMTP submission is stale, or vice versa.</li>
+        <li><strong>Wrong public destination:</strong> DNS, NAT, or a second mail host sends the test to another machine.</li>
+        <li><strong>Hostname mismatch:</strong> the certificate is valid but does not cover the FQDN configured in clients and DMS.</li>
+        <li><strong>Web TLS confused with mail TLS:</strong> a reverse proxy’s HTTPS certificate is fresh while the mail ports are not.</li>
+      </ul>
+
+      <h2>A compact renewal acceptance checklist</h2>
+      <ol>
+        <li>Certbot reports the expected certificate name and future expiry.</li>
+        <li>The host certificate has the expected SAN, serial, and fingerprint.</li>
+        <li>The same fingerprint is visible at the configured path inside the container.</li>
+        <li>The full <code>live/</code> and <code>archive/</code> relationship resolves through the read-only mount.</li>
+        <li>Docker Mailserver is restarted or fully reloaded only after successful renewal.</li>
+        <li>Container health and logs show a clean return to service.</li>
+        <li>Public IMAPS and SMTP STARTTLS serve the new fingerprint and complete chain.</li>
+        <li>A real client can authenticate and send a harmless test message.</li>
+        <li>An external monitor will warn before expiry without relying on Let’s Encrypt email.</li>
+      </ol>
+
+      <p>The official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/ssl/" rel="noopener noreferrer">Docker Mailserver TLS documentation</a> is the version-sensitive source for certificate layouts and <code>SSL_TYPE</code>. Certbot’s <a href="https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates" rel="noopener noreferrer">renewal documentation</a> explains dry runs and renewal hooks. Use those references for the versions you actually run, then trust the live SMTP and IMAP handshakes as the final proof.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related mail and infrastructure guides</h2>
+        <ul>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The Docker Mailserver, shared mail hostname, DNS-01, and Let’s Encrypt architecture behind this renewal workflow.</span></li>
+          <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, DKIM material, and the certificate arrangement before recovery work.</span></li>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Separate TLS transport checks from SPF, DKIM, DMARC, PTR, reputation, and recipient evidence.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Why several mailbox domains can share one stable mail-server hostname and certificate.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

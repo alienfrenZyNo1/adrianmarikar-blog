@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?: https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html
+  - Practical TLS renewal diagnosis from Certbot lineage and host files through the container mount, Postfix/Dovecot reload, public SMTP STARTTLS, and IMAPS fingerprint verification.
 |- Back Up and Restore Docker Mailserver: A Tested Recovery Runbook: https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html
   - Tested recovery workflow for Docker Mailserver mail, state, configuration, image pinning, encrypted off-site copies, isolated restores, mailbox checks, and production cutover planning.
 |- Docker Mailserver Emails Going to Spam: A Deliverability Checklist: https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html

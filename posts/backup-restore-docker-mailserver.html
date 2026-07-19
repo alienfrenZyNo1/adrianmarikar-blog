@@ -205,6 +205,7 @@ docker compose -f compose.yaml -f compose.restore.yaml \
         <h2>Related mail and infrastructure guides</h2>
         <ul>
           <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The Docker Mailserver architecture and DNS relationships this recovery runbook protects.</span></li>
+          <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Fix a stale Docker Mailserver TLS certificate after renewal</a><span>Verify the restored certificate mount, service reload, and public SMTP/IMAP fingerprints.</span></li>
           <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Accounts, DKIM signing and DNS checks to repeat after restoring several domains.</span></li>
           <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver deliverability checklist</a><span>Verify identity, authentication and recipient evidence after a server migration.</span></li>
           <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Secure the replacement host before restoring private mail data.</span></li>

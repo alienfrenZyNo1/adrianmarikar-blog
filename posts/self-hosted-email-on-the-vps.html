@@ -202,7 +202,7 @@ Username: hello@adrianmarikar.com</code></pre>
       <h2>Renewal</h2>
       <p>Let’s Encrypt certificates expire, so renewal needs to be automatic. A daily renewal job runs Certbot with the Cloudflare DNS plugin. If Certbot renews the certificate, the mail container is restarted so it picks up the new files.</p>
 
-      <p>The renewal job is intentionally quiet when nothing changes. That way it does not create noise every day, but it can still surface real errors.</p>
+      <p>The renewal job is intentionally quiet when nothing changes. That way it does not create noise every day, but it can still surface real errors. If the files renew but a client still sees the old leaf certificate, use this <a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Docker Mailserver certificate renewal checklist</a> to compare the host, container, SMTP, and IMAP fingerprints before requesting another certificate.</p>
 
       <h2>What I would avoid changing</h2>
       <p>The important safety lesson is that adding a second mail domain should not require rebuilding the whole mail identity. I specifically avoided changing:</p>
