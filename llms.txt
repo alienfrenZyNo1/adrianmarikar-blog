@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587: https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html
+  - Layer-by-layer diagnosis for SMTP timeouts and refusals across MX/A/AAAA records, provider filtering, host and Docker firewalls, published ports, Postfix listeners, STARTTLS, implicit TLS, and packet capture.
 |- Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?: https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html
   - Practical TLS renewal diagnosis from Certbot lineage and host files through the container mount, Postfix/Dovecot reload, public SMTP STARTTLS, and IMAPS fingerprint verification.
 |- Back Up and Restore Docker Mailserver: A Tested Recovery Runbook: https://adrianmarikar.com/posts/backup-restore-docker-mailserver.html

@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html</guid>
+      <pubDate>Tue, 21 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver checklist for SMTP connection refused or timed out errors across DNS, provider filtering, firewalls, Docker port publishing, Postfix listeners, and TLS.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html</guid>

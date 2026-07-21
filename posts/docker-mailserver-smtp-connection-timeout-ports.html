@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587 — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver checklist for SMTP connection refused or timed out errors: separate port publishing, listeners, firewalls, provider blocks, DNS, and TLS.">
+  <meta name="keywords" content="Docker Mailserver SMTP connection timeout, Docker Mailserver connection refused, SMTP port 25 blocked, Docker Mailserver ports 465 587, test mail server firewall">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587">
+  <meta property="og:description" content="Find the exact layer dropping SMTP: DNS, provider network, host firewall, Docker port publishing, container listener, or TLS negotiation.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html">
+  <meta property="article:published_time" content="2026-07-21T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-21T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587">
+  <meta name="twitter:description" content="A layer-by-layer SMTP connectivity checklist for Docker Mailserver on a VPS.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587","description":"A practical Docker Mailserver checklist for SMTP connection refused or timed out errors: separate port publishing, listeners, firewalls, provider blocks, DNS, and TLS.","url":"https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html"},"datePublished":"2026-07-21T10:00:00Z","dateModified":"2026-07-21T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","SMTP timeout","SMTP connection refused","port 25","port 465","port 587","VPS firewall"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / SMTP NETWORKING 033</p>
+        <h1>Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587</h1>
+      </header>
+
+      <p>A mail client reports “connection timed out.” Another server cannot deliver to your domain. Docker says the mail container is healthy, yet a port checker says SMTP is closed. These observations can all be true because they test different paths.</p>
+
+      <p>The useful fix is not to open every mail-related port. It is to identify which connection is failing, then follow that connection through DNS, the VPS network, host firewall, Docker port mapping, container listener, and TLS handshake. The examples use <code>mail.example.com</code> and a Compose service named <code>mailserver</code>. Replace them locally, and never paste an unredacted environment, real server address, mailbox password, or private key into a public diagnostic.</p>
+
+      <blockquote>A timeout, a refusal, and a TLS error are different evidence. Preserve the exact error before changing the firewall.</blockquote>
+
+      <h2>First: know what each SMTP port is for</h2>
+      <ul>
+        <li><strong>25/tcp — SMTP transport:</strong> mail servers use this to deliver mail to one another. Your server normally needs inbound port 25 to receive internet mail and outbound port 25 to deliver directly to other mail servers.</li>
+        <li><strong>465/tcp — submissions with implicit TLS:</strong> a mail client connects through TLS from the first byte, authenticates, and submits outgoing mail.</li>
+        <li><strong>587/tcp — message submission with STARTTLS:</strong> a client begins SMTP, upgrades the connection with STARTTLS, authenticates, and submits mail.</li>
+      </ul>
+      <p>Ports 465 and 587 are not substitutes for public server-to-server delivery on port 25. Opening submission while inbound 25 is blocked may let your own client send into Docker Mailserver, but other domains still cannot deliver mail to you. Conversely, a working inbound port 25 does not prove that a phone or desktop client can authenticate on submission.</p>
+
+      <p>Docker Mailserver’s current <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/" rel="noopener noreferrer">port guide</a> documents the protocol and encryption behaviour. Check the documentation matching your pinned image version rather than enabling every historical POP3 and IMAP port.</p>
+
+      <h2>1. Classify the failure before testing</h2>
+      <ul>
+        <li><strong>Timed out:</strong> no TCP answer arrived. A firewall, provider filter, wrong address, routing problem, or silent packet drop is likely.</li>
+        <li><strong>Connection refused:</strong> the destination actively rejected TCP. The host was reachable, but nothing was listening on that address and port, or a firewall rejected it explicitly.</li>
+        <li><strong>Connected, then TLS failed:</strong> networking works. Investigate protocol choice, STARTTLS versus implicit TLS, certificate hostname, trust chain, or service configuration.</li>
+        <li><strong>Connected, then authentication failed:</strong> the listener and TLS path work. Investigate account credentials, SASL, bans, and client settings without widening network access.</li>
+      </ul>
+
+      <h2>2. Confirm DNS points at the intended mail host</h2>
+      <p>Start from a machine outside the VPS. Confirm the mailbox domain’s MX target and the mail hostname’s address records:</p>
+      <pre><code>dig +short MX example.com
+dig +short A mail.example.com
+dig +short AAAA mail.example.com</code></pre>
+      <p>An old A record can send IPv4 clients to a previous server. A published AAAA record can make IPv6-capable senders try an unreachable or unconfigured IPv6 path even while IPv4 tests pass. Remove a wrong record or make that protocol work; do not assume clients will reliably fall back.</p>
+      <p>Cloudflare’s orange-cloud proxy does not proxy ordinary SMTP ports. Keep the mail hostname DNS-only unless you deliberately use a separate supported mail proxy. The MX record should name a hostname, not a copied address.</p>
+
+      <h2>3. Test from outside with the correct TLS mode</h2>
+      <p>Run these from another network, not only from the mail host:</p>
+      <pre><code># TCP reachability without sending credentials
+nc -vz -w 5 mail.example.com 25
+nc -vz -w 5 mail.example.com 465
+nc -vz -w 5 mail.example.com 587
+
+# Port 25 and 587: SMTP upgraded with STARTTLS
+openssl s_client -starttls smtp -connect mail.example.com:25 \
+  -servername mail.example.com -brief
+openssl s_client -starttls smtp -connect mail.example.com:587 \
+  -servername mail.example.com -brief
+
+# Port 465: TLS starts immediately
+openssl s_client -connect mail.example.com:465 \
+  -servername mail.example.com -brief</code></pre>
+      <p>Do not test port 465 with <code>-starttls smtp</code>, and do not treat a plain <code>telnet</code> session to 465 as proof that TLS is broken. Save whether TCP connected, whether a certificate was presented, and whether the SMTP banner belonged to the expected host.</p>
+
+      <h2>4. Verify Docker published the ports</h2>
+      <p>A process listening inside a container is not automatically reachable from the internet. Compose must publish the required host ports:</p>
+      <pre><code>services:
+  mailserver:
+    image: mailserver/docker-mailserver:&lt;pinned-version&gt;
+    hostname: mail.example.com
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"</code></pre>
+      <p>Inspect the rendered configuration and the running mappings without printing environment values:</p>
+      <pre><code>docker compose config --services
+docker compose ps
+docker port mailserver
+ss -lnt | grep -E ':(25|465|587|993)[[:space:]]'</code></pre>
+      <p>Docker’s <a href="https://docs.docker.com/engine/network/port-publishing/" rel="noopener noreferrer">port-publishing documentation</a> warns that published ports are externally accessible by default when bound to all host addresses. Do not publish management ports or bind mail submission only to loopback by accident. If a Compose change added a port, recreate the service; a simple process restart does not apply a new container port mapping.</p>
+
+      <h2>5. Check listeners and logs inside the container</h2>
+      <p>If the host mapping exists but the connection is refused, verify that Postfix is actually listening:</p>
+      <pre><code>docker compose exec mailserver ss -lnt
+docker compose logs --since 15m mailserver
+docker compose exec mailserver postconf myhostname</code></pre>
+      <p>Compare the time of an external test with the logs. No log entry usually means the connection never reached Postfix. A logged TLS or authentication error proves that the network path reached the application, so stop changing perimeter rules and diagnose that later layer.</p>
+
+      <h2>6. Audit every firewall layer, including Docker’s rules</h2>
+      <p>There may be several independent filters: a provider firewall, the VPS host firewall, Docker-managed packet-filtering rules, and sometimes an upstream network block. Check policy without dumping unrelated addresses or rules into public notes.</p>
+      <pre><code>sudo ufw status numbered
+sudo nft list ruleset
+# Or, on hosts using the iptables backend:
+sudo iptables -S
+sudo iptables -S DOCKER-USER</code></pre>
+      <p>Do not assume that an “allow” in UFW fully describes traffic to published containers. Docker documents that published traffic can be diverted before it reaches UFW’s normal chains. Use Docker’s supported firewall model and the <code>DOCKER-USER</code> chain where appropriate; avoid flushing Docker-generated rules on a production host.</p>
+      <p>Restricting submission ports to known office addresses may break roaming phones and laptops. Prefer authenticated TLS, strong passwords, rate limits, and banning abusive clients. Port 25 must accept connections from arbitrary legitimate mail servers if you receive public email.</p>
+
+      <h2>7. Separate inbound and outbound port 25 blocks</h2>
+      <p>Many VPS and access providers apply anti-abuse controls to SMTP. Test the two directions independently:</p>
+      <ul>
+        <li><strong>Inbound test:</strong> connect from an external host to <code>mail.example.com:25</code>.</li>
+        <li><strong>Outbound test:</strong> from the VPS, connect to port 25 on a mail server you are authorised to test.</li>
+      </ul>
+      <p>If inbound reaches the container but outbound consistently times out before any Postfix remote response, ask the provider whether outbound SMTP is restricted and what legitimate-use approval process applies. Do not bypass a provider block with scans, rotating addresses, or unapproved tunnels. If direct delivery is unavailable, configure a reputable authenticated relay and update SPF and related mail policy to describe the real path.</p>
+
+      <h2>8. Use packet capture only to answer one question</h2>
+      <p>When rules look correct but an external connection still times out, a short, filtered capture can show whether packets arrive:</p>
+      <pre><code>sudo tcpdump -ni any 'tcp port 25 or tcp port 465 or tcp port 587'</code></pre>
+      <p>Start the capture, make one controlled external connection, then stop it. No inbound SYN suggests DNS, provider firewall, upstream routing, or the client path. Repeated SYN packets with no SYN-ACK points at the host’s filtering or routing. A completed handshake followed by application packets moves the investigation into Postfix, TLS, or authentication. Packet captures can contain addresses and payload metadata, so do not publish them unredacted.</p>
+
+      <h2>A compact SMTP connectivity checklist</h2>
+      <ol>
+        <li>Record the exact timeout, refusal, TLS, or authentication error.</li>
+        <li>Identify whether the failing path is server delivery on 25 or client submission on 465/587.</li>
+        <li>Confirm MX, A, and AAAA records lead to the intended host.</li>
+        <li>Test TCP and the correct TLS mode from outside the VPS.</li>
+        <li>Confirm Compose publishes the port and the host is listening.</li>
+        <li>Confirm Postfix listens inside the container and compare logs with the test time.</li>
+        <li>Audit provider, host, and Docker firewall behaviour without flushing rules.</li>
+        <li>Test inbound and outbound port 25 separately.</li>
+        <li>Use one filtered packet capture if the dropping layer remains unclear.</li>
+        <li>After networking works, verify TLS, authentication, real send/receive, and logs.</li>
+      </ol>
+
+      <p>A green container health check proves only what that health check exercises. Public SMTP works when an outside sender reaches the right address on port 25, Postfix answers, and a complete delivery succeeds. Client submission works when the chosen 465 or 587 TLS mode reaches the listener, presents the expected certificate, authenticates, and queues a message. Test those contracts separately and the vague “SMTP is down” report becomes a specific, fixable layer.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related mail and VPS guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Docker Mailserver serving an old certificate</a><span>Continue with certificate-path and service-reload checks when TCP works but TLS presents stale material.</span></li>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Move from connectivity to PTR, SPF, DKIM, DMARC alignment, recipient headers, and reputation.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The Docker Mailserver, DNS, TLS, and multi-domain architecture behind these troubleshooting guides.</span></li>
+          <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Harden the host without accidentally exposing every Docker-published service.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

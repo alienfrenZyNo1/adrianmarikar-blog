@@ -23,20 +23,20 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/" aria-label="Adrian Marikar home">
-      <span class="brand-mark">AM</span>
-      <span>Adrian Marikar</span>
-    </a>
-    <nav aria-label="Primary navigation">
-      <a href="/#writing">Writing</a>
-      <a href="/categories/ai-agents.html">AI agents</a>
-      <a href="/categories/newbizfeed.html">NewBizFeed</a>
-      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-      <a href="/#about">About</a>
-      <a href="mailto:hello@adrianmarikar.com">Contact</a>
-    </nav>
-  </header>
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
 
   <main>
     <article class="article">
@@ -181,6 +181,7 @@ cd /srv/example-mail-stack
         <p class="eyebrow">// keep reading</p>
         <h2>Related mail and infrastructure guides</h2>
         <ul>
+          <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">Docker Mailserver SMTP connection timeout</a><span>Prove ports 25, 465, and 587 reach the intended listener before diagnosing certificate content.</span></li>
           <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The Docker Mailserver, shared mail hostname, DNS-01, and Let’s Encrypt architecture behind this renewal workflow.</span></li>
           <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, DKIM material, and the certificate arrangement before recovery work.</span></li>
           <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Separate TLS transport checks from SPF, DKIM, DMARC, PTR, reputation, and recipient evidence.</span></li>
