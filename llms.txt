@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC: https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html
+  - DNS-first Docker Mailserver rotation runbook covering distinct selectors, 2048-bit keys, authoritative and recursive DNS verification, OpenDKIM or Rspamd signing changes, DMARC alignment, overlap, rollback, and compromised-key response.
 |- Docker Mailserver SMTP Connection Timeout: Test Ports 25, 465, and 587: https://adrianmarikar.com/posts/docker-mailserver-smtp-connection-timeout-ports.html
   - Layer-by-layer diagnosis for SMTP timeouts and refusals across MX/A/AAAA records, provider filtering, host and Docker firewalls, published ports, Postfix listeners, STARTTLS, implicit TLS, and packet capture.
 |- Docker Mailserver Still Serving an Old Let’s Encrypt Certificate?: https://adrianmarikar.com/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html

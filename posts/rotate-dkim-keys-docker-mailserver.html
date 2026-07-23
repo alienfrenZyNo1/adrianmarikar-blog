@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC — Adrian Marikar</title>
+  <meta name="description" content="A safe Docker Mailserver DKIM rotation runbook: create a new selector, publish and verify DNS first, switch signing, test DMARC alignment, then retire the old key.">
+  <meta name="keywords" content="rotate DKIM keys Docker Mailserver, Docker Mailserver DKIM selector, DKIM key rotation, DKIM DMARC alignment, OpenDKIM Rspamd rotation">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC">
+  <meta property="og:description" content="Publish the new selector before changing the signer, prove a real message passes DKIM and DMARC, and keep the old public key through the transition.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html">
+  <meta property="article:published_time" content="2026-07-23T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-23T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC">
+  <meta name="twitter:description" content="A DNS-first, reversible DKIM selector rotation runbook for Docker Mailserver, OpenDKIM, Rspamd, and DMARC.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC","description":"A safe Docker Mailserver DKIM rotation runbook: create a new selector, publish and verify DNS first, switch signing, test DMARC alignment, then retire the old key.","url":"https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html"},"datePublished":"2026-07-23T10:00:00Z","dateModified":"2026-07-23T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","DKIM key rotation","DKIM selector","DMARC alignment","OpenDKIM","Rspamd","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Adrian Marikar home">
+      <span class="brand-mark">AM</span>
+      <span>Adrian Marikar</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / MAIL AUTHENTICATION 034</p>
+        <h1>Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC</h1>
+      </header>
+
+      <p>Rotating a DKIM key should not mean replacing one DNS value and hoping cached resolvers catch up. The safe operation is an overlap: create a second selector, publish its public key, wait until it resolves authoritatively and publicly, switch Docker Mailserver to sign new messages with it, and leave the old selector available while earlier messages can still be verified.</p>
+
+      <p>This guide uses <code>example.com</code>, an old selector named <code>mail</code>, and a date-based replacement named <code>dkim202607</code>. They are placeholders. Do not publish a real private key, unredacted signing configuration, server address, API token, or local credential path while troubleshooting.</p>
+
+      <blockquote>Publish and verify the new public key before the first message is signed with the new selector. Remove the old public key last, not first.</blockquote>
+
+      <h2>First: decide whether rotation is actually needed</h2>
+      <p>DKIM keys do not have the short fixed lifetime of a TLS certificate. Docker Mailserver’s current documentation explicitly says that it does not automate rotation and that routine rotation may offer little benefit to a typical small deployment. Rotate deliberately when a private key may have been exposed, when replacing a weak legacy key, after a responsibility or hosting change, or when your own security policy requires it. A suspected compromise deserves an accelerated response; an arbitrary calendar date does not justify a rushed DNS cutover.</p>
+
+      <p>For RSA, Docker Mailserver currently generates 2048-bit keys by default. Google requires at least 1024 bits for mail sent to personal Gmail accounts and recommends 2048 bits where DNS supports it. Docker Mailserver discourages unnecessarily large 4096-bit RSA keys because compatibility and DNS response size matter. For a normal replacement, retain the documented 2048-bit default unless your pinned version and recipients justify another choice.</p>
+
+      <h2>The no-downtime sequence</h2>
+      <pre><code>inventory current signer and selector
+  → back up persisted mail configuration
+  → generate a separate private/public key pair
+  → publish new-selector._domainkey.example.com
+  → verify the exact public record from several resolvers
+  → configure the signer to use the new selector
+  → restart or reload Docker Mailserver
+  → prove a real outbound message passes DKIM and DMARC
+  → keep the old selector during the overlap
+  → retire the old DNS key only after the transition</code></pre>
+      <p>Each arrow is an acceptance gate. If one fails, stop and roll back the signing configuration while both DNS selectors still exist.</p>
+
+      <h2>1. Inventory the current signature and signer</h2>
+      <p>Start with a recently delivered message from the domain. In its raw headers, locate <code>DKIM-Signature</code> and record these tags:</p>
+      <ul>
+        <li><code>d=example.com</code>: the signing domain;</li>
+        <li><code>s=mail</code>: the selector;</li>
+        <li><code>a=rsa-sha256</code>: the signing algorithm;</li>
+        <li><code>t=</code> and, if present, <code>x=</code>: signature creation and expiry.</li>
+      </ul>
+      <p>Also record the recipient’s <code>Authentication-Results</code>. A healthy baseline should show <code>dkim=pass</code>, with the DKIM <code>d=</code> domain aligned to the visible <code>From:</code> domain so DMARC can use that pass. DKIM can pass cryptographically yet fail DMARC alignment if it signs as an unrelated domain.</p>
+
+      <p>Next identify the implementation used by the pinned Docker Mailserver release. Modern DMS can sign through OpenDKIM or Rspamd; their file layouts and reload behaviour differ. Inspect non-secret settings and the version-specific CLI help rather than pasting the whole environment:</p>
+      <pre><code>docker compose images mailserver
+docker compose exec mailserver setup config dkim help
+
+docker compose exec mailserver sh -lc \
+  'postconf -m | sort; pgrep -a opendkim || true; pgrep -a rspamd || true'</code></pre>
+      <p>The official DMS command <code>setup config dkim</code> generates keys with good defaults, but DMS documents that it does not provide a complete key-rotation workflow. Do not assume rerunning the default command creates a safe second selector; read the help for the exact image you run and preserve the current key.</p>
+
+      <h2>2. Back up the persisted configuration</h2>
+      <p>Before generating anything, take a file-level backup of the host directory mounted as <code>/tmp/docker-mailserver/</code> or whatever config destination your Compose file uses. Include signing keys, OpenDKIM or Rspamd maps, account configuration, and the Compose manifest. Keep this backup encrypted and off the public repository.</p>
+      <pre><code># Render configuration for local review; do not paste secret output
+ docker compose config
+
+# Show mounts without dumping environment variables
+ docker inspect mailserver \
+   --format '{{range .Mounts}}{{println .Source " -> " .Destination}}{{end}}'
+
+# Use your established encrypted backup process for the discovered config source
+# and perform a restore rehearsal before treating that backup as valid.</code></pre>
+      <p>The <a href="/posts/backup-restore-docker-mailserver.html">Docker Mailserver backup and restore runbook</a> covers the wider recovery set. Rotation should be reversible at the configuration layer; it should never require deleting mail volumes.</p>
+
+      <h2>3. Create a new selector without overwriting the old one</h2>
+      <p>Choose a selector that is distinct and operationally clear. A date such as <code>dkim202607</code> is more useful than calling every key <code>mail</code>. Generate the new pair using the mechanism supported by the exact DMS image and active signer. If that release’s helper cannot create an additional selector safely, follow the linked OpenDKIM or Rspamd configuration model instead of forcing the default generator.</p>
+
+      <p>The required end state is simple:</p>
+      <pre><code>old private key: retained temporarily for rollback
+new private key: readable only by the signing service
+old public DNS:  mail._domainkey.example.com
+new public DNS:  dkim202607._domainkey.example.com</code></pre>
+      <p>Keep private-key permissions restrictive. Never copy private key material into a DNS panel: DNS receives only the public <code>p=</code> value. If the domain is one of several hosted by the same mail server, repeat the key and DNS work per signing domain; a selector name may be reused across domains, but each full DNS owner name is separate.</p>
+
+      <h2>4. Publish the new public key before switching</h2>
+      <p>Create a TXT record at the full selector owner name:</p>
+      <pre><code>dkim202607._domainkey.example.com.  TXT  "v=DKIM1; k=rsa; p=&lt;public-key-value&gt;"</code></pre>
+      <p>DNS dashboards differ. Some append the zone automatically, so the name field may need only <code>dkim202607._domainkey</code>. Some split a long TXT value into quoted character strings; DNS clients concatenate those strings. What matters is the resolved value, not how the dashboard visually wraps it.</p>
+
+      <p>Query the authoritative nameserver and independent public resolvers:</p>
+      <pre><code># Discover authoritative servers
+dig +short NS example.com
+
+# Ask one authoritative server directly
+dig +short TXT dkim202607._domainkey.example.com @ns1.example-dns.invalid
+
+# Compare public recursive answers
+dig +short TXT dkim202607._domainkey.example.com @1.1.1.1
+dig +short TXT dkim202607._domainkey.example.com @8.8.8.8</code></pre>
+      <p>Replace the intentionally invalid nameserver placeholder with one returned by the first query. Check that there is one coherent DKIM record and that the public key exactly matches the generated public half. Do not switch signing merely because the DNS control panel says “saved.”</p>
+
+      <h2>5. Switch only the active signing selector</h2>
+      <p>After the new DNS record resolves, update the active signer so <code>example.com</code> uses <code>dkim202607</code> and its matching private key. Preserve every other domain mapping. This is especially important on a multi-domain server: replacing an entire Rspamd domain map or OpenDKIM signing table can make the target domain work while silently stopping signatures for another domain.</p>
+
+      <p>Validate the edited configuration using the signer’s supported tools, then perform the documented reload or a controlled Compose restart:</p>
+      <pre><code>docker compose restart mailserver
+docker compose ps
+docker compose logs --since 5m mailserver</code></pre>
+      <p>Do not use <code>docker compose down -v</code>. DKIM rotation is a signing-configuration change, not a reason to remove persisted mail data. If startup or signing logs show a permission, selector, or key-path error, restore the previous map and selector while investigating.</p>
+
+      <h2>6. Verify the message, not just DNS</h2>
+      <p>Send a harmless new message through the same authenticated submission path used in production to an external mailbox you control. Inspect the raw message rather than trusting inbox placement alone. The acceptance evidence should include:</p>
+      <ol>
+        <li>A single expected <code>DKIM-Signature</code> with <code>d=example.com</code> and <code>s=dkim202607</code>.</li>
+        <li>The recipient reports <code>dkim=pass</code>.</li>
+        <li>DMARC reports <code>pass</code>, with the DKIM domain aligned to the visible From domain or an independently aligned SPF pass.</li>
+        <li>The old selector is no longer used for newly submitted messages.</li>
+        <li>Other hosted domains still receive their expected signatures.</li>
+        <li>Postfix and the active signing service show no key-read or milter errors.</li>
+      </ol>
+      <p>A DNS lookup proving that the new TXT record exists is necessary but insufficient. It does not prove Docker Mailserver selected the new key, signed the message, or aligned the signing domain with DMARC. The recipient’s raw authentication results close that loop.</p>
+
+      <h2>7. Keep the old selector for an overlap period</h2>
+      <p>RFC 6376’s rollover example publishes old and new public keys concurrently. New mail is signed with the new selector at the start of the transition; the old public key is removed at the end, after messages using it are no longer expected to be in transit or verified. Docker Mailserver’s documentation gives the same operational rule: keep the previous key and selector valid until the last message signed with that key reaches its expiry.</p>
+
+      <p>There is no universal number of hours that fits every deployment. Consider the maximum <code>x=</code> signature lifetime if your signer emits it, delayed queues, retries, forwarding, and your rollback policy. During overlap, monitor DMARC aggregate reports and recipient headers for the new selector. When retiring the old selector, remove only its public DNS record and archive or securely destroy its private key according to policy. Do not delete the new key, another domain’s key, or unrelated mail state.</p>
+
+      <h2>Emergency rotation after suspected compromise</h2>
+      <p>If the old private key may be exposed, shorten the overlap. Publish and verify the replacement, switch signing, and then revoke or remove the compromised public key as soon as the new path is proven. RFC 6376 represents explicit revocation with an empty <code>p=</code> value, but notes that revocation and removal have no defined semantic difference to verifiers. Follow your DNS and incident-response policy, preserve evidence privately, and accept that old signatures may stop verifying: preventing continued abuse is more important than a leisurely rollover.</p>
+
+      <h2>Common rotation mistakes</h2>
+      <ul>
+        <li><strong>Overwriting the old key:</strong> removes the clean rollback path before the new selector is proven.</li>
+        <li><strong>Switching before DNS resolves:</strong> every new signature points receivers at a missing key.</li>
+        <li><strong>Changing only the TXT value under the same selector:</strong> cached old answers can make verification intermittently fail. A new selector avoids that ambiguity.</li>
+        <li><strong>Publishing the private key:</strong> DNS must contain only public material.</li>
+        <li><strong>Testing a DNS checker but no message:</strong> proves publication, not signing or alignment.</li>
+        <li><strong>Checking DKIM but not DMARC:</strong> a valid signature can still use a non-aligned <code>d=</code> domain.</li>
+        <li><strong>Deleting the old selector immediately:</strong> breaks verification for delayed or recently signed mail.</li>
+        <li><strong>Regenerating every hosted domain:</strong> expands a one-domain maintenance task into an unnecessary outage risk.</li>
+        <li><strong>Assuming OpenDKIM and Rspamd use the same maps:</strong> version and signer differences matter; use current DMS documentation and local help.</li>
+      </ul>
+
+      <h2>Compact acceptance checklist</h2>
+      <ol>
+        <li>The current selector, signing domain, signer, key size, and baseline authentication results are recorded.</li>
+        <li>Persisted DMS configuration and signing material have a tested private backup.</li>
+        <li>A distinct new selector and 2048-bit public/private pair exist without overwriting the old pair.</li>
+        <li>The new public key resolves correctly from authoritative and public DNS.</li>
+        <li>The active signer maps the intended domain—not every domain blindly—to the new selector.</li>
+        <li>Docker Mailserver returns healthy after reload or restart.</li>
+        <li>A real external message shows the new selector, <code>dkim=pass</code>, and aligned <code>dmarc=pass</code>.</li>
+        <li>Other hosted domains continue signing correctly.</li>
+        <li>The old public selector remains available for the planned transition period.</li>
+        <li>DMARC reports and logs are reviewed before the old key is retired.</li>
+      </ol>
+
+      <p>Use Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">current DKIM, DMARC, and SPF documentation</a> for the commands and paths supported by your pinned image. The standards basis for concurrent selectors is <a href="https://datatracker.ietf.org/doc/html/rfc6376#section-3.1" rel="noopener noreferrer">RFC 6376 section 3.1</a>. Google’s <a href="https://support.google.com/a/answer/81126?hl=en" rel="noopener noreferrer">email sender guidelines</a> document the current minimum and recommended DKIM key lengths for mail sent to Gmail.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related self-hosted mail guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Read Authentication-Results correctly and separate DKIM or DMARC failures from reputation and content filtering.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Preserve each domain’s signing map, DNS records, and identity on one shared server.</span></li>
+          <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect signing keys and configuration alongside mail and state before planned maintenance.</span></li>
+          <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Docker Mailserver serving an old TLS certificate</a><span>DKIM authenticates messages; SMTP and IMAP certificates protect transport. Troubleshoot them as separate chains.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The wider SPF, DKIM, DMARC, TLS, Docker Mailserver, and DNS architecture.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
