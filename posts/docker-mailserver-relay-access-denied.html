@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix “Relay Access Denied” in Docker Mailserver Safely — Adrian Marikar</title>
+  <meta name="description" content="A safe Docker Mailserver 554 Relay access denied checklist: identify delivery versus submission, prove SMTP AUTH, inspect Postfix restrictions, and avoid creating an open relay.">
+  <meta name="keywords" content="Docker Mailserver relay access denied, Postfix 554 5.7.1 relay access denied, Docker Mailserver SMTP AUTH, SASL authentication, Postfix open relay">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix “Relay Access Denied” in Docker Mailserver Safely">
+  <meta property="og:description" content="Find out why Postfix refused the recipient, restore authenticated submission, and fix trusted-network or domain configuration without turning the server into an open relay.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html">
+  <meta property="article:published_time" content="2026-07-25T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-25T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix “Relay Access Denied” in Docker Mailserver Safely">
+  <meta name="twitter:description" content="A layer-by-layer 554 5.7.1 troubleshooting guide for Docker Mailserver, Postfix, SMTP AUTH, ports 25/465/587, and relay policy.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix ‘Relay Access Denied’ in Docker Mailserver Safely","description":"A safe Docker Mailserver 554 Relay access denied checklist: identify delivery versus submission, prove SMTP AUTH, inspect Postfix restrictions, and avoid creating an open relay.","url":"https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html"},"datePublished":"2026-07-25T10:00:00Z","dateModified":"2026-07-25T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Relay access denied","Postfix","SMTP AUTH","SASL","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+    <nav aria-label="Primary navigation">
+      <a href="/#writing">Writing</a><a href="/categories/ai-agents.html">AI agents</a><a href="/categories/newbizfeed.html">NewBizFeed</a><a href="/categories/dryhomeadvice.html">Dry Home Advice</a><a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a><a href="/#about">About</a><a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / SMTP AUTH 035</p>
+        <h1>Fix “Relay Access Denied” in Docker Mailserver Safely</h1>
+      </header>
+
+      <p><code>554 5.7.1 Relay access denied</code> usually means Postfix is reachable and deliberately refused to forward a message. That is different from a timeout, a bad password, or a spam-folder problem. The refusal is an important anti-abuse control: an SMTP server should accept remote delivery for domains it owns, and should relay to other domains only for an authenticated or explicitly trusted client.</p>
+
+      <p>The wrong fix is to trust a wide Docker subnet, remove recipient restrictions, or add the whole internet to <code>mynetworks</code>. That can create an open relay. The right fix starts by identifying which SMTP contract the failed request was meant to use.</p>
+
+      <blockquote>Do not “fix” relay denial by weakening relay policy. Prove that the recipient is local, or make the legitimate sending client authenticate on the submission service.</blockquote>
+
+      <h2>What the error actually tells you</h2>
+      <p>Postfix separates receiving mail from relaying it. A remote mail server on port 25 may deliver to <code>person@example.com</code> if Docker Mailserver is configured to host <code>example.com</code>. A mail client logged in as that user may submit a message to <code>recipient@external.test</code> on port 587 or 465. An unauthenticated stranger must not be able to connect and forward arbitrary mail to an unrelated domain.</p>
+      <p>Postfix’s official relay-control documentation describes the normal permission boundary: relay mail from trusted networks, from SASL-authenticated clients, or to authorised relay destinations. A relay denial therefore points to one of four common situations:</p>
+      <ul>
+        <li>the client tried to send externally without successfully authenticating;</li>
+        <li>the recipient domain was supposed to be local, but Docker Mailserver does not recognise it;</li>
+        <li>a legitimate internal service was expected to use an explicitly trusted path, but its real source address is not in that narrow trust boundary;</li>
+        <li>the request reached the wrong port or wrong server.</li>
+      </ul>
+
+      <h2>1. Capture the complete SMTP response and route</h2>
+      <p>Record the timestamp, sender domain, recipient domain, server hostname, port, and whether the client attempted authentication. Redact usernames and never publish passwords, tokens, real server addresses, or full production logs. Then match the event in Docker Mailserver’s logs:</p>
+      <pre><code>docker compose logs --since 15m mailserver
+
+# If the service is not named mailserver, discover it first:
+docker compose ps</code></pre>
+      <p>Find the Postfix queue or connection lines around the failure. Useful evidence includes the client address, listener/service, <code>sasl_username</code> when authentication succeeded, recipient domain, and the exact reject text. The absence of <code>sasl_username</code> is a strong clue when a desktop client believed it had authenticated.</p>
+
+      <h2>2. Decide whether this is delivery or submission</h2>
+      <table>
+        <thead><tr><th>Intent</th><th>Normal port</th><th>Expected permission</th></tr></thead>
+        <tbody>
+          <tr><td>Another mail server delivers to a domain you host</td><td>25</td><td>Recipient domain/address is local; no client login required</td></tr>
+          <tr><td>A user’s mail app sends to an external recipient</td><td>587</td><td>STARTTLS, then SMTP AUTH</td></tr>
+          <tr><td>A user’s mail app uses implicit TLS submission</td><td>465</td><td>TLS from connection start, then SMTP AUTH</td></tr>
+          <tr><td>An internal application sends alerts</td><td>Usually 587</td><td>Dedicated authenticated account preferred</td></tr>
+        </tbody>
+      </table>
+      <p>Docker Mailserver’s port guidance distinguishes SMTP transfer on 25 from authenticated message submission on 465/587. Do not point an ordinary mail app at port 25 merely because it accepts a TCP connection. Conversely, changing a client from 587 to 465 without changing STARTTLS to implicit TLS creates a protocol mismatch before relay policy is even evaluated.</p>
+
+      <h2>3. Prove SMTP AUTH on the submission port</h2>
+      <p>First inspect capabilities without entering credentials:</p>
+      <pre><code># Port 587 uses STARTTLS
+openssl s_client -starttls smtp \
+  -connect mail.example.com:587 \
+  -servername mail.example.com -crlf
+
+EHLO client.example.invalid
+QUIT</code></pre>
+      <p>The post-TLS <code>EHLO</code> response should advertise <code>AUTH</code> for a properly configured submission listener. Do not paste a base64-encoded password into a public terminal transcript—base64 is encoding, not encryption. Test the real account from a mail client or a purpose-built SMTP tester that can read credentials privately.</p>
+      <p>For a normal client, check all of these together:</p>
+      <ul>
+        <li>outgoing host is the mail hostname covered by the TLS certificate;</li>
+        <li>port 587 uses STARTTLS, or port 465 uses implicit TLS;</li>
+        <li>outgoing authentication is enabled rather than “none” or “use incoming only”;</li>
+        <li>the login is the complete mailbox address expected by Docker Mailserver;</li>
+        <li>the sender is allowed to use that identity under your configured policy.</li>
+      </ul>
+      <p>Retest and inspect the server log. Success is not merely “AUTH appears in EHLO”; the specific transaction should show successful SASL authentication and then accept the external recipient.</p>
+
+      <h2>4. If inbound delivery is denied, verify the local domain</h2>
+      <p>Suppose an outside sender gets relay denial while mailing <code>person@example.com</code>. The server may not believe <code>example.com</code> is one of its destinations. Check public DNS and DMS account configuration separately:</p>
+      <pre><code>dig +short MX example.com
+dig +short A mail.example.com
+dig +short AAAA mail.example.com
+
+docker compose exec mailserver setup email list
+docker compose exec mailserver setup alias list</code></pre>
+      <p>The MX must name the intended mail host, and the address records must lead to the intended server. Inside DMS, a real account, alias, or supported catch-all configuration must establish the recipient path. After an account/configuration change, follow the current Docker Mailserver documentation for your pinned image and verify that the change loaded. Do not add the recipient domain to a generic relay list just to silence the error; that models the domain incorrectly and can produce loops or unsafe forwarding.</p>
+
+      <h2>5. Inspect effective Postfix policy before editing it</h2>
+      <p>Docker Mailserver builds Postfix configuration from defaults, environment variables, and supported overrides. Read the effective non-default policy:</p>
+      <pre><code>docker compose exec mailserver postconf -n | grep -E \
+  '^(mynetworks|mydestination|relay_domains|smtpd_(relay|recipient)_restrictions|smtpd_sasl_auth_enable)\s*='
+
+# Inspect the enabled master services without dumping secrets
+docker compose exec mailserver postconf -M</code></pre>
+      <p>A conventional relay restriction includes an authenticated/trusted permit followed by <code>reject_unauth_destination</code>. Exact generated settings vary by Docker Mailserver version, so compare the result with the current official docs and any deliberate local overrides. If an old override removed <code>permit_sasl_authenticated</code>, restore policy through DMS’s supported configuration mechanism rather than editing generated files inside the running container.</p>
+
+      <h2>6. Treat <code>mynetworks</code> as a narrow exception</h2>
+      <p>Some internal systems legitimately relay without SMTP AUTH, but broad trust is risky. Docker Mailserver warns that automatically trusting connected Docker networks can create an open relay in some network and IPv6 arrangements. Prefer a dedicated authenticated submission account for web applications, monitoring, and cron jobs.</p>
+      <p>If a legacy service truly cannot authenticate, isolate it on a private network, identify its stable source range, trust only the smallest required range, restrict sender identities where possible, and prove from an untrusted external host that relay is still denied. Never use <code>0.0.0.0/0</code>, <code>::/0</code>, an entire VPS provider range, or an unnecessarily broad LAN as a convenience fix.</p>
+
+      <h2>7. Do not confuse an outbound relay host with inbound relay permission</h2>
+      <p>A smarthost configuration answers a different question: where should Docker Mailserver send outbound messages after it has accepted them? DMS documents authenticated relay-host settings for networks where direct outbound port 25 is blocked or where a specialist sender is preferred. Configuring a smarthost does not automatically authorise an unauthenticated mail client to submit messages to DMS.</p>
+      <p>Keep the two authentication boundaries separate:</p>
+      <ol>
+        <li>mail client or application authenticates to Docker Mailserver;</li>
+        <li>Docker Mailserver optionally authenticates to the upstream relay host.</li>
+      </ol>
+      <p>A failure at the first boundary often produces relay denial during the client transaction. A failure at the second appears later in queue and delivery logs after DMS has already accepted the message.</p>
+
+      <h2>8. Verify the fix without becoming an open relay</h2>
+      <p>Run a small acceptance matrix after the change:</p>
+      <ol>
+        <li>From an external network, unauthenticated delivery to one valid local mailbox is accepted.</li>
+        <li>From the same network, unauthenticated relay from an unrelated sender to an unrelated recipient is rejected.</li>
+        <li>An authenticated user on 587 or 465 can submit to an external mailbox they control.</li>
+        <li>A bad password is rejected and does not fall through to trusted relay.</li>
+        <li>An invalid recipient at a hosted domain follows your intended reject policy.</li>
+        <li>The accepted test message is queued, delivered, and passes the expected SPF/DKIM/DMARC checks.</li>
+      </ol>
+      <p>Use harmless addresses you control. Do not run mass relay tests or send unsolicited messages. An external open-relay checker can be a useful second opinion, but the local transaction matrix and Postfix logs explain exactly which rule granted or denied access.</p>
+
+      <h2>Common unsafe fixes to avoid</h2>
+      <ul>
+        <li><strong>Adding every Docker network to <code>mynetworks</code>:</strong> container source addresses and published ports can make the resulting trust wider than expected.</li>
+        <li><strong>Removing <code>reject_unauth_destination</code>:</strong> disables a central relay guard instead of fixing authentication or local-domain configuration.</li>
+        <li><strong>Using port 25 for all clients:</strong> mixes server transfer with user submission and often bypasses the intended TLS/AUTH service.</li>
+        <li><strong>Testing only login:</strong> successful IMAP authentication does not prove SMTP AUTH is enabled or used.</li>
+        <li><strong>Adding a hosted domain as a relay domain:</strong> can hide a missing mailbox/domain setup while creating the wrong routing model.</li>
+        <li><strong>Publishing logs or rendered Compose output:</strong> these may expose addresses, hashes, credentials, or infrastructure details.</li>
+      </ul>
+
+      <h2>Compact diagnosis checklist</h2>
+      <ol>
+        <li>Capture the exact reject line, time, intended route, port, and redacted log event.</li>
+        <li>Classify the request as inbound delivery, authenticated submission, internal application mail, or upstream smarthost delivery.</li>
+        <li>For submission, verify the TLS mode, post-TLS AUTH capability, full account name, and successful SASL log line.</li>
+        <li>For inbound mail, verify MX/address DNS and that DMS owns the recipient through an account or alias.</li>
+        <li>Inspect effective relay restrictions and supported overrides.</li>
+        <li>Prefer authentication over broad <code>mynetworks</code> trust.</li>
+        <li>Retest valid local delivery, authenticated external submission, and unauthenticated external relay denial.</li>
+        <li>Confirm the accepted message actually leaves the queue and authenticates correctly at the recipient.</li>
+      </ol>
+
+      <p>The authoritative references are Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/" rel="noopener noreferrer">port and submission guidance</a>, its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/mail-forwarding/relay-hosts/" rel="noopener noreferrer">outbound relay-host documentation</a>, and Postfix’s <a href="https://www.postfix.org/SMTPD_ACCESS_README.html" rel="noopener noreferrer">SMTP relay and access-control guide</a> plus <a href="https://www.postfix.org/SASL_README.html" rel="noopener noreferrer">SASL guide</a>. Use documentation matching your pinned DMS image because generated Postfix settings and supported override paths can change.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related self-hosted mail guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">Docker Mailserver SMTP connection timeout</a><span>If the server never returns an SMTP status, troubleshoot DNS, firewalls, published ports, and TLS before relay policy.</span></li>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>After submission works, verify PTR, SPF, DKIM, DMARC, recipient headers, and reputation.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Make each hosted domain, mailbox, alias, DKIM identity, and DNS route explicit.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The wider Docker Mailserver, DNS, TLS, and authenticated-client architecture.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
