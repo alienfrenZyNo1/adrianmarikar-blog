@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Fix Gmail 550 5.7.26 with Docker Mailserver</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html</guid>
+      <pubDate>Fri, 31 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver guide to fixing Gmail 550 5.7.26 by proving SPF, DKIM, DMARC alignment, DNS visibility, and the authentication of a real message.</description>
+    </item>
+    <item>
       <title>Fix “Relay Access Denied” in Docker Mailserver Safely</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html</guid>

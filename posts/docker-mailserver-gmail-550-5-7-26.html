@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix Gmail 550 5.7.26 with Docker Mailserver — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver guide to fixing Gmail 550 5.7.26 by proving SPF, DKIM, DMARC alignment, DNS visibility, and the authentication of a real message.">
+  <meta name="keywords" content="Docker Mailserver Gmail 550 5.7.26, unauthenticated email Gmail, Docker Mailserver SPF DKIM DMARC, DMARC alignment, Gmail email rejected">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix Gmail 550 5.7.26 with Docker Mailserver">
+  <meta property="og:description" content="Trace Gmail’s unauthenticated-email rejection from the SMTP response through SPF, DKIM, DMARC alignment, Docker Mailserver signing, and recipient headers.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html">
+  <meta property="article:published_time" content="2026-07-31T10:00:00Z">
+  <meta property="article:modified_time" content="2026-07-31T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix Gmail 550 5.7.26 with Docker Mailserver">
+  <meta name="twitter:description" content="An evidence-led fix for Gmail authentication rejection: SPF, DKIM, DMARC alignment, DNS, DMS signing, and a controlled retest.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix Gmail 550 5.7.26 with Docker Mailserver","description":"A practical Docker Mailserver guide to fixing Gmail 550 5.7.26 by proving SPF, DKIM, DMARC alignment, DNS visibility, and the authentication of a real message.","url":"https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html"},"datePublished":"2026-07-31T10:00:00Z","dateModified":"2026-07-31T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Gmail 550 5.7.26","SPF","DKIM","DMARC alignment","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+  <header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.07 / mail authentication 036</p>
+        <h1>Fix Gmail 550 5.7.26 with Docker Mailserver</h1>
+      </header>
+
+      <p>Gmail’s <code>550-5.7.26</code> response means the receiving server rejected a message because it could not authenticate the sending domain to the level its policy required. With Docker Mailserver, the useful question is not “which DNS record should I copy?” It is: <strong>which identity did Gmail evaluate, which mechanism passed, and did that identity align with the address visible in From?</strong></p>
+
+      <p>Google’s current sender guidance requires SPF or DKIM for all senders to personal Gmail accounts and requires SPF, DKIM, and DMARC for bulk senders. Google recommends configuring all three even at low volume. A self-hosted personal server can therefore be rejected long before it sends anything resembling bulk mail if neither SPF nor DKIM authenticates the real message.</p>
+
+      <blockquote>Do not weaken DMARC blindly or keep resending the same broken message. Save the full rejection, verify public DNS, then prove authentication on one controlled message.</blockquote>
+
+      <h2>First: keep the complete Gmail rejection</h2>
+      <p>The enhanced code is only the start. Save the entire SMTP response from the Docker Mailserver log or non-delivery report. Gmail uses variants that may mention an unauthenticated sender, a domain’s DMARC policy, or missing alignment. Record the queue ID and timestamp, but redact mailbox addresses, message content, host addresses, and infrastructure details before sharing evidence.</p>
+
+      <pre><code>docker compose logs --since 30m mailserver
+
+# Search narrowly after you know the queue ID or recipient domain
+docker compose logs --since 30m mailserver | \
+  grep -E 'status=(bounced|deferred)|5[.]7[.]26|gmail'</code></pre>
+
+      <p>A Postfix line with <code>status=bounced</code> and Gmail’s <code>550</code> confirms a permanent remote rejection. Repeated retries will not repair DNS or signing. Stop automated retests until the authentication path is coherent.</p>
+
+      <h2>Understand the three identities Gmail compares</h2>
+      <p>SPF, DKIM, and DMARC are related, but they do not validate the same thing:</p>
+      <table>
+        <thead><tr><th>Check</th><th>Identity it validates</th><th>What must be true</th></tr></thead>
+        <tbody>
+          <tr><td>SPF</td><td>The envelope sender / Return-Path domain</td><td>The observed sending address is authorised by that domain’s SPF policy.</td></tr>
+          <tr><td>DKIM</td><td>The signing domain in the signature’s <code>d=</code> tag</td><td>The signature verifies against the selector’s public key in DNS.</td></tr>
+          <tr><td>DMARC</td><td>The visible RFC5322 From domain</td><td>At least one passing SPF or DKIM identity aligns with the visible From domain.</td></tr>
+        </tbody>
+      </table>
+      <p>Under relaxed DMARC alignment, the organisational domains may match; strict alignment requires an exact domain match. This is why “SPF passed” is not enough when a web app uses an unrelated bounce domain, and why “DKIM passed” is not enough when the signer uses a different organisation’s domain.</p>
+
+      <h2>1. Audit the public DNS Gmail can actually see</h2>
+      <p>Query a public recursive resolver rather than trusting a DNS control panel preview. Replace the names below with your own domain and current DKIM selector:</p>
+
+      <pre><code>dig +short TXT example.com @1.1.1.1
+dig +short TXT selector1._domainkey.example.com @1.1.1.1
+dig +short TXT _dmarc.example.com @1.1.1.1
+
+# Also query an authoritative nameserver when debugging propagation
+dig +short NS example.com
+dig +short TXT example.com @ns1.dns-provider.example</code></pre>
+
+      <p>You should find one SPF policy at the root, a DKIM public key at the selector Docker Mailserver uses, and one DMARC policy at <code>_dmarc</code>. Two separate SPF TXT records do not merge; SPF evaluation can return a permanent error. A DKIM record under the wrong selector is invisible to a message signed with another selector. A DMARC record on the root domain is in the wrong place.</p>
+
+      <h2>2. Make SPF describe every legitimate outbound route</h2>
+      <p>For direct sending, the SPF policy must authorise the address Gmail sees connecting. If Docker Mailserver sends through a smarthost, the policy must authorise that relay provider’s documented mechanism instead. Use one record and stay within SPF’s DNS-lookup limit.</p>
+
+      <pre><code># Illustrative direct-sender policy; use your real authorised route
+example.com.  TXT  "v=spf1 ip4:192.0.2.10 -all"
+
+# Illustrative provider pattern; use only the provider's official value
+example.com.  TXT  "v=spf1 include:_spf.mail-provider.example -all"</code></pre>
+
+      <p>The documentation-only address above comes from the reserved <code>192.0.2.0/24</code> range; do not copy it into production. Do not add Google, Microsoft, or a random “common SPF” include unless that service actually sends mail for your domain. After publishing, query public DNS again and allow for the record’s TTL.</p>
+
+      <h2>3. Prove Docker Mailserver is signing with the expected domain</h2>
+      <p>Current Docker Mailserver releases use Rspamd for DKIM signing, while older installations may still use OpenDKIM. Follow documentation for the image tag you actually run. Inspect the public key generated for your domain and selector without printing private key material:</p>
+
+      <pre><code># List DMS DKIM-related files and permissions; do not print private keys
+docker compose exec mailserver sh -lc \
+  'find /tmp/docker-mailserver -type f -path "*dkim*" -printf "%p %m\n"'
+
+# Inspect recent signing or authentication messages
+docker compose logs --since 30m mailserver | \
+  grep -Ei 'dkim|rspamd|opendkim'</code></pre>
+
+      <p>Compare the selector and domain in the outgoing message’s <code>DKIM-Signature</code> header with the DNS name you queried. A common failure is generating a key successfully but publishing the TXT record under the wrong DNS zone, leaving an obsolete selector active, or mounting configuration that does not contain the new key. Restart or reload only as your pinned DMS version documents, then send one new message; an old queued message does not gain a new signature retroactively.</p>
+
+      <h2>4. Publish DMARC in monitoring mode before enforcement</h2>
+      <p>If this is a new domain or you have not inventoried every sender, begin with a monitoring policy and a reporting mailbox you control:</p>
+
+      <pre><code>_dmarc.example.com. TXT \
+  "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com; adkim=r; aspf=r"</code></pre>
+
+      <p><code>p=none</code> does not authenticate anything and is not a fix for failed SPF or DKIM. It asks receivers to monitor rather than quarantine or reject based on DMARC policy while you gather evidence. Once every legitimate stream passes aligned authentication, move deliberately to <code>quarantine</code> and then <code>reject</code>. Keep the report mailbox operational and expect aggregate XML reports rather than human-readable support messages.</p>
+
+      <p>If Gmail’s response explicitly says your existing DMARC policy caused rejection, temporarily relaxing enforcement can restore legitimate mail while you repair alignment—but only after confirming the DNS change is authorised and understanding the spoofing trade-off. The durable fix is aligned authentication, not permanent <code>p=none</code>.</p>
+
+      <h2>5. Check alignment, not just pass/fail</h2>
+      <p>Suppose the visible header is <code>From: alerts@example.com</code>. DMARC can pass through either route:</p>
+      <ul>
+        <li><strong>SPF route:</strong> SPF passes for the envelope sender, such as <code>bounce@example.com</code>, and that domain aligns with <code>example.com</code>.</li>
+        <li><strong>DKIM route:</strong> the message has a valid signature with <code>d=example.com</code>, aligned with the visible From domain.</li>
+      </ul>
+      <p>A third-party contact form that uses a visitor’s address as From is a classic failure. The application does not control the visitor’s domain and cannot authenticate as it. Use a From address on a domain you control, put the visitor in <code>Reply-To</code>, and authenticate the controlled domain. Never forge a customer’s From identity merely to make replies convenient.</p>
+
+      <h2>6. Test one fresh message and read the received evidence</h2>
+      <p>Send one ordinary message to a Gmail mailbox you control. In Gmail, open <em>Show original</em> and inspect <code>Authentication-Results</code>:</p>
+
+      <pre><code>Authentication-Results: mx.google.com;
+  spf=pass smtp.mailfrom=example.com;
+  dkim=pass header.i=@example.com header.s=selector1;
+  dmarc=pass header.from=example.com</code></pre>
+
+      <p>Your values will differ. Success means the fresh message is accepted and Gmail reports the intended aligned result—not merely that an online DNS checker found three TXT records. Also inspect the Docker Mailserver queue and delivery response:</p>
+
+      <pre><code>docker compose exec mailserver postqueue -p
+docker compose logs --since 15m mailserver</code></pre>
+
+      <p>A remote <code>250</code> response confirms acceptance, not inbox placement. If authentication passes but the message lands in spam, continue with PTR, forward DNS, TLS, reputation, complaint rate, and message-quality checks rather than changing working SPF or DKIM.</p>
+
+      <h2>Failure patterns that waste time</h2>
+      <ul>
+        <li><strong>Adding a second SPF record:</strong> publish one policy that covers all authorised routes.</li>
+        <li><strong>Checking only the root TXT records:</strong> DKIM and DMARC live at selector-specific and <code>_dmarc</code> names.</li>
+        <li><strong>Assuming DKIM exists because a key was generated:</strong> prove the fresh message carries a valid signature using the published selector.</li>
+        <li><strong>Setting DMARC to reject immediately:</strong> inventory and monitor legitimate senders before enforcing.</li>
+        <li><strong>Using a visitor’s address in From:</strong> authenticate your own From domain and use Reply-To for the visitor.</li>
+        <li><strong>Testing a queued old message:</strong> create a fresh transaction after DNS and signer changes.</li>
+        <li><strong>Publishing diagnostic output:</strong> redact domains when necessary and never expose credentials, private keys, host addresses, or full mail logs.</li>
+      </ul>
+
+      <h2>Compact 550 5.7.26 recovery checklist</h2>
+      <ol>
+        <li>Save the full Gmail response, queue ID, timestamp, and redacted Postfix event.</li>
+        <li>Identify the visible From, envelope sender, DKIM signing domain, and selector.</li>
+        <li>Query SPF, selector-specific DKIM, and <code>_dmarc</code> through public DNS.</li>
+        <li>Confirm SPF authorises the route Gmail observed and that only one SPF record exists.</li>
+        <li>Confirm Docker Mailserver signs fresh outbound mail with the intended domain and selector.</li>
+        <li>Use a monitoring DMARC policy while inventorying legitimate senders, then enforce gradually.</li>
+        <li>Send one controlled fresh message and inspect Gmail’s <code>Authentication-Results</code>.</li>
+        <li>Require DMARC pass through aligned SPF or aligned DKIM before declaring the fix complete.</li>
+      </ol>
+
+      <p>The authoritative starting points are Google’s <a href="https://support.google.com/a/answer/81126" rel="noopener noreferrer">email sender guidelines</a>, Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC, and SPF guide</a>, and the DMARC alignment rules in <a href="https://datatracker.ietf.org/doc/html/rfc7489" rel="noopener noreferrer">RFC 7489</a>. Use Docker Mailserver documentation matching your pinned image, because signer defaults and supported configuration paths can change.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related self-hosted mail guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue with PTR, TLS, reputation, recipient headers, and content after authentication works.</span></li>
+          <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys without breaking DMARC</a><span>Use a DNS-first selector transition with overlap and a controlled rollback path.</span></li>
+          <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix Relay Access Denied safely</a><span>Separate authenticated submission from inbound delivery and preserve Postfix relay controls.</span></li>
+          <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep each hosted domain’s DKIM identity and DNS authentication explicit.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The wider Docker Mailserver, DNS, TLS, and mailbox architecture.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

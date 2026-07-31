@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Fix Gmail 550 5.7.26 with Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html
+  - Evidence-led recovery guide for Gmail unauthenticated-email rejection covering the full SMTP response, SPF routes, DKIM selectors, DMARC alignment, public DNS, Docker Mailserver signing, contact-form From handling, and recipient Authentication-Results.
 |- Fix “Relay Access Denied” in Docker Mailserver Safely: https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html
   - Safe Postfix 554 5.7.1 troubleshooting covering delivery versus submission, ports 25/465/587, SMTP AUTH and SASL evidence, local recipient domains, effective relay restrictions, narrow trusted networks, smarthost boundaries, and open-relay regression tests.
 |- Rotate DKIM Keys in Docker Mailserver Without Breaking DMARC: https://adrianmarikar.com/posts/rotate-dkim-keys-docker-mailserver.html
