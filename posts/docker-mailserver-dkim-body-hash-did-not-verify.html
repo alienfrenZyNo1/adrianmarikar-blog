@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver guide to diagnosing DKIM body hash failures by preserving the raw message, locating post-signing changes, and proving a clean fresh delivery.">
+  <meta name="keywords" content="Docker Mailserver DKIM body hash did not verify, DKIM bh mismatch, DKIM signature failed, Rspamd DKIM, OpenDKIM troubleshooting">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver">
+  <meta property="og:description" content="Preserve the full raw message, distinguish a body mismatch from a key failure, find the component changing mail after signing, and verify one fresh delivery.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">
+  <meta property="article:published_time" content="2026-08-01T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-01T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver">
+  <meta name="twitter:description" content="An evidence-led checklist for DKIM body hash mismatches in self-hosted Docker Mailserver mail.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver","description":"A practical Docker Mailserver guide to diagnosing DKIM body hash failures by preserving the raw message, locating post-signing changes, and proving a clean fresh delivery.","url":"https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html"},"datePublished":"2026-08-01T10:00:00Z","dateModified":"2026-08-01T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","DKIM body hash","DKIM verification","Rspamd","OpenDKIM","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+  <main>
+    <article class="article">
+      <a class="back-link" href="/">← Back home</a>
+      <header>
+        <p class="date">2026.08 / DKIM troubleshooting 037</p>
+        <h1>Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver</h1>
+      </header>
+
+      <p>A receiver reports <code>dkim=fail (body hash did not verify)</code>, yet the selector exists in DNS and Docker Mailserver says it signed the message. That is not a contradiction. It normally means the receiver found the public key but calculated a different hash from the body it received.</p>
+
+      <p>The practical fault line is the DKIM signing boundary: <strong>what touched the message body after the signer calculated the <code>bh=</code> value?</strong> Work from one complete raw message and one queue ID. Do not rotate keys, loosen DMARC, or rewrite DNS until the evidence points there.</p>
+
+      <blockquote>A body-hash mismatch is usually a message-integrity problem, not proof that the DKIM public key is wrong.</blockquote>
+
+      <h2>What the error actually says</h2>
+      <p>A DKIM signature includes a body hash in <code>bh=</code>, a signing domain in <code>d=</code>, a selector in <code>s=</code>, and canonicalisation rules in <code>c=</code>. The sender canonicalises the body and hashes it before signing. The receiver repeats that process on the body it received. Different body bytes after canonicalisation produce a different hash.</p>
+
+      <table>
+        <thead><tr><th>Result</th><th>Likely fault area</th><th>First evidence</th></tr></thead>
+        <tbody>
+          <tr><td><code>body hash did not verify</code></td><td>Body changed after signing, or the verifier did not receive the complete body</td><td>Full raw source, MIME boundaries, <code>c=</code> and <code>bh=</code></td></tr>
+          <tr><td><code>no key for signature</code></td><td>Selector DNS missing, stale, or queried at the wrong name</td><td><code>s=</code>, <code>d=</code>, public TXT lookup</td></tr>
+          <tr><td><code>bad signature</code> or signature verification failure</td><td>Signed headers, key mismatch, or broader message alteration</td><td><code>h=</code>, selector key, untouched raw message</td></tr>
+          <tr><td><code>dkim=pass</code> but <code>dmarc=fail</code></td><td>DKIM signing domain does not align with visible From</td><td><code>d=</code> versus RFC5322 From domain</td></tr>
+        </tbody>
+      </table>
+
+      <h2>1. Preserve the complete raw message</h2>
+      <p>In the recipient mailbox, download or show the original message—not a forwarded copy, screenshot, copied header block, or webmail rendering. DKIM body verification needs the complete body. A checker given headers only can correctly report that the body hash does not match because the body is absent.</p>
+
+      <p>Keep the original privately. Raw mail can contain addresses, message content, internal hostnames, delivery identifiers, and authentication details. Redact a copy before sharing it. On the sender, save the matching queue ID and a narrow log window:</p>
+
+      <pre><code>docker compose logs --since 30m mailserver
+
+# After identifying the queue ID, narrow the evidence
+# Replace QUEUE_ID with the non-secret identifier from your own log
+ docker compose logs --since 30m mailserver | grep 'QUEUE_ID'</code></pre>
+
+      <p>The queue ID ties together acceptance, filtering, DKIM signing, relay, and remote delivery. Without it, it is easy to compare a recipient’s failed message with logs from a later successful test.</p>
+
+      <h2>2. Read the signature before changing anything</h2>
+      <p>Find the <code>DKIM-Signature</code> header in the original source and record these tags:</p>
+
+      <pre><code>DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+ d=example.com; s=selector1; ...;
+ h=From:To:Subject:Date:Message-ID:MIME-Version:Content-Type;
+ bh=BASE64_BODY_HASH; b=BASE64_SIGNATURE</code></pre>
+
+      <ul>
+        <li><code>c=</code> gives header/body canonicalisation. <code>relaxed/relaxed</code> tolerates limited whitespace normalisation; it does not tolerate disclaimers, rewritten links, removed MIME parts, or changed text.</li>
+        <li><code>d=</code> and <code>s=</code> identify the DNS key at <code>selector1._domainkey.example.com</code>.</li>
+        <li><code>h=</code> lists signed headers. A body mismatch specifically concerns <code>bh=</code>, but a later header rewrite can cause a separate signature failure.</li>
+        <li>An <code>l=</code> body-length tag signs only a prefix. Do not add it as a casual workaround; it can leave appended content outside the signed body.</li>
+      </ul>
+
+      <p>RFC 6376 defines both canonicalisation algorithms and the body-hash calculation. “Relaxed” means normalised, not mutable.</p>
+
+      <h2>3. Confirm the receiver used the intended public key</h2>
+      <p>A body mismatch often means key discovery already worked, but verify the exact selector anyway. Query public recursive DNS rather than trusting the DNS dashboard:</p>
+
+      <pre><code>dig +short TXT selector1._domainkey.example.com @1.1.1.1
+dig +short TXT selector1._domainkey.example.com @8.8.8.8</code></pre>
+
+      <p>Replace the documentation domain with your own. Do not print or paste the private key. If the TXT record is absent, truncated by a bad DNS entry, or belongs to another key, fix that distinct problem first. If the receiver explicitly says the body hash differs after retrieving the key, keep investigating the message path.</p>
+
+      <h2>4. Map every component after DKIM signing</h2>
+      <p>Draw the actual route, not the route you assume:</p>
+
+      <pre><code>application or mail client
+  → authenticated submission
+  → content filtering
+  → DKIM signing
+  → outbound Postfix transport
+  → optional smarthost or security gateway
+  → recipient</code></pre>
+
+      <p>The signer should be the last component that intentionally changes the body. Common post-signing changes include:</p>
+      <ul>
+        <li>an outbound relay adding a legal footer or antivirus notice;</li>
+        <li>a gateway rewriting tracked links or HTML;</li>
+        <li>a second filter changing MIME transfer encoding, boundaries, or line endings;</li>
+        <li>an application signing a message before a downstream service adds text;</li>
+        <li>a mailing-list processor changing the subject and body;</li>
+        <li>broken software truncating a MIME part or mishandling the final line ending.</li>
+      </ul>
+
+      <p>Do not assume Docker Mailserver is the only signer. A message can carry multiple DKIM signatures. Identify which <code>d=</code>/<code>s=</code> pair failed and which component added it.</p>
+
+      <h2>5. Check the Docker Mailserver signer and filter order</h2>
+      <p>Current Docker Mailserver releases use Rspamd for DKIM signing; older deployments may use OpenDKIM. Check the documentation matching the image tag you actually run, then inspect process and log evidence without exposing keys:</p>
+
+      <pre><code># Identify the pinned image and running services
+ docker compose images mailserver
+ docker compose ps mailserver
+
+# Read only recent DKIM/filter events
+ docker compose logs --since 30m mailserver | \
+   grep -Ei 'dkim|rspamd|opendkim|milter|queue'
+
+# List likely DKIM files and permissions; never print key contents
+ docker compose exec mailserver sh -lc \
+   'find /tmp/docker-mailserver -type f -path "*dkim*" -printf "%p %m\n"'</code></pre>
+
+      <p>You are looking for the point at which the signature is added and whether another milter, transport, relay, or application-stage rewrite follows it. Avoid copying an old OpenDKIM fix into a current Rspamd-based container. Avoid editing generated files inside the running container; make supported configuration changes in the mounted source and keep a rollback.</p>
+
+      <h2>6. Isolate the altering hop with controlled tests</h2>
+      <p>Send fresh, low-risk test messages through progressively more complete routes:</p>
+      <ol>
+        <li>Plain text from an authenticated mail client through Docker Mailserver directly to a mailbox you control.</li>
+        <li>A minimal HTML message through the same route.</li>
+        <li>The real application’s normal MIME message.</li>
+        <li>The same message through any optional smarthost or outbound gateway.</li>
+      </ol>
+
+      <p>Give every test a unique subject token and record its queue ID. If plain text passes but application HTML fails, inspect the application’s MIME construction and downstream HTML handling. If direct delivery passes but the smarthost route fails, compare the raw source before and after that relay. If every route fails, inspect local filter/signing order.</p>
+
+      <p>Do not repeatedly send to unrelated recipients. A small controlled mailbox set produces cleaner evidence and avoids reputation noise.</p>
+
+      <h2>7. Fix the boundary, then send a completely new message</h2>
+      <p>The durable rule is simple: make all intended body transformations happen before DKIM signing, or have the final trusted outbound system apply the authoritative signature after its last transformation. Disable an unnecessary footer or rewrite, reorder a supported filtering stage, or sign at the final relay. Do not “fix” integrity by removing DKIM.</p>
+
+      <p>After changing the path, send a new message. A message already signed and queued keeps its old signature. At the recipient, require all of the following:</p>
+
+      <pre><code>Authentication-Results: receiver.example;
+  dkim=pass header.d=example.com header.s=selector1;
+  dmarc=pass header.from=example.com</code></pre>
+
+      <p>Also confirm a remote <code>250</code> delivery response in the matching sender log. Acceptance, DKIM pass, DMARC alignment, and inbox placement are separate observations.</p>
+
+      <h2>What not to do</h2>
+      <ul>
+        <li><strong>Do not rotate DKIM keys first.</strong> A new key cannot prevent a later footer or MIME rewrite from changing the body.</li>
+        <li><strong>Do not weaken DMARC to hide DKIM failure.</strong> DMARC policy controls receiver treatment; it does not repair message integrity.</li>
+        <li><strong>Do not test with a forwarded copy.</strong> Forwarding systems may alter the message and the copy may omit evidence.</li>
+        <li><strong>Do not paste private keys or complete raw mail into public tools.</strong> Use local analysis where possible and redact shared evidence.</li>
+        <li><strong>Do not treat relaxed canonicalisation as permission to mutate HTML.</strong> It only normalises specific whitespace differences.</li>
+        <li><strong>Do not change several hops at once.</strong> One controlled change and one new message makes the result attributable.</li>
+      </ul>
+
+      <h2>Compact recovery checklist</h2>
+      <ol>
+        <li>Download the complete original message and retain a private untouched copy.</li>
+        <li>Match it to one Docker Mailserver queue ID and timestamp.</li>
+        <li>Record <code>d=</code>, <code>s=</code>, <code>c=</code>, <code>h=</code>, and <code>bh=</code>.</li>
+        <li>Query the exact selector through public DNS without exposing private material.</li>
+        <li>Map every filter, milter, relay, footer, and rewrite after signing.</li>
+        <li>Compare minimal direct mail with application and relay paths.</li>
+        <li>Move signing after the final intended body transformation.</li>
+        <li>Send one fresh message and require <code>dkim=pass</code> plus aligned <code>dmarc=pass</code>.</li>
+      </ol>
+
+      <p>For the underlying rules, use <a href="https://www.rfc-editor.org/rfc/rfc6376.html" rel="noopener noreferrer">RFC 6376</a>, especially the canonicalisation and body-hash sections. For implementation details, use Docker Mailserver’s current <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC, and SPF documentation</a> and the documentation matching your pinned release.</p>
+
+      <section class="related-posts" aria-label="Related posts">
+        <p class="eyebrow">// keep reading</p>
+        <h2>Related self-hosted mail guides</h2>
+        <ul>
+          <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Prove SPF, DKIM, and DMARC identities and alignment on a real received message.</span></li>
+          <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys without breaking DMARC</a><span>Use a DNS-first selector transition when key rotation is actually required.</span></li>
+          <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into PTR, TLS, reputation, and placement after authentication passes.</span></li>
+          <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix Relay Access Denied safely</a><span>Separate authenticated submission, inbound delivery, and relay policy.</span></li>
+          <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The broader Docker Mailserver, DNS, TLS, and mailbox architecture.</span></li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+  <script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

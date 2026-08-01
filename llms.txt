@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html
+  - Evidence-led diagnosis for DKIM body-hash mismatches covering complete raw-message preservation, signature tags, public selector checks, signer boundaries, post-signing MIME or footer changes, controlled route tests, and fresh-message verification.
 |- Fix Gmail 550 5.7.26 with Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html
   - Evidence-led recovery guide for Gmail unauthenticated-email rejection covering the full SMTP response, SPF routes, DKIM selectors, DMARC alignment, public DNS, Docker Mailserver signing, contact-form From handling, and recipient Authentication-Results.
 |- Fix “Relay Access Denied” in Docker Mailserver Safely: https://adrianmarikar.com/posts/docker-mailserver-relay-access-denied.html
