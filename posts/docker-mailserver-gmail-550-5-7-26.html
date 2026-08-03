@@ -174,6 +174,7 @@ docker compose logs --since 15m mailserver</code></pre>
         <p class="eyebrow">// keep reading</p>
         <h2>Related self-hosted mail guides</h2>
         <ul>
+          <li><a href="/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html">Fix SPF PermError from too many DNS lookups</a><span>Audit nested includes and simplify the SPF policy without breaking legitimate senders.</span></li>
           <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">Fix DKIM “Body Hash Did Not Verify”</a><span>Trace a valid selector but failed body hash to the component changing mail after signing.</span></li>
           <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue with PTR, TLS, reputation, recipient headers, and content after authentication works.</span></li>
           <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys without breaking DMARC</a><span>Use a DNS-first selector transition with overlap and a controlled rollback path.</span></li>

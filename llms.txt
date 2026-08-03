@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html
+  - Evidence-led SPF recovery guide covering the recursive 10-term DNS lookup limit, nested includes, sender inventory, safe policy simplification, flattening risks, public DNS verification, and DMARC alignment on fresh mail.
 |- Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html
   - Evidence-led diagnosis for DKIM body-hash mismatches covering complete raw-message preservation, signature tags, public selector checks, signer boundaries, post-signing MIME or footer changes, controlled route tests, and fresh-message verification.
 |- Fix Gmail 550 5.7.26 with Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-gmail-550-5-7-26.html

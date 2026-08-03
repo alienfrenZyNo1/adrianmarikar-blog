@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver guide to auditing and fixing SPF PermError caused by the 10-DNS-lookup limit without deleting legitimate senders or publishing stale flattened IPs.">
+  <meta name="keywords" content="Docker Mailserver SPF PermError, SPF too many DNS lookups, SPF 10 lookup limit, SPF include audit, DMARC alignment">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver">
+  <meta property="og:description" content="Count the complete recursive SPF path, remove obsolete senders safely, avoid fragile flattening, and prove aligned authentication on fresh mail.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html">
+  <meta property="article:published_time" content="2026-08-03T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-03T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver">
+  <meta name="twitter:description" content="An evidence-led fix for SPF’s recursive 10-lookup limit in a self-hosted mail setup.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver","description":"A practical Docker Mailserver guide to auditing and fixing SPF PermError caused by the 10-DNS-lookup limit without deleting legitimate senders or publishing stale flattened IPs.","url":"https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html"},"datePublished":"2026-08-03T10:00:00Z","dateModified":"2026-08-03T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","SPF PermError","SPF DNS lookup limit","DMARC alignment","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+  <nav aria-label="Primary navigation">
+    <a href="/#writing">Writing</a><a href="/categories/ai-agents.html">AI agents</a><a href="/categories/newbizfeed.html">NewBizFeed</a><a href="/categories/dryhomeadvice.html">Dry Home Advice</a><a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a><a href="/#about">About</a><a href="mailto:hello@adrianmarikar.com">Contact</a>
+  </nav>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / SPF troubleshooting 038</p>
+      <h1>Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver</h1>
+    </header>
+
+    <p>Your SPF TXT record looks short, but Gmail or another receiver reports <code>spf=permerror</code>, often with “too many DNS lookups.” The visible record is only the start. Every nested <code>include:</code>, <code>redirect=</code>, <code>mx</code>, or other DNS-querying term can expand into more work.</p>
+
+    <p>RFC 7208 gives an SPF evaluation at most <strong>10 terms that cause DNS queries</strong>. Exceeding that processing limit returns <code>permerror</code>. This is not a Docker networking problem, and restarting Docker Mailserver will not repair a sender policy published in public DNS.</p>
+
+    <blockquote>The safe fix is to inventory real sending routes, count the complete recursive policy, and simplify it without silently unauthorising mail.</blockquote>
+
+    <h2>First separate outbound SPF from inbound SPF checking</h2>
+    <p>Two different controls are easy to confuse:</p>
+    <ul>
+      <li><strong>Your outbound SPF policy</strong> is the public TXT record receivers evaluate for the envelope-sender domain.</li>
+      <li><strong>Docker Mailserver’s SPF checker</strong> evaluates mail arriving at your server. Current Docker Mailserver documentation enables a Postfix policy service by default unless Rspamd handles SPF.</li>
+    </ul>
+    <p>Changing <code>ENABLE_POLICYD_SPF</code>, restarting the container, or changing a local spam score does not alter the SPF record Gmail sees for your outbound mail. Edit the authoritative DNS policy only after mapping every legitimate sender.</p>
+
+    <h2>1. Capture the exact failed identity</h2>
+    <p>SPF authenticates the RFC5321 envelope sender (or HELO identity when the reverse path is empty), not automatically the visible From address. Save the recipient’s original message or rejection and identify:</p>
+    <ul>
+      <li>the reported SPF result and domain;</li>
+      <li>the sending route or service;</li>
+      <li>the visible RFC5322 From domain;</li>
+      <li>whether DKIM passes and aligns with From;</li>
+      <li>the matching Docker Mailserver queue ID and remote response.</li>
+    </ul>
+    <p>Keep raw messages and logs private. They can contain addresses, internal names and delivery identifiers. Redact a copy before sharing evidence.</p>
+
+    <h2>2. Confirm there is exactly one SPF record</h2>
+    <p>Query public recursive resolvers rather than trusting a DNS dashboard:</p>
+    <pre><code>dig +short TXT example.com @1.1.1.1
+dig +short TXT example.com @8.8.8.8</code></pre>
+    <p>Replace <code>example.com</code> with the envelope-sender domain. A domain must not publish two separate <code>v=spf1</code> records. Merge authorised sources into one policy; do not add a second record as a quick fix.</p>
+
+    <h2>3. Count the recursive SPF path, not just the first line</h2>
+    <p>RFC 7208 section 4.6.4 counts these mechanisms and modifiers toward the 10-term limit when evaluated:</p>
+    <table>
+      <thead><tr><th>Term</th><th>Uses the SPF lookup budget?</th><th>Practical note</th></tr></thead>
+      <tbody>
+        <tr><td><code>include:</code></td><td>Yes</td><td>Its nested policy can consume several more terms.</td></tr>
+        <tr><td><code>a</code>, <code>mx</code></td><td>Yes</td><td>Address resolution follows; broad <code>mx</code> use can be expensive.</td></tr>
+        <tr><td><code>exists:</code></td><td>Yes</td><td>Often hidden inside vendor policies.</td></tr>
+        <tr><td><code>redirect=</code></td><td>Yes</td><td>The redirected policy must also be evaluated.</td></tr>
+        <tr><td><code>ptr</code></td><td>Yes</td><td>RFC 7208 says it should not be used because it is slow and unreliable.</td></tr>
+        <tr><td><code>ip4:</code>, <code>ip6:</code>, <code>all</code></td><td>No</td><td>These do not trigger SPF DNS-querying terms.</td></tr>
+      </tbody>
+    </table>
+    <p>The budget is route-dependent because SPF evaluation stops when a mechanism matches. Nevertheless, every legitimate route must remain within the limit. Also note RFC 7208’s separate limit of two “void lookups”—queries returning an empty answer or name error.</p>
+
+    <p>Expand every include yourself and keep the chain visible:</p>
+    <pre><code># Start at the envelope-sender domain
+host -t TXT example.com
+
+# Then query each include or redirect discovered in the answer
+host -t TXT _spf.sender-service.example
+host -t TXT nested-policy.sender-service.example</code></pre>
+    <p>Use the provider’s real documented SPF hostname in your DNS, not these placeholders. Do not count TXT queries mechanically as if each response were one term: count the DNS-querying SPF mechanisms encountered across the evaluated tree.</p>
+
+    <h2>4. Build a sender inventory before deleting includes</h2>
+    <p>For each mechanism, record the business owner, envelope-sender domain, service, last known use, and evidence. Typical sources include:</p>
+    <ul>
+      <li>Docker Mailserver delivering directly from the VPS;</li>
+      <li>an outbound smarthost configured in Docker Mailserver;</li>
+      <li>a transactional application provider;</li>
+      <li>a support desk, newsletter platform, invoicing service, or form service;</li>
+      <li>an old provider that is no longer allowed to send.</li>
+    </ul>
+    <p>Use recent Postfix logs, provider configuration, received-message headers and DMARC aggregate reports. Absence from one day of logs is not proof that an annual billing system or password-reset route is obsolete.</p>
+
+    <h2>5. Simplify in the least fragile order</h2>
+    <ol>
+      <li><strong>Remove confirmed obsolete services.</strong> Disable the sender first or prove it has already been retired, then remove its include.</li>
+      <li><strong>Remove duplicates and redundant mechanisms.</strong> Do not authorise the same source through several nested vendors.</li>
+      <li><strong>Use direct <code>ip4:</code> or <code>ip6:</code> only for addresses you control and keep stable.</strong> A directly delivering VPS may need one explicit address, while a managed sender should normally use its supported include.</li>
+      <li><strong>Separate mail streams with subdomains.</strong> For example, transactional and marketing return paths can have distinct SPF policies and operational owners.</li>
+      <li><strong>Ask a provider for its supported compact policy.</strong> Do not invent an internal include hostname or copy a record from an old tutorial.</li>
+    </ol>
+
+    <h2>Why manual SPF flattening is not the default fix</h2>
+    <p>“Flattening” replaces includes with their current IP addresses. It can reduce DNS-querying terms, but it transfers responsibility for tracking vendor IP changes to you. A static copy can silently go stale and fail legitimate mail later.</p>
+    <p>If a service’s addresses are dynamic, retain its documented include or use a managed, monitored method with automatic refresh, change alerts and rollback. Never paste a third-party website’s flattened result into production without confirming ownership and update behaviour.</p>
+
+    <h2>6. Publish carefully and verify publicly</h2>
+    <p>Before changing DNS, save the old record and reduce TTL in advance if your change process permits it. Publish one SPF record, then query multiple public resolvers until the intended value is visible. Do not expose unrelated DNS records or real infrastructure addresses in screenshots.</p>
+    <p>For a simple server that sends directly and has no other sender, a conceptual policy may look like this:</p>
+    <pre><code>v=spf1 ip4:192.0.2.10 -all</code></pre>
+    <p><code>192.0.2.10</code> is a documentation-only address. Use only the real authorised source in private DNS administration. If legitimate services remain, include their provider-documented mechanisms in the single policy and recount the full tree.</p>
+
+    <h2>7. Send a fresh message and prove DMARC alignment</h2>
+    <p>DNS syntax tests are not enough. Send one new controlled message through each legitimate route to a mailbox you own. Inspect the received original and require evidence such as:</p>
+    <pre><code>Authentication-Results: receiver.example;
+  spf=pass smtp.mailfrom=bounces.example.com;
+  dkim=pass header.d=example.com;
+  dmarc=pass header.from=example.com</code></pre>
+    <p>For DMARC, an SPF pass contributes only when the authenticated envelope-sender domain aligns with the visible From domain. A valid but unaligned SPF result can coexist with <code>dmarc=fail</code>. Aligned DKIM can independently satisfy DMARC, but it should not be used to excuse a broken SPF policy.</p>
+    <p>Match each test to its Docker Mailserver queue ID and remote <code>250</code> response. Test every authorised service—not merely direct VPS delivery—because different branches of the SPF tree can consume different lookup counts.</p>
+
+    <h2>Common wrong turns</h2>
+    <ul>
+      <li><strong>Restarting Docker Mailserver:</strong> outbound SPF policy lives in authoritative DNS.</li>
+      <li><strong>Adding another SPF TXT record:</strong> multiple policies cause a permanent error rather than combining permissions.</li>
+      <li><strong>Counting only top-level includes:</strong> nested vendor policies consume the same recursive budget.</li>
+      <li><strong>Removing a busy sender to get under 10:</strong> inventory and test before withdrawing authorisation.</li>
+      <li><strong>Using <code>+all</code> or weakening to <code>~all</code>:</strong> this does not solve the lookup design and can authorise unwanted sources.</li>
+      <li><strong>Publishing a one-time flattened snapshot:</strong> provider IP changes can make it stale without warning.</li>
+      <li><strong>Checking only SPF:</strong> confirm DKIM and DMARC alignment on the received message too.</li>
+    </ul>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>Identify the failed envelope-sender domain and exact receiver result.</li>
+      <li>Confirm public DNS contains exactly one <code>v=spf1</code> record.</li>
+      <li>Expand every include and redirect; count all recursive DNS-querying terms.</li>
+      <li>Inventory direct mail, relays and third-party senders before removing anything.</li>
+      <li>Remove obsolete and redundant sources; avoid <code>ptr</code> and fragile manual flattening.</li>
+      <li>Publish one simplified policy and verify it through public resolvers.</li>
+      <li>Send fresh mail through every legitimate route.</li>
+      <li>Require <code>spf=pass</code> plus aligned <code>dmarc=pass</code>, or investigate the remaining identity mismatch.</li>
+    </ol>
+
+    <p>The authoritative limit and evaluation rules are in <a href="https://www.rfc-editor.org/rfc/rfc7208.html#section-4.6.4" rel="noopener noreferrer">RFC 7208 section 4.6.4</a>. For implementation context, use Docker Mailserver’s current <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC and SPF documentation</a> and the documentation matching your pinned image.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related self-hosted mail guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Trace SPF, DKIM and DMARC identities when Gmail rejects unauthenticated mail.</span></li>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into PTR, TLS, reputation and placement after authentication passes.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep each domain’s sending routes and authentication records explicit.</span></li>
+        <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">Fix DKIM body hash failures</a><span>Find message changes after signing when the SPF problem is not the only failure.</span></li>
+        <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The broader Docker Mailserver, DNS, TLS and mailbox architecture.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
