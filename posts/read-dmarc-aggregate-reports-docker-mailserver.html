@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to Read DMARC Aggregate Reports for Docker Mailserver — Adrian Marikar</title>
+  <meta name="description" content="A practical guide to reading DMARC aggregate XML reports for Docker Mailserver: identify real senders, interpret alignment and disposition, and fix failures safely.">
+  <meta name="keywords" content="Docker Mailserver DMARC aggregate reports, read DMARC XML, DMARC rua report, SPF DKIM alignment, DMARC policy evaluation">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="How to Read DMARC Aggregate Reports for Docker Mailserver">
+  <meta property="og:description" content="Turn daily DMARC XML into a sender inventory, separate authentication from alignment, and decide what to repair before enforcing policy.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html">
+  <meta property="article:published_time" content="2026-08-05T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-05T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="How to Read DMARC Aggregate Reports for Docker Mailserver">
+  <meta name="twitter:description" content="A field-by-field workflow for turning DMARC XML reports into safe, evidence-led mail fixes.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Read DMARC Aggregate Reports for Docker Mailserver","description":"A practical guide to reading DMARC aggregate XML reports for Docker Mailserver: identify real senders, interpret alignment and disposition, and fix failures safely.","url":"https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html"},"datePublished":"2026-08-05T10:00:00Z","dateModified":"2026-08-05T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","DMARC aggregate reports","DMARC XML","SPF alignment","DKIM alignment","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+  <nav aria-label="Primary navigation">
+    <a href="/#writing">Writing</a><a href="/categories/ai-agents.html">AI agents</a><a href="/categories/newbizfeed.html">NewBizFeed</a><a href="/categories/dryhomeadvice.html">Dry Home Advice</a><a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a><a href="/#about">About</a><a href="mailto:hello@adrianmarikar.com">Contact</a>
+  </nav>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / DMARC reporting 039</p>
+      <h1>How to Read DMARC Aggregate Reports for Docker Mailserver</h1>
+    </header>
+
+    <p>You added an <code>rua=mailto:</code> address to DMARC, and now compressed XML attachments arrive from Google, Microsoft, Yahoo, or other receivers. They look like machine noise. In fact, they answer a useful operational question: <strong>who sent mail claiming to be from your domain, and did SPF or DKIM align with that visible From domain?</strong></p>
+
+    <p>For a Docker Mailserver installation, these reports help distinguish direct VPS delivery from a smarthost, web application, support tool, forgotten provider, forwarding path, or unauthorised source. They do not contain message bodies. They are aggregate counts grouped by source and authentication outcome.</p>
+
+    <blockquote>Do not jump from one unfamiliar source address to a block rule. First identify the mail stream, read alignment separately from raw SPF and DKIM results, and compare several days of reports.</blockquote>
+
+    <h2>What a DMARC aggregate report tells you</h2>
+    <p>RFC 7489 defines aggregate feedback as XML. A report normally covers a time window and contains one or more rows. Each row can include:</p>
+    <ul>
+      <li>the reporting organisation and report ID;</li>
+      <li>the report’s start and end timestamps;</li>
+      <li>the DMARC policy the receiver discovered;</li>
+      <li>a source address and number of matching messages;</li>
+      <li>the receiver’s DMARC disposition: <code>none</code>, <code>quarantine</code>, or <code>reject</code>;</li>
+      <li>policy-evaluated SPF and DKIM alignment results;</li>
+      <li>the RFC5322 header From domain;</li>
+      <li>underlying SPF and DKIM authentication results and their domains.</li>
+    </ul>
+    <p>Google notes that aggregate reports are usually sent daily to the addresses in the DMARC <code>rua</code> tag. Not every receiver sends them, reporting intervals can vary, and a missing report is not proof that no mail was sent.</p>
+
+    <h2>Receive reports without weakening mail security</h2>
+    <p>A monitoring record might conceptually look like this:</p>
+    <pre><code>_dmarc.example.com. TXT \
+  "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com; adkim=r; aspf=r"</code></pre>
+    <p>Use a mailbox or alias you control. Keep the actual reports private: aggregate XML can reveal sending services, volumes, source addresses, domain names, and report identifiers. Do not publish raw files, mailbox credentials, private keys, or unredacted infrastructure details.</p>
+    <p><code>p=none</code> is a monitoring policy, not an authentication fix. It lets you inventory mail before asking receivers to quarantine or reject failures. If the <code>rua</code> mailbox is outside the domain publishing DMARC, receivers normally look for an additional DNS authorisation record at the report destination; use the cross-domain reporting rules in RFC 7489 rather than assuming the address will work.</p>
+
+    <h2>Open the attachment safely</h2>
+    <p>Reports commonly arrive as <code>.xml.gz</code> or <code>.zip</code> files. Work in a private directory, list an archive before extracting it, and avoid feeding sensitive reports to an unknown online converter.</p>
+    <pre><code># Gzip report: inspect without creating another file
+gzip -cd report.xml.gz | less
+
+# Zip report: list first, then print one known XML member
+unzip -l report.zip
+unzip -p report.zip report.xml | less
+
+# Format XML locally when xmllint is installed
+gzip -cd report.xml.gz | xmllint --format - | less</code></pre>
+    <p>Treat emailed archives as untrusted input. Do not run scripts found inside them. A real aggregate report should be XML data, not an executable. Keep limits around automated parsers and reject unexpected file types or enormous decompressed payloads.</p>
+
+    <h2>Read the report in four passes</h2>
+
+    <h3>1. Confirm scope and policy</h3>
+    <p>Start with <code>report_metadata</code>, <code>date_range</code>, and <code>policy_published</code>. Check that the report covers the intended domain and period. Then note:</p>
+    <table>
+      <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>p</code></td><td>Requested policy for the organisational domain.</td></tr>
+        <tr><td><code>sp</code></td><td>Requested policy for subdomains, when specified.</td></tr>
+        <tr><td><code>adkim</code></td><td>Relaxed or strict DKIM identifier alignment.</td></tr>
+        <tr><td><code>aspf</code></td><td>Relaxed or strict SPF identifier alignment.</td></tr>
+        <tr><td><code>pct</code></td><td>Percentage of failing mail to which policy was requested to apply.</td></tr>
+      </tbody>
+    </table>
+    <p>If these values differ from what you expect, query <code>_dmarc.example.com</code> through public resolvers. A report reflects what that receiver discovered during its reporting window, so an older report can legitimately show the policy before a recent DNS change.</p>
+
+    <h3>2. Group rows into real mail streams</h3>
+    <p>For each <code>record</code>, read <code>row/source_ip</code> and <code>row/count</code>, then the <code>identifiers/header_from</code> value. The source is the system the receiver observed delivering mail. It may be your direct mail host, a relay, a SaaS sender, or the last forwarder in an indirect route.</p>
+    <p>Do not identify ownership from reverse DNS alone. Compare the row with your private sender inventory, provider documentation, Docker Mailserver logs, smarthost settings, application configuration, and representative received headers. One business service can use many addresses, and one address range can serve many customers.</p>
+
+    <h3>3. Separate authentication from alignment</h3>
+    <p>This is the part most quick summaries get wrong. A report can show an underlying authentication pass that does not satisfy DMARC:</p>
+    <ul>
+      <li><strong>SPF authentication</strong> evaluates the envelope sender or HELO identity. DMARC uses it only when the authenticated domain aligns with the visible From domain.</li>
+      <li><strong>DKIM authentication</strong> validates a signature for its <code>d=</code> domain. DMARC uses it only when that domain aligns with the visible From domain.</li>
+      <li><strong>DMARC passes</strong> when at least one supported mechanism both passes and aligns.</li>
+    </ul>
+    <p>Under relaxed alignment, related subdomains can align at the organisational-domain level. Strict alignment requires exact domain matching. That means <code>spf=pass</code> for an unrelated provider bounce domain can appear beside policy-evaluated <code>spf=fail</code>. Both statements can be accurate: SPF authenticated something, but not an identity aligned with From.</p>
+
+    <h3>4. Read disposition and overrides</h3>
+    <p>The <code>policy_evaluated/disposition</code> value records what happened under DMARC processing. With <code>p=none</code>, a failing row will normally still show <code>none</code>; it does not mean authentication passed. Under enforcement, <code>quarantine</code> or <code>reject</code> can appear.</p>
+    <p>A receiver can also report a policy override, such as a locally trusted forwarder or mailing-list path. An override is evidence about that receiver’s handling, not proof that your sender configuration is correct. RFC 7960 explains why forwarding and mailing lists can disrupt SPF or DKIM and complicate DMARC results.</p>
+
+    <h2>A small annotated XML example</h2>
+    <pre><code>&lt;record&gt;
+  &lt;row&gt;
+    &lt;source_ip&gt;192.0.2.10&lt;/source_ip&gt;
+    &lt;count&gt;12&lt;/count&gt;
+    &lt;policy_evaluated&gt;
+      &lt;disposition&gt;none&lt;/disposition&gt;
+      &lt;dkim&gt;pass&lt;/dkim&gt;
+      &lt;spf&gt;fail&lt;/spf&gt;
+    &lt;/policy_evaluated&gt;
+  &lt;/row&gt;
+  &lt;identifiers&gt;
+    &lt;header_from&gt;example.com&lt;/header_from&gt;
+  &lt;/identifiers&gt;
+  &lt;auth_results&gt;
+    &lt;dkim&gt;
+      &lt;domain&gt;example.com&lt;/domain&gt;
+      &lt;selector&gt;selector1&lt;/selector&gt;
+      &lt;result&gt;pass&lt;/result&gt;
+    &lt;/dkim&gt;
+    &lt;spf&gt;
+      &lt;domain&gt;bounce.sender-service.example&lt;/domain&gt;
+      &lt;scope&gt;mfrom&lt;/scope&gt;
+      &lt;result&gt;pass&lt;/result&gt;
+    &lt;/spf&gt;
+  &lt;/auth_results&gt;
+&lt;/record&gt;</code></pre>
+    <p><code>192.0.2.10</code> is a documentation-only address. In this example, 12 messages pass DMARC through aligned DKIM. The provider’s SPF identity passes authentication but does not align with <code>example.com</code>, so policy-evaluated SPF is fail. The final disposition is <code>none</code>, which is expected under monitoring and is not itself a pass/fail verdict.</p>
+
+    <h2>Turn rows into an action table</h2>
+    <p>Keep a private table for at least several representative reporting days:</p>
+    <table>
+      <thead><tr><th>Stream</th><th>Known?</th><th>Aligned SPF</th><th>Aligned DKIM</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>Direct Docker Mailserver delivery</td><td>Yes</td><td>Pass</td><td>Pass</td><td>Keep and monitor.</td></tr>
+        <tr><td>Application sender</td><td>Yes</td><td>Fail</td><td>Pass</td><td>Confirm DKIM remains stable; fix custom return path if useful.</td></tr>
+        <tr><td>Old service</td><td>Confirmed retired</td><td>Fail</td><td>Fail</td><td>Remove authorisation and credentials; watch for recurrence.</td></tr>
+        <tr><td>Unknown source</td><td>No</td><td>Fail</td><td>Fail</td><td>Investigate; do not authorise merely to clear the report.</td></tr>
+      </tbody>
+    </table>
+    <p>Counts matter. A single low-volume forwarding failure needs different treatment from a large legitimate transactional stream. Also look for trends: a new selector, sudden volume, changed source range, or a known stream losing its only aligned mechanism.</p>
+
+    <h2>Common Docker Mailserver findings</h2>
+    <ul>
+      <li><strong>Direct mail passes SPF but not DKIM:</strong> check whether fresh outbound messages are signed, whether the reported selector exists publicly, and whether the signing domain is correct.</li>
+      <li><strong>DKIM passes but SPF is unaligned:</strong> a relay or application may use its own return path. DMARC can still pass, but aligned DKIM is now the critical mechanism.</li>
+      <li><strong>Both mechanisms pass but DMARC fails:</strong> compare their authenticated domains with <code>header_from</code>; raw pass is not alignment.</li>
+      <li><strong>A web form fails everything:</strong> use a controlled From address on your domain and put the visitor in Reply-To. Do not impersonate the visitor’s domain.</li>
+      <li><strong>An unknown failing source appears:</strong> it may be spoofing. A failure does not mean your server was compromised, but investigate logs and account access before concluding that.</li>
+      <li><strong>A legitimate service appears only occasionally:</strong> seasonal invoices, password resets, and support tools are why several days—or a full business cycle—beat one snapshot.</li>
+    </ul>
+
+    <h2>When to move from monitoring to enforcement</h2>
+    <p>Do not choose enforcement because a dashboard turns green. Move deliberately when every legitimate mail stream is inventoried, each has at least one durable aligned pass, unknown failures are understood, report collection works, and you have rollback ownership. Increase policy in stages and continue reading reports after every change.</p>
+    <p>Before changing DMARC, test fresh messages from Docker Mailserver and each third-party route. Inspect the recipient’s original <code>Authentication-Results</code> alongside aggregate reports. Aggregate XML is excellent for coverage and trends, but one received message gives transaction-level headers and confirms what a real route produced now.</p>
+
+    <h2>Compact report-reading checklist</h2>
+    <ol>
+      <li>Store report attachments privately and inspect archives safely.</li>
+      <li>Confirm reporting organisation, domain, date range, and published policy.</li>
+      <li>Group source rows into known, retired, forwarded, and unknown streams.</li>
+      <li>Compare <code>header_from</code> with underlying SPF and DKIM domains.</li>
+      <li>Read policy-evaluated alignment separately from raw authentication results.</li>
+      <li>Account for disposition and documented receiver overrides.</li>
+      <li>Compare several days and weight findings by count and business importance.</li>
+      <li>Repair legitimate streams; never authorise an unknown sender just to remove a failure.</li>
+      <li>Verify changes with fresh received mail before tightening DMARC policy.</li>
+    </ol>
+
+    <p>The authoritative format and field definitions are in <a href="https://www.rfc-editor.org/rfc/rfc7489.html" rel="noopener noreferrer">RFC 7489</a>, with indirect-mail interoperability context in <a href="https://www.rfc-editor.org/rfc/rfc7960.html" rel="noopener noreferrer">RFC 7960</a>. Google’s <a href="https://support.google.com/a/answer/10032472" rel="noopener noreferrer">DMARC reports overview</a> explains its reporting workflow, while Docker Mailserver’s current <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">SPF, DKIM, and DMARC documentation</a> covers the server-side setup. Use documentation matching your pinned Docker Mailserver image.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related self-hosted mail guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Trace a real rejection through SPF, DKIM, DMARC alignment, DNS, and received headers.</span></li>
+        <li><a href="/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html">Fix SPF PermError from too many DNS lookups</a><span>Audit the complete recursive SPF path without deleting legitimate senders.</span></li>
+        <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">Fix DKIM body hash failures</a><span>Find the component modifying a message after it was signed.</span></li>
+        <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys without breaking DMARC</a><span>Use report evidence and selector overlap to make a DNS-first rotation safer.</span></li>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into PTR, TLS, reputation, and placement after authentication works.</span></li>
+        <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The broader Docker Mailserver, DNS, TLS, and mailbox architecture.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

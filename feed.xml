@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>How to Read DMARC Aggregate Reports for Docker Mailserver</title>
+      <link>https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html</link>
+      <guid>https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html</guid>
+      <pubDate>Wed, 05 Aug 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to reading DMARC aggregate XML reports for Docker Mailserver, identifying real senders, interpreting alignment and disposition, and fixing failures safely.</description>
+    </item>
+    <item>
       <title>Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html</guid>

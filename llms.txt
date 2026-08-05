@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- How to Read DMARC Aggregate Reports for Docker Mailserver: https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html
+  - Field-by-field workflow for turning daily DMARC XML into a private sender inventory, separating raw SPF/DKIM authentication from alignment, understanding dispositions and overrides, and deciding what to repair before policy enforcement.
 |- Fix SPF PermError: Too Many DNS Lookups in Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-spf-permerror-too-many-dns-lookups.html
   - Evidence-led SPF recovery guide covering the recursive 10-term DNS lookup limit, nested includes, sender inventory, safe policy simplification, flattening risks, public DNS verification, and DMARC alignment on fresh mail.
 |- Fix DKIM “Body Hash Did Not Verify” in Docker Mailserver: https://adrianmarikar.com/posts/docker-mailserver-dkim-body-hash-did-not-verify.html
