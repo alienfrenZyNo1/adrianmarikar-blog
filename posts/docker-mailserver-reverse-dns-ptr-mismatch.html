@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix a Docker Mailserver Reverse DNS/PTR Mismatch — Adrian Marikar</title>
+  <meta name="description" content="A practical guide to fixing Docker Mailserver reverse DNS and PTR mismatches by aligning the sending IP, mail hostname, forward DNS, EHLO, and TLS identity.">
+  <meta name="keywords" content="Docker Mailserver reverse DNS, Docker Mailserver PTR record, PTR mismatch email, forward-confirmed reverse DNS, mail server EHLO hostname">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Fix a Docker Mailserver Reverse DNS/PTR Mismatch">
+  <meta property="og:description" content="Trace the real outbound address, set PTR at the VPS provider, align forward DNS and EHLO, and verify both IPv4 and IPv6 before sending again.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html">
+  <meta property="article:published_time" content="2026-08-09T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-09T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Fix a Docker Mailserver Reverse DNS/PTR Mismatch">
+  <meta name="twitter:description" content="An evidence-led PTR, forward DNS, EHLO, IPv4, IPv6, and TLS checklist for self-hosted mail.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Fix a Docker Mailserver Reverse DNS/PTR Mismatch","description":"A practical guide to fixing Docker Mailserver reverse DNS and PTR mismatches by aligning the sending IP, mail hostname, forward DNS, EHLO, and TLS identity.","url":"https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html"},"datePublished":"2026-08-09T10:00:00Z","dateModified":"2026-08-09T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","reverse DNS","PTR record","forward-confirmed reverse DNS","SMTP EHLO","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / mail DNS 040</p>
+      <h1>Fix a Docker Mailserver Reverse DNS/PTR Mismatch</h1>
+    </header>
+
+    <p>A recipient rejects your Docker Mailserver message because the sending address has no PTR record, its reverse DNS is generic, or the PTR hostname does not resolve back to the same address. Changing SPF or restarting the container will not fix that identity chain.</p>
+
+    <p>For direct delivery, aim for one coherent machine identity: the outbound IP reverses to a stable mail hostname, that hostname resolves forward to the same IP, and Postfix uses it in EHLO. Google’s sender guidelines require valid forward and reverse DNS for sending IPs. Docker Mailserver’s usage guide likewise warns that hardened receivers may reject a host whose address does not resolve correctly to its server name.</p>
+
+    <blockquote>Trace the address a receiver actually sees. PTR belongs to that address owner—normally your VPS provider—not to the ordinary DNS zone where you create A, MX, SPF, or DKIM records.</blockquote>
+
+    <h2>What “matching reverse DNS” means</h2>
+    <p>Suppose the public sending address is the documentation-only address <code>192.0.2.10</code> and the server identity is <code>mail.example.com</code>. The intended chain is:</p>
+    <pre><code>192.0.2.10  --PTR--&gt;  mail.example.com
+mail.example.com  --A--&gt;  192.0.2.10
+Postfix EHLO  ---------&gt;  mail.example.com</code></pre>
+    <p>The forward confirmation matters. A PTR that names <code>mail.example.com</code> while that hostname points somewhere else is still inconsistent. The mailbox’s visible domain does not have to equal the machine hostname: one mail host can legitimately serve several domains while retaining one PTR and EHLO identity.</p>
+
+    <h2>1. Preserve the exact receiver evidence</h2>
+    <p>Save the full bounce or recipient message source privately. Record the remote response, timestamp, Postfix queue ID, destination, and source address the receiver reports. Redact addresses and identifiers before sharing logs.</p>
+    <p>Distinguish these cases before editing DNS:</p>
+    <ul>
+      <li><strong>No PTR:</strong> reverse lookup returns no hostname.</li>
+      <li><strong>Generic PTR:</strong> it returns a provider-generated name rather than your stable mail identity.</li>
+      <li><strong>Forward mismatch:</strong> the PTR hostname has no A/AAAA record or resolves to another address.</li>
+      <li><strong>EHLO mismatch:</strong> DNS is coherent, but Postfix announces a different or invalid hostname.</li>
+      <li><strong>Wrong egress address:</strong> NAT, a relay, or IPv6 causes the receiver to see an address you did not inspect.</li>
+    </ul>
+
+    <h2>2. Identify the real outbound path</h2>
+    <p>Do not assume the address used for your website, inbound MX, or SSH is the address delivering mail. Search a recent Postfix transaction and compare it with the received headers or rejection. If Docker Mailserver uses a smarthost, the receiver normally sees the relay’s address and identity, not the VPS address.</p>
+    <pre><code># Use your actual Compose service name
+docker compose logs --since 30m mailserver
+
+# Inspect the effective relay and hostname settings
+docker compose exec mailserver postconf relayhost
+docker compose exec mailserver postconf myhostname
+docker compose exec mailserver hostname --fqdn</code></pre>
+    <p>If <code>relayhost</code> is set, follow the relay provider’s DNS and authentication requirements. Do not set a PTR for an address you do not control.</p>
+
+    <h2>3. Query reverse and forward DNS independently</h2>
+    <p>Use the actual observed source address privately. The example addresses below are reserved for documentation:</p>
+    <pre><code># Reverse lookup
+dig +short -x 192.0.2.10 @1.1.1.1
+dig +short -x 192.0.2.10 @8.8.8.8
+
+# Forward confirmation of the returned hostname
+dig +short A mail.example.com @1.1.1.1
+dig +short AAAA mail.example.com @1.1.1.1</code></pre>
+    <p>A trailing dot in a PTR answer is normal DNS notation. Check more than one public resolver after a change; your local cache can make an old answer look current.</p>
+
+    <h2>4. Set PTR at the address owner</h2>
+    <p>Create or change reverse DNS in the VPS or address provider’s console or API. Your authoritative DNS provider usually cannot write the reverse zone for provider-owned addresses. Set the PTR to the stable fully qualified mail hostname—not the bare domain, a mailbox address, a URL, or the visible From domain.</p>
+    <p>Then create the matching forward record in your normal DNS zone:</p>
+    <pre><code>mail.example.com.  A  192.0.2.10</code></pre>
+    <p>If Cloudflare hosts the zone, keep the mail hostname <strong>DNS-only</strong>. Cloudflare’s normal orange-cloud HTTP proxy is not an SMTP proxy and would return Cloudflare web addresses instead of your mail endpoint. An MX record should name the hostname, not an IP address.</p>
+
+    <h2>5. Treat IPv6 as a separate sending identity</h2>
+    <p>If the host can send over IPv6, it needs its own PTR and matching AAAA record. A perfect IPv4 identity does not repair a message delivered from an unconfigured IPv6 address.</p>
+    <pre><code>2001:db8::10  --PTR--&gt;  mail.example.com
+mail.example.com  --AAAA--&gt;  2001:db8::10</code></pre>
+    <p><code>2001:db8::/32</code> is documentation space. Either configure and verify IPv6 completely or deliberately prevent Postfix from using it until you can. Do not publish an AAAA record merely because the VPS has an address; it advertises a route that must work for SMTP, TLS, reverse DNS, and firewall policy.</p>
+
+    <h2>6. Align Docker Mailserver’s hostname and EHLO</h2>
+    <p>Docker Mailserver derives its FQDN from the container hostname unless <code>OVERRIDE_HOSTNAME</code> is set. In Compose, the conceptual configuration is:</p>
+    <pre><code>services:
+  mailserver:
+    hostname: mail.example.com</code></pre>
+    <p>Use the current Docker Mailserver documentation and the configuration style appropriate to your pinned image. Avoid having <code>hostname:</code>, <code>OVERRIDE_HOSTNAME</code>, and a custom Postfix override disagree. Check the effective result rather than trusting one file:</p>
+    <pre><code>docker compose exec mailserver postconf myhostname smtp_helo_name
+docker compose exec mailserver postconf -n | less</code></pre>
+    <p>If <code>smtp_helo_name</code> is unset, Postfix normally uses <code>myhostname</code>. Change only the setting responsible for the mismatch, then recreate or restart according to the Docker Mailserver version’s documented workflow.</p>
+
+    <h2>7. Verify the SMTP and TLS identity</h2>
+    <p>After DNS is public and the service is reloaded, test the public SMTP endpoint from outside the server network:</p>
+    <pre><code>openssl s_client -starttls smtp \
+  -connect mail.example.com:25 \
+  -servername mail.example.com -crlf</code></pre>
+    <p>Confirm the SMTP banner/EHLO identity is expected and the certificate is valid for <code>mail.example.com</code>. A matching PTR does not require the certificate subject to be the PTR itself in every theoretical mail flow, but using one coherent operational hostname reduces avoidable ambiguity for clients and administrators.</p>
+
+    <h2>8. Send one fresh message and inspect what arrived</h2>
+    <p>Send a new, ordinary message to a mailbox you control. Do not reuse an old header because it records the old route. In the received source, confirm:</p>
+    <ul>
+      <li>the connecting address is the one whose PTR you fixed;</li>
+      <li>the receiving server records the intended reverse hostname;</li>
+      <li>Postfix used the intended EHLO name;</li>
+      <li>SPF and DKIM pass for the actual message;</li>
+      <li>at least one mechanism aligns so DMARC passes;</li>
+      <li>the Docker Mailserver log shows the matching queue ID and remote result.</li>
+    </ul>
+    <p>PTR is necessary infrastructure, not an inbox guarantee. Reputation, complaint history, authentication alignment, wanted content, rate and recipient policy still matter.</p>
+
+    <h2>Common wrong turns</h2>
+    <ul>
+      <li><strong>Adding a PTR-looking TXT record:</strong> TXT in your forward zone does not create reverse DNS.</li>
+      <li><strong>Changing MX only:</strong> MX controls where inbound mail goes; it does not assign reverse DNS to outbound addresses.</li>
+      <li><strong>Using a different PTR for every hosted domain:</strong> the PTR identifies the sending machine, not each mailbox domain.</li>
+      <li><strong>Proxying the mail hostname through Cloudflare:</strong> ordinary Cloudflare web proxying does not expose SMTP.</li>
+      <li><strong>Checking IPv4 while Postfix sends over IPv6:</strong> validate the address present in the receiver evidence.</li>
+      <li><strong>Forcing EHLO to hide a broken DNS chain:</strong> the hostname still needs valid forward and reverse resolution.</li>
+      <li><strong>Repeatedly sending tests:</strong> make one controlled change, wait for public DNS, then send one fresh message.</li>
+      <li><strong>Expecting PTR to fix DMARC:</strong> PTR, SPF, DKIM and DMARC answer different identity questions.</li>
+    </ul>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>Save the receiver’s exact error and observed source address.</li>
+      <li>Determine whether delivery is direct, relayed, NATed, IPv4, or IPv6.</li>
+      <li>Query the observed address’s PTR through public resolvers.</li>
+      <li>Set PTR at the address provider to one stable mail FQDN.</li>
+      <li>Make that FQDN resolve forward to the same address; keep it DNS-only.</li>
+      <li>Align Docker Mailserver’s effective hostname and Postfix EHLO.</li>
+      <li>Verify banner and TLS externally.</li>
+      <li>Send one fresh message and confirm the actual route, authentication, alignment, and queue result.</li>
+    </ol>
+
+    <p>For implementation details, see Docker Mailserver’s current <a href="https://docker-mailserver.github.io/docker-mailserver/latest/usage/" rel="noopener noreferrer">usage guide</a>, <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/" rel="noopener noreferrer">environment-variable reference</a>, and <a href="https://docker-mailserver.github.io/docker-mailserver/latest/examples/use-cases/bind-smtp-network-interface/" rel="noopener noreferrer">outbound-interface guide</a>. Google’s <a href="https://support.google.com/mail/answer/81126?hl=en" rel="noopener noreferrer">email sender guidelines</a> state the forward/reverse DNS requirement. Use the documentation matching your pinned Docker Mailserver release.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related self-hosted mail guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue from a coherent PTR identity into authentication, alignment, reputation and placement.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">Docker Mailserver SMTP connection timeout</a><span>Trace port 25, provider filtering, firewall, Docker publishing and Postfix listeners.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Serve several mailbox domains without replacing one working machine identity.</span></li>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Repair SPF, DKIM and DMARC when Gmail’s error is authentication-specific.</span></li>
+        <li><a href="/posts/read-dmarc-aggregate-reports-docker-mailserver.html">How to read DMARC aggregate reports</a><span>Inventory the sources that receivers actually observe over several days.</span></li>
+        <li><a href="/posts/self-hosted-email-on-the-vps.html">How email is handled on this VPS</a><span>The broader multi-domain Docker Mailserver, DNS and TLS architecture.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
