@@ -154,7 +154,7 @@ docker exec mailserver setup email list</code></pre>
       <h2>7. Check reputation without chasing magic scores</h2>
       <p>A new VPS address has little or no sending history. A recycled address may have bad history. Authentication proves authorization; it does not guarantee reputation.</p>
       <ul>
-        <li>Check whether the sending address appears on reputable blocklists, then investigate the cause before requesting removal.</li>
+        <li>Check whether the sending address appears on a relevant reputable blocklist, then use the <a href="/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html">IP blocklist containment and delisting runbook</a> to prove and remove the cause before requesting removal.</li>
         <li>Use provider postmaster tooling when you send enough volume for it to show useful data.</li>
         <li>Keep volumes low, steady, and expected. Do not “warm” an address with fake conversations or purchased lists.</li>
         <li>Secure every account and watch for unexpected queue growth; a compromised mailbox can destroy reputation quickly.</li>

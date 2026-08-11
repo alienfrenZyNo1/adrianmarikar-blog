@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely: https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html
+  - Incident-response runbook for proving the observed egress address and exact blocklist, containing compromised senders, repairing PTR and authentication, using the official delisting process, and verifying one controlled delivery.
 |- Fix a Docker Mailserver Reverse DNS/PTR Mismatch: https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html
   - Evidence-led recovery guide for identifying the real outbound IPv4 or IPv6 address, setting PTR at the address owner, confirming forward DNS, aligning Docker Mailserver and Postfix EHLO, checking DNS-only mail records, and verifying fresh delivery.
 |- How to Read DMARC Aggregate Reports for Docker Mailserver: https://adrianmarikar.com/posts/read-dmarc-aggregate-reports-docker-mailserver.html

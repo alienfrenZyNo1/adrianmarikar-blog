@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver IP blocklist recovery guide: prove the sending address and listing, stop abuse, repair mail identity, request delisting, and verify delivery.">
+  <meta name="keywords" content="Docker Mailserver IP blacklisted, Docker Mailserver Spamhaus, mail server IP blocklist, Spamhaus delist IP, self-hosted email reputation">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely">
+  <meta property="og:description" content="Prove the observed sending IP and exact listing, contain the cause, repair identity and authentication, then delist and verify one controlled delivery.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html">
+  <meta property="article:published_time" content="2026-08-11T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-11T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely">
+  <meta name="twitter:description" content="An evidence-led containment, repair, delisting, and verification runbook for a self-hosted mail IP.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely","description":"A practical Docker Mailserver IP blocklist recovery guide: prove the sending address and listing, stop abuse, repair mail identity, request delisting, and verify delivery.","url":"https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html"},"datePublished":"2026-08-11T10:00:00Z","dateModified":"2026-08-11T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","IP blocklist","Spamhaus","mail reputation","incident response","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / mail reputation 041</p>
+      <h1>Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely</h1>
+    </header>
+
+    <p>A recipient rejects mail from your Docker Mailserver with a response mentioning a blocklist, Spamhaus, reputation, or a policy URL. The tempting response is to find a removal form immediately. That reverses the correct order.</p>
+
+    <p>First prove which address actually sent the message and which organisation made the decision. Then stop the cause, repair the server, and request removal through the list owner’s official process. A delisting without containment is usually temporary—and repeated requests can make a weak case look worse.</p>
+
+    <blockquote>A blocklist entry is evidence, not a diagnosis. Preserve the exact SMTP response, identify the observed egress IP, and close the abuse path before asking anyone to remove the listing.</blockquote>
+
+    <h2>First: identify what “blacklisted” means here</h2>
+    <p>Several different events are often described with the same word:</p>
+    <ul>
+      <li><strong>A remote receiver rejects your outbound message.</strong> Its SMTP response may name a public DNS blocklist, its own private reputation system, or a provider support page.</li>
+      <li><strong>Your Docker Mailserver rejects inbound mail.</strong> Docker Mailserver can use DNS blocklists through Postscreen or Rspamd. That says something about the connecting sender, not necessarily your own outbound address.</li>
+      <li><strong>A generic checker reports a listing.</strong> That listing matters only if relevant receivers use it and the listed object is actually your sending IP or domain.</li>
+      <li><strong>Mail is accepted but placed in spam.</strong> That is an inbox-placement problem, not proof of a public blocklist entry.</li>
+    </ul>
+    <p>Do not disable Docker Mailserver’s inbound anti-spam controls because another provider rejected your outbound mail. These are opposite directions of traffic.</p>
+
+    <h2>1. Save the complete rejection evidence</h2>
+    <p>Preserve the bounce and corresponding Postfix log privately. Record the timestamp, queue ID, recipient domain, enhanced status code, remote hostname, exact text, listed address, and any official diagnostic URL. Redact addresses and identifiers before sharing the evidence.</p>
+    <pre><code># Use the real Compose service name
+
+docker compose logs --since 2h mailserver
+
+docker compose exec mailserver postqueue -p</code></pre>
+    <p>A line such as <code>status=bounced</code> with a remote <code>5xx</code> response is different from <code>status=deferred</code> with <code>4xx</code>. Permanent rejection needs a repair before retrying. A temporary deferral should remain queued while you investigate; do not create many duplicate test messages.</p>
+
+    <h2>2. Prove the address the receiver saw</h2>
+    <p>The website address, inbound MX address, and outbound mail address are not automatically the same. A smarthost, NAT gateway, dedicated outbound IP, or IPv6 route can change what the receiver sees. Start with the address named in the rejection or recipient headers, then compare it with Docker Mailserver’s effective route:</p>
+    <pre><code>docker compose exec mailserver postconf relayhost
+
+docker compose exec mailserver postconf inet_protocols smtp_bind_address smtp_bind_address6
+
+docker compose exec mailserver postconf myhostname smtp_helo_name</code></pre>
+    <p>If <code>relayhost</code> points to a provider, the final receiver normally evaluates the relay’s address. Escalate to that provider with the queue evidence instead of filing a removal request for an IP you do not own. If IPv6 was used, investigate its reputation and DNS separately from IPv4.</p>
+
+    <h2>3. Confirm the exact listing at the official source</h2>
+    <p>Follow the URL in the rejection only after confirming its hostname is genuinely operated by the named organisation. For Spamhaus, use the official <a href="https://check.spamhaus.org/" rel="noopener noreferrer">Spamhaus Reputation Checker</a>. It identifies whether the address or domain is listed and provides the relevant record and resolution path.</p>
+    <p>Do not paste a production address into a random “check 100 blacklists” site. Aggregators can be stale, may confuse advisory lists with high-impact lists, and sometimes sell dubious paid removal. Legitimate remediation comes from the list operator or receiver—not from a third party promising universal delisting.</p>
+    <p>Record privately:</p>
+    <ul>
+      <li>the exact listed IP or domain;</li>
+      <li>the list or receiver policy involved;</li>
+      <li>the listing time and reason, when supplied;</li>
+      <li>whether removal is automatic after remediation or requires a request;</li>
+      <li>who controls the address range—the VPS provider may need to act.</li>
+    </ul>
+
+    <h2>4. Freeze outbound risk before changing DNS</h2>
+    <p>If activity is unexplained, treat it as a security incident. Stop nonessential application senders, disable suspected accounts, and preserve logs before rotating credentials. Avoid deleting the mail queue until you have inspected it: unexpected recipients, volumes, senders, or repeated failures can reveal the compromised path.</p>
+    <pre><code># Queue summary and message IDs
+
+docker compose exec mailserver postqueue -p
+
+# Inspect one queued message safely; substitute its queue ID
+
+docker compose exec mailserver postcat -q &lt;QUEUE_ID&gt;
+
+# Recent authentication and delivery evidence
+
+docker compose logs --since 24h mailserver</code></pre>
+    <p>Message content and headers are sensitive. Keep this output local. Never paste mailbox passwords, DKIM private keys, API tokens, full customer messages, or unredacted logs into a public removal ticket.</p>
+
+    <h2>5. Find and remove the root cause</h2>
+    <p>Work through the plausible paths instead of assuming the VPS address was merely “recycled”:</p>
+    <ul>
+      <li><strong>Compromised mailbox:</strong> revoke active sessions where possible, change the credential, and determine how it was exposed.</li>
+      <li><strong>Compromised web app:</strong> disable its SMTP credential, patch the application, rotate its narrowly scoped secret, and add sensible rate limits.</li>
+      <li><strong>Open relay or over-broad trust:</strong> verify that unauthenticated external clients cannot relay to external recipients. Do not “fix” a relay error by trusting all networks.</li>
+      <li><strong>Leaked submission port:</strong> confirm ports 465/587 require authentication and strong TLS; review repeated login failures.</li>
+      <li><strong>Malware or another container:</strong> identify every process and container able to reach outbound SMTP. Docker Mailserver may not be the source just because it shares the host.</li>
+      <li><strong>Inherited address reputation:</strong> collect evidence that the listing predates assignment and ask the VPS provider for remediation or a clean replacement.</li>
+      <li><strong>Forward/reverse identity failure:</strong> repair PTR, matching A/AAAA, EHLO, and TLS, but do not claim that DNS alone caused a listing unless the evidence says so.</li>
+    </ul>
+    <p>Review account lists, authentication logs, application credentials, Docker networks, host processes, scheduled tasks, and traffic patterns. If the host itself may be compromised, rebuild from known-good source and restore only verified data rather than trusting an in-place cleanup.</p>
+
+    <h2>6. Repair the mail identity and authentication baseline</h2>
+    <p>Before requesting removal, make the legitimate mail path defensible:</p>
+    <ol>
+      <li>The observed sending IP has a stable PTR hostname.</li>
+      <li>That hostname resolves forward to the same IP.</li>
+      <li>Postfix announces the intended hostname in EHLO.</li>
+      <li>The SMTP certificate is valid for the operational mail hostname.</li>
+      <li>SPF authorises only current sending paths.</li>
+      <li>DKIM signs with the intended domain and a publicly resolvable selector.</li>
+      <li>At least one passing mechanism aligns with the visible From domain so DMARC passes.</li>
+      <li>Only wanted mail is sent, at a volume consistent with the service.</li>
+    </ol>
+    <p>Use the <a href="/posts/docker-mailserver-reverse-dns-ptr-mismatch.html">reverse DNS/PTR recovery guide</a> for the machine-identity chain and the <a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Gmail 5.7.26 guide</a> for message authentication and alignment. Passing SPF, DKIM, and DMARC does not erase abusive history, but requesting delisting while they are broken weakens the remediation.</p>
+
+    <h2>7. Submit one accurate removal request</h2>
+    <p>Use only the official process linked by the list operator or receiver. Spamhaus explains that removal depends on the list involved and on resolving the underlying issue; for some SBL cases, the network owner or ISP must request removal. Follow the instructions shown for your specific record rather than copying a generic form.</p>
+    <p>A useful request is short and factual:</p>
+    <ul>
+      <li>identify the listed resource and your authority to operate it;</li>
+      <li>state when you contained the sending path;</li>
+      <li>describe the confirmed cause without exposing credentials or personal data;</li>
+      <li>list the concrete remediation and monitoring added;</li>
+      <li>ask for review through the record’s official process.</li>
+    </ul>
+    <p>Do not submit repeated requests, threaten the list operator, invent a cause, or pay an unrelated “removal service.” If the record says the provider must act, send your evidence to the provider’s abuse or support team.</p>
+
+    <h2>8. Verify removal without creating another reputation event</h2>
+    <p>Wait for the operator’s stated propagation period, then recheck the official source. DNS caches and receiver-side reputation systems do not all update simultaneously. Removal from one list also does not guarantee acceptance by Gmail, Outlook, or another receiver with private reputation data.</p>
+    <p>Send one plain, legitimate message to a mailbox you control. Correlate its queue ID with the Postfix log and inspect the received source:</p>
+    <ul>
+      <li>the receiver saw the intended IPv4 or IPv6 address;</li>
+      <li>PTR and forward DNS are coherent;</li>
+      <li>SPF, DKIM, and DMARC produce the intended results;</li>
+      <li>the remote SMTP response shows acceptance rather than deferral or rejection;</li>
+      <li>volume and queue depth remain normal after service resumes.</li>
+    </ul>
+    <p>Google’s official <a href="https://support.google.com/a/answer/81126?hl=en" rel="noopener noreferrer">email sender guidelines</a> cover authentication, forward and reverse DNS, TLS, spam-rate expectations, and subscription-message requirements. For Microsoft traffic, its official <a href="https://sendersupport.olc.protection.outlook.com/pm/services" rel="noopener noreferrer">sender services</a> include SNDS data for verified address ranges. Use provider-specific tools as evidence, not as substitutes for incident repair.</p>
+
+    <h2>If Docker Mailserver is blocking legitimate inbound mail</h2>
+    <p>This is the other direction. Docker Mailserver’s FAQ notes that DNSBL-backed anti-spam features need a capable recursive resolver; large public resolvers can be unsuitable for these services. The project’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/rspamd/" rel="noopener noreferrer">Rspamd security documentation</a> includes local recursive DNS guidance for DNSBL use.</p>
+    <p>Preserve the rejection and Rspamd/Postscreen symbols, verify the resolver path, and identify the exact list response. Do not globally allowlist a sender or disable DNSBL checks just because one message is wanted. Prefer the narrowest temporary exception only after authenticating the sender and understanding why the lookup fired.</p>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>Save the complete remote SMTP response and matching queue evidence.</li>
+      <li>Distinguish outbound rejection, inbound DNSBL rejection, and spam placement.</li>
+      <li>Prove the observed egress IP, including relay and IPv6 paths.</li>
+      <li>Confirm the listing at the named operator’s official checker.</li>
+      <li>Pause unexplained sending and preserve queue/authentication evidence.</li>
+      <li>Remove the compromised account, app, relay rule, process, or inherited-address problem.</li>
+      <li>Repair PTR, forward DNS, EHLO, TLS, SPF, DKIM, and DMARC.</li>
+      <li>Submit one factual request through the official process.</li>
+      <li>Wait for propagation, send one controlled message, and monitor recurrence.</li>
+    </ol>
+
+    <p>The useful objective is not a green result from every blacklist scanner. It is a secure, explainable mail path whose legitimate traffic a receiver can authenticate—and whose operator can prove that the cause of the listing is gone.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related self-hosted mail guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Separate accepted-but-filtered mail from explicit reputation or blocklist rejection.</span></li>
+        <li><a href="/posts/docker-mailserver-reverse-dns-ptr-mismatch.html">Fix a reverse DNS/PTR mismatch</a><span>Align the actual sending IP, provider-managed PTR, forward DNS, EHLO, IPv4 or IPv6, and TLS.</span></li>
+        <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix “Relay access denied” safely</a><span>Restore authenticated submission without creating an open relay.</span></li>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26</a><span>Diagnose explicit authentication rejection through SPF, DKIM, DMARC alignment, and received evidence.</span></li>
+        <li><a href="/posts/read-dmarc-aggregate-reports-docker-mailserver.html">How to read DMARC aggregate reports</a><span>Inventory real sending sources and watch for unknown or broken mail streams.</span></li>
+        <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Reduce the host-level compromise paths that can destroy sender reputation.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

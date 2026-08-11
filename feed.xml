@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html</guid>
+      <pubDate>Tue, 11 Aug 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver IP blocklist recovery guide: prove the sending address and listing, stop abuse, repair mail identity, request official delisting, and verify delivery.</description>
+    </item>
+    <item>
       <title>Fix a Docker Mailserver Reverse DNS/PTR Mismatch</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html</guid>
