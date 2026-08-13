@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely: https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html
+  - Evidence-led Postfix queue recovery guide covering queue IDs, age and destination grouping, last delivery responses, DNS and port 25, remote policy, local capacity, targeted retries, and safe use of privileged queue operations.
 |- Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely: https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html
   - Incident-response runbook for proving the observed egress address and exact blocklist, containing compromised senders, repairing PTR and authentication, using the official delisting process, and verifying one controlled delivery.
 |- Fix a Docker Mailserver Reverse DNS/PTR Mismatch: https://adrianmarikar.com/posts/docker-mailserver-reverse-dns-ptr-mismatch.html

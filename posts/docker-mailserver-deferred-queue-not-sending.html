@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver guide to diagnosing a growing Postfix deferred queue, reading the last delivery error, fixing the cause, and retrying mail safely.">
+  <meta name="keywords" content="Docker Mailserver deferred queue, Postfix mail queue not sending, postqueue deferred mail, Docker Mailserver retry queue, postsuper requeue">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely">
+  <meta property="og:description" content="Read the queue by ID and destination, preserve the last delivery error, repair the responsible layer, then retry only the affected mail.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html">
+  <meta property="article:published_time" content="2026-08-13T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-13T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely">
+  <meta name="twitter:description" content="An evidence-led runbook for a growing or stuck Postfix deferred queue in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely","description":"A practical Docker Mailserver guide to diagnosing a growing Postfix deferred queue, reading the last delivery error, fixing the cause, and retrying mail safely.","url":"https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html"},"datePublished":"2026-08-13T10:00:00Z","dateModified":"2026-08-13T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Postfix deferred queue","mail queue","postqueue","delivery troubleshooting","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / mail queue 042</p>
+      <h1>Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely</h1>
+    </header>
+
+    <p>Your Docker Mailserver is running, but <code>postqueue -p</code> shows messages marked deferred. Perhaps the queue keeps growing, one destination never clears, or mail moves briefly and returns. Flushing the queue can look like the obvious fix. It usually is not.</p>
+
+    <p>A deferred message is one Postfix could not deliver <em>yet</em>. Postfix records the latest reason and retries according to its queue schedule. Your job is to preserve that reason, group failures by cause, repair the responsible layer, and only then request another attempt.</p>
+
+    <blockquote>Do not delete or repeatedly flush a deferred queue before reading it. The queue ID, destination, timestamp, and last delivery response are the shortest path to the real fault.</blockquote>
+
+    <h2>First: decide whether the queue is actually stuck</h2>
+    <p>A non-empty queue is not automatically broken. Temporary remote failures are normal: a receiving server may rate-limit you, return maintenance errors, or temporarily reject a connection. Postfix is designed to retain and retry that mail.</p>
+    <p>Investigate promptly when the oldest message keeps ageing, the count or byte total rises, every destination fails, one domain accumulates many entries, or the same reason repeats without progress. Start with a read-only snapshot:</p>
+    <pre><code># Use the real Compose service name
+
+docker compose exec mailserver postqueue -p
+
+# Machine-readable queue output on supported Postfix versions
+docker compose exec mailserver postqueue -j</code></pre>
+    <p>The standard listing shows queue IDs, arrival times, senders, recipients, sizes, and the most recent failure in parentheses. The JSON form emits one object per queued file, which is useful for local grouping without scraping human-formatted output. Keep either output private because it contains addresses and delivery metadata.</p>
+
+    <h2>1. Correlate one queue ID with recent logs</h2>
+    <p>Choose one representative queue ID from each failure group. Search the container logs for the complete ID rather than reading thousands of unrelated lines:</p>
+    <pre><code>QUEUE_ID='REPLACE_WITH_QUEUE_ID'
+
+docker compose logs --since 6h mailserver | grep -F "$QUEUE_ID"</code></pre>
+    <p>Record the delivery agent, remote hostname, enhanced status code, and exact response. Typical outcomes include:</p>
+    <ul>
+      <li><strong><code>connect to ... timed out</code>:</strong> routing, provider SMTP filtering, firewall, remote reachability, or a bad address record.</li>
+      <li><strong><code>Host or domain name not found</code>:</strong> recipient DNS or your resolver path failed.</li>
+      <li><strong><code>4.7.x</code> policy response:</strong> temporary rate, reputation, greylisting, authentication, or sender-policy trouble.</li>
+      <li><strong><code>mail transport unavailable</code> or local socket errors:</strong> an internal transport, content filter, or dependent service is unavailable.</li>
+      <li><strong><code>delivery temporarily suspended</code>:</strong> Postfix has remembered repeated destination failures; find the earlier log line containing the underlying response.</li>
+    </ul>
+    <p>A <code>4xx</code> remote response normally belongs in the deferred queue. A permanent <code>5xx</code> normally becomes a bounce, although routing or policy configuration can affect the path. Preserve the SMTP reply instead of treating all queued mail as the same incident.</p>
+
+    <h2>2. Inspect a queued message without printing it publicly</h2>
+    <p>If the log is incomplete, <code>postcat</code> can show the queue record and message. This may expose the full body, addresses, authentication headers, and application data, so run it only in a private terminal:</p>
+    <pre><code>docker compose exec mailserver postcat -q REPLACE_WITH_QUEUE_ID</code></pre>
+    <p>Check the envelope sender, recipient, arrival time, next-hop information, and whether this is legitimate mail you expected. Do not paste raw output into a forum or ticket. Redact message content, personal addresses, IDs, internal hostnames, and authentication data first.</p>
+
+    <h2>3. Group by failure pattern before changing anything</h2>
+    <p>One queue can contain several incidents. Group entries by destination domain and final error:</p>
+    <ul>
+      <li><strong>All external domains fail:</strong> suspect outbound port 25 filtering, host/network policy, resolver failure, a broken relayhost, or a global Postfix transport problem.</li>
+      <li><strong>Only one recipient domain fails:</strong> focus on that destination’s MX records, remote response, rate limits, and policy.</li>
+      <li><strong>Only application mail fails:</strong> compare its envelope sender, From domain, authentication, routing, and submission method with a working mailbox message.</li>
+      <li><strong>Local recipients fail:</strong> inspect mailbox existence, quota, permissions, Dovecot/LMTP availability, and storage capacity.</li>
+      <li><strong>Messages are unexpected:</strong> stop nonessential sending and treat this as a possible credential or application compromise before releasing anything.</li>
+    </ul>
+    <p>This grouping prevents a dangerous global “fix” for what is really one remote domain or one compromised sender.</p>
+
+    <h2>4. Check DNS from the mail container’s point of view</h2>
+    <p>Postfix needs recipient MX records and their address records. Test from inside the same container/network namespace:</p>
+    <pre><code>docker compose exec mailserver getent hosts example.net
+
+docker compose exec mailserver postconf \
+  relayhost inet_protocols smtp_host_lookup \
+  smtp_dns_support_level</code></pre>
+    <p>If diagnostic DNS tools are already present, query the affected domain’s MX and A/AAAA records. Do not install random packages into the running production container merely for one test; use a temporary diagnostic container on the same Docker network if necessary.</p>
+    <p>Intermittent <code>SERVFAIL</code>, timeouts, or DNSSEC validation failures need resolver investigation. An empty or nonexistent recipient MX path is different from your own SPF, DKIM, or DMARC records: outbound routing begins with the recipient domain’s DNS.</p>
+
+    <h2>5. Test the network path without confusing SMTP roles</h2>
+    <p>Server-to-server delivery normally uses destination port 25. Client submission uses 587 with STARTTLS or 465 with implicit TLS. Opening 587 on your own server does not repair blocked outbound port 25.</p>
+    <p>Use the exact destination hostname from the log and a short timeout. Avoid copying production addresses into public notes:</p>
+    <pre><code># Run from a suitable private diagnostic environment
+nc -vz -w 10 mx.example.net 25
+
+openssl s_client -starttls smtp \
+  -connect mx.example.net:25 \
+  -servername mx.example.net</code></pre>
+    <p>If every external MX times out, check VPS-provider egress restrictions, host firewall rules, Docker networking, and IPv4/IPv6 routing. If only IPv6 fails, do not blindly disable it until you have proved that Postfix is selecting an unusable route; repair the route and DNS, or make a deliberate protocol policy change with a rollback plan. The <a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP timeout guide</a> provides the full layer-by-layer test sequence.</p>
+
+    <h2>6. Read remote policy responses literally</h2>
+    <p>Temporary policy responses often tell you what to repair. Follow only official links in the receiver’s SMTP response after verifying the hostname. Common branches are:</p>
+    <ul>
+      <li><strong>Rate limited:</strong> stop duplicate tests, reduce unexpected volume, and let Postfix retry. Do not hammer the recipient with manual flushes.</li>
+      <li><strong>Authentication or alignment:</strong> verify the actual message’s SPF, DKIM, and DMARC results, not just record existence.</li>
+      <li><strong>Reverse DNS or EHLO:</strong> align the observed sending address, PTR, forward address record, and Postfix hostname.</li>
+      <li><strong>Reputation or blocklist:</strong> contain the cause before requesting removal; flushing compromised mail can deepen the incident.</li>
+      <li><strong>Greylisting:</strong> allow normal retries. Repeatedly creating new messages may restart rather than accelerate the process.</li>
+    </ul>
+    <p>For explicit reputation failures, use the <a href="/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html">blocklist containment and delisting runbook</a>. For authentication rejection, follow the <a href="/posts/docker-mailserver-gmail-550-5-7-26.html">SPF, DKIM, and DMARC alignment checklist</a>.</p>
+
+    <h2>7. Check local capacity and service health</h2>
+    <p>A healthy Docker status does not prove every mail transport can write or connect. Check service logs, filesystem capacity, inode availability, and the effective Postfix configuration without exposing environment values:</p>
+    <pre><code>docker compose ps
+
+docker compose logs --since 1h mailserver
+
+docker compose exec mailserver df -h
+
+docker compose exec mailserver df -i
+
+docker compose exec mailserver postfix status</code></pre>
+    <p>A full filesystem can stop queue or mailbox writes. A failed content-filter socket can defer mail even while Postfix itself runs. If the incident followed a configuration or image change, compare the deployed configuration with the last known-good Git/Compose state before restarting components at random.</p>
+
+    <h2>8. Retry only after the cause is repaired</h2>
+    <p>Postfix will retry deferred mail automatically. An immediate manual retry is useful only when you have fixed a concrete fault and want controlled evidence.</p>
+    <pre><code># Retry one queue ID on Postfix versions that support it
+docker compose exec mailserver postqueue -i REPLACE_WITH_QUEUE_ID
+
+# Or request delivery for one destination
+docker compose exec mailserver postqueue -s example.net
+
+# Flush all queued mail only when a global fault is fixed
+docker compose exec mailserver postqueue -f</code></pre>
+    <p>Watch the chosen ID in fresh logs and confirm <code>status=sent</code> plus the remote acceptance response. A flush only schedules delivery; it does not prove success. If the same error returns, stop flushing and continue diagnosis.</p>
+
+    <h2>Do not delete deferred mail as a first response</h2>
+    <p><code>postsuper</code> is a privileged housekeeping tool that can delete, hold, release, or requeue messages. Those operations are appropriate only after you understand their scope.</p>
+    <ul>
+      <li>Delete confirmed abusive or unwanted queue IDs individually after preserving incident evidence.</li>
+      <li>Hold suspicious mail if you need to prevent delivery while investigating.</li>
+      <li>Do not use broad deletion to make a monitoring graph green.</li>
+      <li>Remember that deleting a queue file is irreversible and does not notify the original sender in the normal way.</li>
+      <li>Requeueing can apply current cleanup rules again and changes the queue ID, so it is not the same as a simple retry.</li>
+    </ul>
+    <p>The official <a href="https://www.postfix.org/postqueue.1.html" rel="noopener noreferrer">Postfix postqueue manual</a> documents listing, flushing, and scheduling; the <a href="https://www.postfix.org/postsuper.1.html" rel="noopener noreferrer">postsuper manual</a> describes destructive and privileged operations. Match commands to the Postfix version inside your pinned Docker Mailserver image.</p>
+
+    <h2>A safe recovery sequence</h2>
+    <ol>
+      <li>Snapshot <code>postqueue -p</code> and note the oldest arrival time and total size.</li>
+      <li>Select one queue ID per destination/error group.</li>
+      <li>Correlate each ID with logs and preserve the complete latest response.</li>
+      <li>Confirm the messages are legitimate before releasing them.</li>
+      <li>Test DNS, route, remote policy, local transport, and storage according to the evidence.</li>
+      <li>Repair one identified cause; do not stack unrelated changes.</li>
+      <li>Schedule one affected ID or destination for retry.</li>
+      <li>Verify remote acceptance in the log and watch queue age/count decline.</li>
+      <li>Leave unrelated temporary failures for normal Postfix backoff.</li>
+    </ol>
+
+    <p>The goal is not an empty queue at any cost. It is a queue whose contents are understood, whose temporary failures retry normally, and whose harmful or misconfigured traffic is contained. When you keep the queue ID and last SMTP response at the centre of the investigation, a vague “mail is stuck” report becomes a small set of testable faults.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout: test ports 25, 465, and 587</a><span>Trace DNS, provider filters, firewall rules, Docker publishing, Postfix listeners, and TLS modes.</span></li>
+        <li><a href="/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html">IP blacklisted? Diagnose and delist safely</a><span>Contain the cause before retrying or requesting removal from an official list.</span></li>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26</a><span>Repair SPF, DKIM, DMARC alignment, and public DNS when remote policy rejects authentication.</span></li>
+        <li><a href="/posts/docker-mailserver-reverse-dns-ptr-mismatch.html">Fix a reverse DNS/PTR mismatch</a><span>Align the actual outbound address, PTR, forward DNS, EHLO, IPv4 or IPv6, and TLS.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and recovery evidence before a larger repair.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
