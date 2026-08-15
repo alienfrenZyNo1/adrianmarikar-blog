@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver SASL Authentication Failed? Fix SMTP Login: https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html
+  - Evidence-led SMTP AUTH troubleshooting covering submission ports and TLS modes, full mailbox identities, DMS account provisioning, Postfix-to-Dovecot SASL, temporary backend failures, Fail2Ban, and controlled end-to-end delivery verification.
 |- Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely: https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html
   - Evidence-led Postfix queue recovery guide covering queue IDs, age and destination grouping, last delivery responses, DNS and port 25, remote policy, local capacity, targeted retries, and safe use of privileged queue operations.
 |- Docker Mailserver IP Blacklisted? Diagnose and Delist It Safely: https://adrianmarikar.com/posts/docker-mailserver-ip-blacklisted-spamhaus-delist.html

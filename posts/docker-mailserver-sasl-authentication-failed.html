@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver SASL Authentication Failed? Fix SMTP Login — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver SMTP AUTH guide for SASL authentication failed errors: separate bad credentials from TLS, account, backend, and Fail2Ban faults.">
+  <meta name="keywords" content="Docker Mailserver SASL authentication failed, Postfix SMTP AUTH failed, Docker Mailserver port 587 login, Dovecot authentication failure, SMTP password rejected">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver SASL Authentication Failed? Fix SMTP Login">
+  <meta property="og:description" content="Trace SMTP login failure through the client route, TLS mode, full mailbox name, DMS account database, Dovecot SASL backend, and Fail2Ban without exposing credentials.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html">
+  <meta property="article:published_time" content="2026-08-15T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-15T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver SASL Authentication Failed? Fix SMTP Login">
+  <meta name="twitter:description" content="An evidence-led runbook for failed SMTP authentication on Docker Mailserver submission ports 587 and 465.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver SASL Authentication Failed? Fix SMTP Login","description":"A practical Docker Mailserver SMTP AUTH guide for SASL authentication failed errors: separate bad credentials from TLS, account, backend, and Fail2Ban faults.","url":"https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html"},"datePublished":"2026-08-15T10:00:00Z","dateModified":"2026-08-15T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","SASL authentication failed","SMTP AUTH","Postfix","Dovecot","port 587","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / SMTP AUTH 043</p>
+      <h1>Docker Mailserver SASL Authentication Failed? Fix SMTP Login</h1>
+    </header>
+
+    <p>Your mail client reaches Docker Mailserver but cannot send. The client may report “authentication failed”, while Postfix logs something like <code>SASL LOGIN authentication failed</code> or <code>Password verification failed</code>. Re-entering the password sometimes helps, but that message does not prove the password is the only broken layer.</p>
+
+    <p>SMTP authentication on a normal Docker Mailserver setup crosses several boundaries: the client selects the correct submission service, negotiates the right TLS mode, receives an <code>AUTH</code> capability, submits a mailbox identity, and Postfix asks its configured SASL backend—normally Dovecot—to verify it. Fail2Ban may also block the source after repeated failures.</p>
+
+    <blockquote>Test one controlled login while watching the matching server event. Do not paste passwords, AUTH payloads, complete logs, account hashes, or real server addresses into public troubleshooting posts.</blockquote>
+
+    <h2>First: identify which failure you actually have</h2>
+    <p>These symptoms belong to different layers:</p>
+    <table>
+      <thead><tr><th>Symptom</th><th>Likely layer</th></tr></thead>
+      <tbody>
+        <tr><td>Connection times out or is refused</td><td>DNS, provider filtering, firewall, Docker port publishing, or listener</td></tr>
+        <tr><td>TLS certificate or handshake fails</td><td>Hostname, certificate, STARTTLS/implicit TLS mismatch, or interception</td></tr>
+        <tr><td><code>AUTH</code> is absent after TLS</td><td>Wrong service/port or submission/SASL configuration</td></tr>
+        <tr><td><code>535 5.7.8</code> or SASL password verification failure</td><td>Username, password, account data, or authentication backend</td></tr>
+        <tr><td><code>454 4.7.0 Temporary authentication failure</code></td><td>Backend/socket/service availability rather than an ordinary bad password</td></tr>
+        <tr><td>Authentication succeeds, then recipient gets relay denial</td><td>Relay/sender policy; not the same incident</td></tr>
+      </tbody>
+    </table>
+    <p>If no SMTP response arrives, use the <a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">port and timeout checklist</a> first. If the log proves successful SASL authentication but Postfix refuses the recipient, move to the <a href="/posts/docker-mailserver-relay-access-denied.html">relay access denied guide</a>.</p>
+
+    <h2>1. Verify the submission route and TLS mode</h2>
+    <p>Mail clients normally submit outbound messages on port 587 with STARTTLS or port 465 with implicit TLS. Port 25 is primarily for server-to-server SMTP transfer. The encryption setting must match the port:</p>
+    <ul>
+      <li><strong>587:</strong> connect in plain SMTP, issue STARTTLS, then continue inside TLS;</li>
+      <li><strong>465:</strong> begin TLS immediately when the TCP connection opens.</li>
+    </ul>
+    <p>A client configured for “SSL/TLS” on 587 or STARTTLS on 465 can fail before credentials are meaningfully checked. Probe capabilities without supplying a password:</p>
+    <pre><code># STARTTLS submission
+openssl s_client -starttls smtp \
+  -connect mail.example.com:587 \
+  -servername mail.example.com -crlf
+
+EHLO client.example.invalid
+QUIT</code></pre>
+    <p>After TLS, the EHLO response should advertise <code>AUTH</code> on the intended submission service. The certificate name should match the mail hostname. For implicit TLS, use <code>openssl s_client -connect mail.example.com:465 -servername mail.example.com -crlf</code> without <code>-starttls smtp</code>.</p>
+
+    <h2>2. Match one attempt to the Docker Mailserver log</h2>
+    <p>Start a short log view, make exactly one login attempt, then stop reading:</p>
+    <pre><code>docker compose ps
+
+docker compose logs --since 5m --follow mailserver</code></pre>
+    <p>Use your actual Compose service name. Correlate the timestamp and client source privately. Useful distinctions include:</p>
+    <ul>
+      <li><strong><code>Password verification failed</code>:</strong> the request reached the authentication backend, which rejected the supplied identity or secret.</li>
+      <li><strong><code>unknown user</code>:</strong> inspect the complete mailbox name and active account source.</li>
+      <li><strong>cannot connect or connection lost to authentication server:</strong> inspect Dovecot/backend health and socket configuration before resetting passwords.</li>
+      <li><strong>no new server event:</strong> the client may be reaching another address, another container, a blocked source, or no listener at all.</li>
+      <li><strong>a success event with <code>sasl_username</code>:</strong> authentication worked; follow the later transaction rather than changing the password.</li>
+    </ul>
+    <p>Keep raw logs private. They can include account names, source addresses, recipient addresses, message IDs, internal hostnames, and other operational details.</p>
+
+    <h2>3. Use the complete mailbox address as the login</h2>
+    <p>For file-provisioned Docker Mailserver accounts, the expected identity is normally the full address, such as <code>person@example.com</code>, not merely <code>person</code>. Check the outgoing-account settings independently from IMAP settings; some clients have a separate SMTP username or silently reuse an old saved credential.</p>
+    <p>Verify all of these:</p>
+    <ul>
+      <li>outgoing server hostname is the intended mail host;</li>
+      <li>SMTP authentication is enabled;</li>
+      <li>the full mailbox address is entered without whitespace;</li>
+      <li>the password manager did not retain a superseded password;</li>
+      <li>the client is not selecting a different saved SMTP identity for this From address;</li>
+      <li>the password was copied without surrounding quotes or a trailing newline.</li>
+    </ul>
+    <p>Do not test by manually typing <code>AUTH LOGIN</code> and publishing its base64 values. Base64 is reversible encoding, not secret protection.</p>
+
+    <h2>4. Prove that the account exists in the active DMS configuration</h2>
+    <p>For the default file-based provisioner, list accounts through DMS’s supported setup helper:</p>
+    <pre><code>docker compose exec mailserver setup email list</code></pre>
+    <p>Confirm the expected full address is present. Do not print the underlying account file: it contains password hashes and belongs in protected configuration and backups.</p>
+    <p>If the account is missing, add or update it with the setup helper documented for the exact Docker Mailserver image you have pinned. If you use LDAP, OAuth2, or another provisioner, test that provider and its mapping instead of modifying the file-based account database. Changing the wrong account source creates noise and can make rollback harder.</p>
+
+    <h2>5. Change a password deliberately, not speculatively</h2>
+    <p>Reset the password only when the logs and account inventory point to a credential mismatch, or when compromise is suspected. With the default provisioner, use the current DMS setup command interactively so the secret does not enter shell history:</p>
+    <pre><code>docker compose exec mailserver \
+  setup email update person@example.com</code></pre>
+    <p>Enter the new value at the prompt. Then update one client and run one test. Avoid putting the password after the command, in Compose files, chat messages, process arguments, screenshots, or CI logs. If several devices suddenly fail after a deliberate rotation, update them one at a time rather than weakening authentication.</p>
+
+    <h2>6. Inspect the effective Postfix-to-Dovecot SASL path</h2>
+    <p>Docker Mailserver normally lets Postfix delegate submission authentication to Dovecot. Read only the relevant effective settings:</p>
+    <pre><code>docker compose exec mailserver postconf \
+  smtpd_sasl_auth_enable \
+  smtpd_sasl_type \
+  smtpd_sasl_path \
+  smtpd_tls_auth_only
+
+docker compose exec mailserver postconf -M | grep -E \
+  '^(submission|submissions)/'</code></pre>
+    <p>The submission service can have per-service overrides, so a global value alone is not the whole answer. Compare the output with the official documentation for your pinned version and your deliberate override files. Do not edit generated <code>main.cf</code> or <code>master.cf</code> inside a running container as a permanent fix: a recreation can erase the change.</p>
+    <p>If logs show a temporary backend failure, check recent container startup and Dovecot events, filesystem capacity, and whether an unsupported override changed the authentication socket or permissions:</p>
+    <pre><code>docker compose logs --since 15m mailserver
+
+docker compose exec mailserver doveconf -n
+
+docker compose exec mailserver df -h</code></pre>
+    <p><code>doveconf -n</code> can be lengthy and reveal internal details, so inspect it privately. The official Postfix SASL guide notes that the SMTP server must be able to access its authentication service. In a maintained DMS image, use supported configuration paths rather than applying distribution-specific socket recipes blindly.</p>
+
+    <h2>7. Check whether Fail2Ban blocked the test source</h2>
+    <p>Repeated failed logins can trigger Docker Mailserver’s Fail2Ban protection. That is useful, but it means a corrected password may still appear broken from the already-banned source. Inspect status through DMS:</p>
+    <pre><code>docker compose exec mailserver setup fail2ban status</code></pre>
+    <p>If the source is banned, first confirm the failures were your own tests and that no device or attacker is continuing to submit bad credentials. Stop the faulty client before applying the version-appropriate unban command. Do not disable Fail2Ban globally or allowlist a broad public range just to make one login work.</p>
+    <p>A continuing stream of unfamiliar failures is a security event. Preserve relevant logs, rotate the affected credential if necessary, review mailbox/application access, and keep rate controls enabled.</p>
+
+    <h2>8. Separate client authentication from relay-host authentication</h2>
+    <p>There can be two different SASL relationships:</p>
+    <ol>
+      <li>your mail client authenticates <em>to Docker Mailserver</em> on 587 or 465;</li>
+      <li>Docker Mailserver optionally authenticates <em>to an upstream smarthost</em> when delivering queued mail.</li>
+    </ol>
+    <p>A client-side failure appears during submission and uses Postfix’s SMTP server settings. An upstream failure appears after the message has been accepted and queued, and uses Postfix’s SMTP client settings. Their logs, credentials, and configuration parameters are different. If a message is accepted locally but sits deferred with an upstream <code>535</code>, follow the <a href="/posts/docker-mailserver-deferred-queue-not-sending.html">deferred queue runbook</a> and inspect the relay-host route.</p>
+
+    <h2>9. Verify recovery with a small test matrix</h2>
+    <ol>
+      <li>Confirm the corrected client negotiates the expected TLS mode and certificate.</li>
+      <li>Send one harmless message to an external mailbox you control.</li>
+      <li>Verify the matching log transaction records successful SASL authentication.</li>
+      <li>Verify Postfix accepts the recipient and assigns a queue ID.</li>
+      <li>Follow that ID until <code>status=sent</code> or preserve the next exact delivery error.</li>
+      <li>Confirm a deliberately wrong password is rejected without excessive repeated attempts.</li>
+      <li>Confirm unauthenticated external relay remains denied.</li>
+    </ol>
+    <p>SMTP login success is only the first checkpoint. A message can authenticate correctly and still fail sender policy, queue delivery, DNS authentication, or recipient acceptance. Keep each boundary separate.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Classify timeout, TLS, missing AUTH, credential rejection, temporary backend failure, or post-login relay denial.</li>
+      <li>Verify 587 with STARTTLS or 465 with implicit TLS.</li>
+      <li>Match one controlled attempt to one redacted server event.</li>
+      <li>Use the complete mailbox address and clear stale client credentials.</li>
+      <li>Confirm the account exists in the active DMS provisioner.</li>
+      <li>Reset a password interactively only when evidence supports it.</li>
+      <li>Inspect the effective submission and Postfix-to-Dovecot SASL path.</li>
+      <li>Check Fail2Ban without disabling it broadly.</li>
+      <li>Retest one message and follow its queue ID to final delivery.</li>
+    </ol>
+
+    <p>The authoritative references are Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/overview/" rel="noopener noreferrer">account-management overview</a>, its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/" rel="noopener noreferrer">port and submission guidance</a>, its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/fail2ban/" rel="noopener noreferrer">Fail2Ban documentation</a>, and the official <a href="https://www.postfix.org/SASL_README.html" rel="noopener noreferrer">Postfix SASL guide</a>. Match commands and supported override paths to the DMS image version you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix “Relay access denied” safely</a><span>Use this when authentication succeeds but Postfix still refuses to forward to an external recipient.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout: test 25, 465, and 587</a><span>Trace failures that happen before the server can evaluate a login.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Follow locally accepted mail through DNS, network, policy, transport, and targeted retries.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep mailbox identities, aliases, DKIM, DNS, and hosted domains explicit.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect account configuration and mail state before larger authentication changes.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
