@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It — Adrian Marikar</title>
+  <meta name="description" content="A practical Docker Mailserver guide to diagnosing mailbox quota exceeded errors, checking Dovecot usage, repairing stale quota counts, and restoring delivery safely.">
+  <meta name="keywords" content="Docker Mailserver mailbox quota exceeded, Dovecot quota get, doveadm quota recalc, Docker Mailserver quota set, mailbox full 5.2.2">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It">
+  <meta property="og:description" content="Separate a real full mailbox from a stale quota count or full filesystem, make one safe repair, and prove local delivery works again.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html">
+  <meta property="article:published_time" content="2026-08-17T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-17T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It">
+  <meta name="twitter:description" content="An evidence-led runbook for Dovecot quota and mailbox-full delivery errors in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It","description":"A practical Docker Mailserver guide to diagnosing mailbox quota exceeded errors, checking Dovecot usage, repairing stale quota counts, and restoring delivery safely.","url":"https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html"},"datePublished":"2026-08-17T10:00:00Z","dateModified":"2026-08-17T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot quota","mailbox full","doveadm quota","LMTP delivery","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / mailbox quota 044</p>
+      <h1>Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It</h1>
+    </header>
+
+    <p>Mail to one Docker Mailserver account is bouncing or deferring with <code>mailbox full</code>, <code>quota exceeded</code>, or an enhanced status such as <code>5.2.2</code>. The obvious response is to increase the limit. That can restore delivery, but it can also hide a runaway mailbox, a broken retention process, a stale quota calculation, or a mail volume incident.</p>
+
+    <p>The safe approach is to identify the affected recipient, preserve the exact delivery response, compare Dovecot’s recorded usage with the configured limit and real storage, then make the smallest justified change.</p>
+
+    <blockquote>Mailbox quota, Postfix message-size limits, and free disk space are three different controls. Prove which one failed before changing any of them.</blockquote>
+
+    <h2>First: capture the exact failure</h2>
+    <p>Start with recent mail logs and the queue rather than the user’s mail client. Use your real Compose service name:</p>
+    <pre><code>docker compose logs --since 2h mailserver
+
+docker compose exec mailserver postqueue -p</code></pre>
+    <p>Keep this output private: it can contain recipient addresses, senders, queue IDs, and message metadata. Look for the delivery transport, enhanced status, and text around one affected queue ID. Local Dovecot/LMTP quota rejection is different from a remote recipient telling your outbound Postfix that <em>their</em> mailbox is full.</p>
+    <ul>
+      <li><strong>Local recipient plus Dovecot/LMTP quota message:</strong> continue with this guide.</li>
+      <li><strong>Remote MX returns mailbox full:</strong> your server cannot repair the recipient’s storage; allow normal queue/bounce handling.</li>
+      <li><strong>Message too large:</strong> inspect message-size policy, not mailbox quota.</li>
+      <li><strong>No space left on device:</strong> treat it as host or volume capacity failure before touching per-user quotas.</li>
+    </ul>
+
+    <h2>1. Confirm quotas are enabled</h2>
+    <p>Docker Mailserver exposes Dovecot quota support through <code>ENABLE_QUOTAS</code>. Inspect the resolved Compose configuration and the container’s effective Dovecot settings without publishing environment output:</p>
+    <pre><code>docker compose config
+
+docker compose exec mailserver doveconf -n | grep -i quota</code></pre>
+    <p>Review the first command locally because it may interpolate sensitive environment values. The Docker Mailserver documentation defines <code>ENABLE_QUOTAS=1</code> as enabling Dovecot quotas. If quota commands say the plugin is unavailable, do not force a recalculation: first compare your pinned image version and Compose configuration with the documented quota setup.</p>
+
+    <h2>2. Read the account’s recorded usage and limit</h2>
+    <p>Dovecot’s supported read-only check is <code>doveadm quota get</code>. Substitute the affected full mailbox address:</p>
+    <pre><code>ACCOUNT='user@example.com'
+
+docker compose exec mailserver \
+  doveadm quota get -u "$ACCOUNT"</code></pre>
+    <p>The result normally reports a quota root, used storage, limit, and percentage. Interpret it before changing anything:</p>
+    <ul>
+      <li><strong>Usage is genuinely near or above the limit:</strong> archive/delete mail or deliberately raise the account limit.</li>
+      <li><strong>Usage looks impossible after a restore or manual file move:</strong> the quota count may be stale.</li>
+      <li><strong>No limit appears:</strong> verify account provisioning and quota configuration rather than assuming the mailbox is unlimited.</li>
+      <li><strong>The account is unknown:</strong> confirm the exact mailbox identity, aliases, domain, and account provisioner.</li>
+    </ul>
+    <p>An alias may ultimately deliver into another account’s mailbox. Docker Mailserver’s quota-aware account handling exists so aliased delivery can share the real mailbox location and limit; diagnose the resolved mailbox, not merely the address the sender typed.</p>
+
+    <h2>3. Check real filesystem and inode capacity</h2>
+    <p>A mailbox can be below its personal quota while the Docker volume or host is full. Check both blocks and inodes from the mail container:</p>
+    <pre><code>docker compose exec mailserver df -h
+
+docker compose exec mailserver df -i</code></pre>
+    <p>If the mail volume is full, raising a user quota makes the situation worse. Stop nonessential producers, preserve logs, identify safe cleanup candidates, and expand or recover storage according to your backup plan. Do not delete unfamiliar files directly from a Maildir or Dovecot index tree to buy space.</p>
+    <p>Also compare the Docker volume mount with your intended Compose file. A missing persistent mount can place mail on an unexpected container filesystem; the <a href="/posts/backup-restore-docker-mailserver.html">Docker Mailserver backup and restore runbook</a> explains which mail, state, and configuration data need protection.</p>
+
+    <h2>4. Find the configured mailbox limit</h2>
+    <p>For Docker Mailserver’s file provisioner, per-account limits are maintained by its setup tooling and represented in the quota configuration. Inspect the command help for the version you actually run:</p>
+    <pre><code>docker compose exec mailserver setup quota help</code></pre>
+    <p>The documented setter accepts an account and a size such as <code>2G</code> or <code>500M</code>:</p>
+    <pre><code># Example only: choose a justified limit for the real account
+ACCOUNT='user@example.com'
+
+docker compose exec mailserver \
+  setup quota set "$ACCOUNT" 2G</code></pre>
+    <p>Do not blindly copy <code>2G</code>. First check current usage, storage headroom, backup capacity, growth rate, and the reason for the increase. Keep the change in your persistent Docker Mailserver configuration and confirm it survives a controlled container recreation.</p>
+    <p>Docker Mailserver also exposes <code>POSTFIX_MAILBOX_SIZE_LIMIT</code>, expressed in bytes, but that Postfix control is not a substitute for a Dovecot per-user quota. Avoid changing global limits when one account has reached a deliberate personal allowance.</p>
+
+    <h2>5. Repair a stale quota count only when evidence supports it</h2>
+    <p>Dovecot documents <code>quota recalc</code> for recalculating current usage. It is appropriate when the recorded number is demonstrably wrong—for example, after a supported restore or an out-of-band storage repair—not as a routine way to make a full mailbox accept more mail.</p>
+    <pre><code>ACCOUNT='user@example.com'
+
+# Preserve the before state
+docker compose exec mailserver \
+  doveadm quota get -u "$ACCOUNT"
+
+# Recalculate only this account
+docker compose exec mailserver \
+  doveadm quota recalc -u "$ACCOUNT"
+
+# Compare the result
+docker compose exec mailserver \
+  doveadm quota get -u "$ACCOUNT"</code></pre>
+    <p>If recalculation restores a high usage figure, the mailbox is still genuinely full. If it changes the figure substantially, record why the old accounting became stale and verify the underlying mail store before declaring the incident closed.</p>
+
+    <h2>6. Reduce usage through the mailbox, not with filesystem deletion</h2>
+    <p>For a genuinely full account, the safest first option is usually user-visible cleanup through IMAP: archive required messages, empty Trash/Junk according to policy, and verify that deletions are expunged. This keeps Dovecot’s mailbox indexes and quota accounting involved.</p>
+    <p>Before a large deletion, confirm the mailbox is covered by a tested backup and that retention or legal requirements allow it. If automated mail has filled the account, fix the producer or retention rule too. Extra quota without source control only delays the next outage.</p>
+
+    <h2>7. Retry one affected message and prove delivery</h2>
+    <p>After freeing space, correcting a stale count, or raising a justified limit, retry one known queued message if it remains deferred:</p>
+    <pre><code>docker compose exec mailserver \
+  postqueue -i REPLACE_WITH_QUEUE_ID
+
+docker compose logs --since 5m mailserver</code></pre>
+    <p>Confirm the chosen queue ID reaches a successful local delivery status, appears in the intended mailbox, and no fresh quota warning is emitted. Then check whether the queue count and oldest age decline normally. Do not repeatedly flush every message; the <a href="/posts/docker-mailserver-deferred-queue-not-sending.html">deferred queue guide</a> shows how to group and retry only affected mail.</p>
+
+    <h2>Common wrong turns</h2>
+    <ul>
+      <li><strong>Setting every account to unlimited:</strong> removes a useful containment boundary and lets one mailbox consume the mail volume.</li>
+      <li><strong>Deleting Dovecot index or Maildir files by hand:</strong> risks inconsistency, data loss, and misleading accounting.</li>
+      <li><strong>Running quota recalc repeatedly:</strong> recalculation measures usage; it does not create capacity.</li>
+      <li><strong>Confusing a remote 5.2.2 with your own mailbox:</strong> inspect the relay and recipient before changing local configuration.</li>
+      <li><strong>Increasing quota on a full filesystem:</strong> turns a per-user issue into a server-wide failure.</li>
+      <li><strong>Deleting queued mail first:</strong> discards delivery evidence without repairing the mailbox.</li>
+    </ul>
+
+    <h2>A safe recovery checklist</h2>
+    <ol>
+      <li>Preserve the exact queue ID, delivery transport, recipient, and status text privately.</li>
+      <li>Prove the rejection belongs to a local mailbox rather than a remote recipient.</li>
+      <li>Check <code>ENABLE_QUOTAS</code> and effective Dovecot quota configuration.</li>
+      <li>Read the account’s usage and limit with <code>doveadm quota get</code>.</li>
+      <li>Check mail-volume block and inode capacity.</li>
+      <li>Choose one repair: safe mailbox cleanup, justified limit change, or evidence-backed recalculation.</li>
+      <li>Retry one queue ID and verify successful delivery into the correct mailbox.</li>
+      <li>Confirm the configuration persists and monitor usage growth.</li>
+    </ol>
+
+    <p>The <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/provisioner/file/" rel="noopener noreferrer">Docker Mailserver file-provisioner documentation</a> documents <code>setup quota set</code> and persistent account quota configuration. The <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/" rel="noopener noreferrer">environment reference</a> distinguishes Dovecot quotas from Postfix’s mailbox-size control. Dovecot’s official <a href="https://doc.dovecot.org/main/core/man/doveadm-quota.1.html" rel="noopener noreferrer">doveadm-quota manual</a> defines the read and recalculation commands.</p>
+
+    <p>A successful fix is not merely an empty queue. It is a mailbox whose real usage is understood, whose limit matches an intentional storage policy, whose volume has headroom, and whose next test message can be traced from Postfix through LMTP into the account.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending? Diagnose it safely</a><span>Preserve queue evidence, group failures, repair the responsible layer, and retry only affected mail.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and recovery evidence before storage work.</span></li>
+        <li><a href="/posts/docker-mailserver-sasl-authentication-failed.html">SASL authentication failed? Fix SMTP login</a><span>Separate mailbox identity and credentials from submission, TLS, and Dovecot backend faults.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Add domains and accounts while preserving existing mail, identity, DKIM, and TLS.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout: test ports 25, 465, and 587</a><span>Trace a transport problem separately from a successful connection followed by quota rejection.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>

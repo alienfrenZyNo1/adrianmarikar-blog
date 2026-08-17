@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html</guid>
+      <pubDate>Mon, 17 Aug 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver guide to diagnosing mailbox quota exceeded errors, checking Dovecot usage, repairing stale quota counts, and restoring delivery safely.</description>
+    </item>
+    <item>
       <title>Docker Mailserver SASL Authentication Failed? Fix SMTP Login</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html</guid>

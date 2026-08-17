@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It: https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html
+  - Evidence-led Dovecot quota recovery guide covering local versus remote mailbox-full errors, recorded usage and limits, filesystem capacity, persistent per-account quota changes, stale-count recalculation, safe cleanup, and controlled delivery verification.
 |- Docker Mailserver SASL Authentication Failed? Fix SMTP Login: https://adrianmarikar.com/posts/docker-mailserver-sasl-authentication-failed.html
   - Evidence-led SMTP AUTH troubleshooting covering submission ports and TLS modes, full mailbox identities, DMS account provisioning, Postfix-to-Dovecot SASL, temporary backend failures, Fail2Ban, and controlled end-to-end delivery verification.
 |- Docker Mailserver Deferred Queue Not Sending? Diagnose It Safely: https://adrianmarikar.com/posts/docker-mailserver-deferred-queue-not-sending.html
