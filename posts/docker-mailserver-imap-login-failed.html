@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993 — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver IMAP login failures by testing port 993 TLS, Dovecot authentication, account provisioning, logs, storage, and Fail2Ban safely.">
+  <meta name="keywords" content="Docker Mailserver IMAP login failed, Dovecot authentication failed, Docker Mailserver port 993, doveadm auth test, IMAP password rejected">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993">
+  <meta property="og:description" content="Separate IMAP transport, TLS, account, Dovecot, storage, and Fail2Ban faults with one controlled test at each boundary.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html">
+  <meta property="article:published_time" content="2026-08-19T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-19T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993">
+  <meta name="twitter:description" content="An evidence-led runbook for failed Dovecot IMAP logins in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993","description":"Fix Docker Mailserver IMAP login failures by testing port 993 TLS, Dovecot authentication, account provisioning, logs, storage, and Fail2Ban safely.","url":"https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html"},"datePublished":"2026-08-19T10:00:00Z","dateModified":"2026-08-19T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","IMAP login failed","Dovecot authentication","port 993","doveadm auth test","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="/#writing">Writing</a>
+        <a href="/categories/ai-agents.html">AI agents</a>
+        <a href="/categories/newbizfeed.html">NewBizFeed</a>
+        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+        <a href="/#about">About</a>
+        <a href="mailto:hello@adrianmarikar.com">Contact</a>
+      </nav>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / IMAP login 045</p>
+      <h1>Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993</h1>
+    </header>
+
+    <p>Your mail client can no longer open a Docker Mailserver mailbox. It may loop on the password prompt, say “login failed”, or report that it cannot connect to the IMAP server. Dovecot may log <code>auth failed</code>, but a generic client message does not prove the password is wrong.</p>
+
+    <p>An IMAP login crosses several distinct boundaries: DNS reaches the intended host, TCP reaches the published port, TLS presents the expected certificate, Dovecot offers IMAP, the client sends the correct full mailbox identity, the active account provisioner verifies it, and Dovecot opens the user’s mail storage. Test those boundaries in order instead of repeatedly resetting credentials.</p>
+
+    <blockquote>Run one controlled login while watching the matching private server event. Never publish passwords, authentication exchanges, real addresses, complete logs, account hashes, or server IPs.</blockquote>
+
+    <h2>First: classify the symptom</h2>
+    <table>
+      <thead><tr><th>Observed result</th><th>Investigate first</th></tr></thead>
+      <tbody>
+        <tr><td>Timeout or connection refused</td><td>DNS, firewall, Docker port publishing, or Dovecot listener</td></tr>
+        <tr><td>Certificate or TLS handshake error</td><td>Hostname, certificate mount, TLS mode, or stale endpoint</td></tr>
+        <tr><td>Server greets, then rejects login</td><td>Full username, password, account source, or authentication policy</td></tr>
+        <tr><td>Temporary/internal authentication failure</td><td>Dovecot auth service, configuration, permissions, or host capacity</td></tr>
+        <tr><td>Login succeeds but mailbox cannot open</td><td>Mail storage path, ownership, indexes, quota, or disk capacity</td></tr>
+        <tr><td>One network fails while another works</td><td>Fail2Ban, source filtering, IPv6 path, or split DNS</td></tr>
+      </tbody>
+    </table>
+    <p>This guide is for mailbox access through IMAP. If sending fails on port 587 or 465 while reading still works, use the separate <a href="/posts/docker-mailserver-sasl-authentication-failed.html">Docker Mailserver SMTP authentication guide</a>.</p>
+
+    <h2>1. Verify the client is using the intended IMAP service</h2>
+    <p>Docker Mailserver’s current documentation recommends IMAPS on port 993. It uses implicit TLS: encryption begins immediately when the connection opens. Port 143 uses IMAP with STARTTLS and is generally retained for compatibility. Do not configure STARTTLS on 993 or implicit “SSL/TLS” on 143.</p>
+    <p>Check the client settings:</p>
+    <ul>
+      <li><strong>server:</strong> the mail hostname covered by the certificate, such as <code>mail.example.com</code>;</li>
+      <li><strong>port:</strong> <code>993</code>;</li>
+      <li><strong>connection security:</strong> SSL/TLS or implicit TLS;</li>
+      <li><strong>username:</strong> the complete mailbox address, such as <code>person@example.com</code>;</li>
+      <li><strong>authentication:</strong> normal password unless you deliberately configured another provisioner or OAuth2.</li>
+    </ul>
+    <p>Do not use the website hostname merely because it shares the same domain. Mail DNS and web proxying can lead to different services.</p>
+
+    <h2>2. Test TCP, TLS, and the public certificate without a password</h2>
+    <p>From a network outside the VPS, inspect the IMAPS handshake:</p>
+    <pre><code>openssl s_client \
+  -connect mail.example.com:993 \
+  -servername mail.example.com \
+  -verify_return_error &lt;/dev/null</code></pre>
+    <p>A useful result establishes a connection, presents a certificate valid for the requested mail hostname, and shows a successful verification result. It does not prove credentials work, but it removes DNS, routing, port publication, and most TLS ambiguity.</p>
+    <p>If the connection times out, compare public A and AAAA answers, provider firewall rules, host firewall rules, and Compose port publication. A client may prefer a broken IPv6 address while your IPv4 test succeeds. If the certificate is old, follow the <a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Docker Mailserver certificate renewal path</a> before changing account data.</p>
+
+    <h2>3. Match one login attempt to one Dovecot event</h2>
+    <p>Watch only a short recent window, make one login attempt, then stop:</p>
+    <pre><code>docker compose ps
+
+docker compose logs --since 5m --follow mailserver</code></pre>
+    <p>Use the actual Compose service name. Keep output private because it can expose mailbox names, source addresses, internal paths, and session details. The distinction matters:</p>
+    <ul>
+      <li><strong>No new event:</strong> the client is reaching another host, another address family, a blocked path, or no published listener.</li>
+      <li><strong><code>auth failed</code> or unknown user:</strong> inspect the login identity and active account source.</li>
+      <li><strong>successful login:</strong> authentication is not the fault; follow the later mailbox-open or storage error.</li>
+      <li><strong>internal or temporary failure:</strong> inspect Dovecot health and effective configuration instead of guessing a password.</li>
+      <li><strong>repeated attempts after the client is closed:</strong> another device or background process still has stale credentials.</li>
+    </ul>
+    <p>Temporarily increasing Docker Mailserver’s documented <code>LOG_LEVEL</code> can add evidence, but treat <code>debug</code> or <code>trace</code> as a short diagnostic change. Revert it after the controlled test and review verbose output locally.</p>
+
+    <h2>4. Confirm the account exists in the active provisioner</h2>
+    <p>With Docker Mailserver’s default file provisioner, list accounts through the supported setup CLI:</p>
+    <pre><code>docker compose exec mailserver setup email list</code></pre>
+    <p>Confirm that the exact full address exists. Do not print or edit the underlying account file directly; it contains password hashes. If the deployment uses LDAP or OAuth2, test that configured identity source instead. Repairing the file provisioner cannot fix an LDAP mapping or OAuth token flow.</p>
+    <p>Aliases are delivery addresses, not automatically separate login accounts. A message can arrive through an alias while IMAP still requires the real provisioned mailbox identity.</p>
+
+    <h2>5. Test authentication inside the container</h2>
+    <p>Dovecot’s official diagnostic interface can test the authentication backend without involving public networking. Use an interactive prompt where supported so the password does not become a shell argument or enter history:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm auth test person@example.com</code></pre>
+    <p>Enter the test secret only at the prompt. If your pinned Dovecot version requires different syntax, read its local help with <code>doveadm auth test --help</code> and follow that version rather than placing a password on the command line.</p>
+    <ul>
+      <li><strong>Internal auth succeeds but the client fails:</strong> focus on the client’s saved username/password, selected authentication mechanism, TLS route, or source ban.</li>
+      <li><strong>Internal auth rejects the account:</strong> verify the provisioner and deliberately reset the credential if the evidence supports it.</li>
+      <li><strong>The command reports an internal error:</strong> inspect Dovecot startup, auth service, configuration, and filesystem state.</li>
+    </ul>
+    <p>Do not paste a password into <code>docker compose exec ... doveadm auth test user password</code>. Command arguments can be retained in shell history or exposed to local process inspection.</p>
+
+    <h2>6. Reset a password only after proving a credential fault</h2>
+    <p>For the file provisioner, Docker Mailserver’s setup CLI can update one account interactively:</p>
+    <pre><code>docker compose exec mailserver \
+  setup email update person@example.com</code></pre>
+    <p>Use a unique password, enter it at the prompt, and update one client first. Remove stale saved credentials from the client’s password manager if it keeps retrying the old value. Then repeat one internal authentication test and one external IMAP login.</p>
+    <p>If many devices began failing at the same time without a planned change, preserve logs and consider compromise or an account-source outage before rotating everything. A password reset is not a substitute for understanding why authentication changed.</p>
+
+    <h2>7. Inspect effective Dovecot service and listener state</h2>
+    <p>If transport works but Dovecot reports internal errors, inspect the effective configuration and running processes privately:</p>
+    <pre><code>docker compose exec mailserver doveconf -n
+
+docker compose exec mailserver doveadm service status
+
+docker compose exec mailserver ss -lntp</code></pre>
+    <p>Look for the enabled IMAP protocol, expected listeners, authentication configuration, and deliberate overrides. <code>doveconf -n</code> can reveal internal paths and settings, so do not publish it unredacted.</p>
+    <p>Make permanent fixes through Docker Mailserver’s supported environment variables and mounted configuration, not by editing generated files inside the running container. An in-container edit can disappear on recreation and leave Git or Compose different from production.</p>
+
+    <h2>8. Separate authentication from mailbox-storage failure</h2>
+    <p>A successful auth event followed by a disconnect or mailbox error means the password worked. Check volume capacity and Dovecot’s view of the user:</p>
+    <pre><code>docker compose exec mailserver df -h
+
+docker compose exec mailserver df -i
+
+docker compose exec mailserver \
+  doveadm user person@example.com</code></pre>
+    <p>Review the user lookup privately because it can expose paths and identifiers. A full filesystem, exhausted inodes, wrong mount, damaged permissions after a manual restore, or unsupported Maildir edits can prevent mailbox access after successful login.</p>
+    <p>Do not recursively change ownership or delete Dovecot indexes as a first response. Compare the persistent mounts with the intended Compose configuration and the restore procedure. If logs show a quota-specific failure, use the <a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">mailbox quota guide</a> to distinguish personal limits from volume capacity.</p>
+
+    <h2>9. Check Fail2Ban without weakening it</h2>
+    <p>Repeated password prompts can cause a legitimate client address to be banned. Inspect Docker Mailserver’s Fail2Ban status:</p>
+    <pre><code>docker compose exec mailserver setup fail2ban status</code></pre>
+    <p>If the source is listed, stop every device still retrying stale credentials, confirm the attempts are yours, and use the version-appropriate narrow unban action. Do not disable Fail2Ban globally or allowlist a broad public range. Unfamiliar repeated login failures are a security signal: preserve relevant evidence, rotate the affected credential if appropriate, and keep rate controls enabled.</p>
+
+    <h2>10. Prove recovery at every boundary</h2>
+    <ol>
+      <li>Confirm public port 993 presents the correct hostname certificate.</li>
+      <li>Confirm one internal <code>doveadm auth test</code> succeeds.</li>
+      <li>Confirm one external client login creates a matching successful Dovecot event.</li>
+      <li>Open INBOX and one existing folder to prove storage access, not just authentication.</li>
+      <li>Send a harmless message to the mailbox and confirm it appears.</li>
+      <li>Move or flag a test message and confirm the change survives reconnect.</li>
+      <li>Confirm no client continues stale retries and no fresh ban appears.</li>
+    </ol>
+    <p>This small matrix prevents a false fix where the password is accepted but the mailbox volume remains unreadable, or where one network works while the user’s normal source is still banned.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Classify timeout, TLS error, credential rejection, internal auth failure, or post-login storage fault.</li>
+      <li>Verify hostname, implicit TLS, and public certificate on port 993.</li>
+      <li>Match one client attempt to one private Dovecot event.</li>
+      <li>Confirm the full mailbox account exists in the active provisioner.</li>
+      <li>Run one interactive internal authentication test.</li>
+      <li>Reset one password only if evidence identifies a credential fault.</li>
+      <li>Inspect Dovecot services, listeners, disk, inodes, and user lookup as needed.</li>
+      <li>Check Fail2Ban without broadly weakening protection.</li>
+      <li>Verify login, mailbox reads, a fresh delivery, and a persistent mailbox change.</li>
+    </ol>
+
+    <p>The authoritative references are Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/" rel="noopener noreferrer">port and TLS guidance</a>, its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/provisioner/file/" rel="noopener noreferrer">file-provisioner setup CLI documentation</a>, its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/debugging/" rel="noopener noreferrer">debugging guide</a>, and Dovecot’s official <a href="https://doc.dovecot.org/main/core/man/doveadm-auth.1.html" rel="noopener noreferrer">doveadm-auth manual</a> and <a href="https://doc.dovecot.org/main/core/admin/testing.html" rel="noopener noreferrer">protocol testing guide</a>. Match every command to the Docker Mailserver and Dovecot versions you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-sasl-authentication-failed.html">SASL authentication failed? Fix SMTP login</a><span>Use this when sending fails on 587 or 465 rather than mailbox access on 993.</span></li>
+        <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Still serving an old Let’s Encrypt certificate?</a><span>Trace the certificate through the host, mount, Postfix, Dovecot, SMTP, and IMAPS.</span></li>
+        <li><a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">Mailbox quota exceeded?</a><span>Separate a personal quota from stale accounting or a full mail volume.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and account data before storage repairs.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout: test mail ports</a><span>Apply the same layered transport discipline to outbound submission and server-to-server SMTP.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260611-organic1"></script>
+</body>
+</html>
