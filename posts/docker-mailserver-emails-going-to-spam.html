@@ -18,7 +18,7 @@
   <meta name="twitter:title" content="Docker Mailserver Emails Going to Spam: A Deliverability Checklist">
   <meta name="twitter:description" content="A practical PTR, SPF, DKIM, DMARC, TLS, reputation, logs, and message-header checklist for self-hosted mail.">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Emails Going to Spam: A Deliverability Checklist","description":"A practical Docker Mailserver deliverability checklist for diagnosing Gmail or Outlook spam placement using PTR, SPF, DKIM, DMARC alignment, TLS, logs, and message headers.","url":"https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-emails-going-to-spam.html"},"datePublished":"2026-07-15T10:00:00Z","dateModified":"2026-07-15T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver deliverability","email going to spam","SPF","DKIM","DMARC alignment","PTR reverse DNS","self-hosted email"],"inLanguage":"en"}</script>
-  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
   <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
 </head>
 <body>
@@ -27,15 +27,21 @@
         <span class="brand-mark">AM</span>
         <span>Adrian Marikar</span>
       </a>
-      <nav aria-label="Primary navigation">
-        <a href="/#writing">Writing</a>
-        <a href="/categories/ai-agents.html">AI agents</a>
-        <a href="/categories/newbizfeed.html">NewBizFeed</a>
-        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-        <a href="/#about">About</a>
-        <a href="mailto:hello@adrianmarikar.com">Contact</a>
-      </nav>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
     </header>
 
   <main>
@@ -205,6 +211,6 @@ docker exec mailserver setup email list</code></pre>
   </main>
 
   <footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
-  <script src="/script.js?v=20260611-organic1"></script>
+  <script src="/script.js?v=20260816-mobile-nav1"></script>
 </body>
 </html>
