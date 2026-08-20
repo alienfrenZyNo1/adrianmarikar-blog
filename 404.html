@@ -6,7 +6,7 @@
   <title>Page not found — Adrian Marikar</title>
   <meta name="description" content="The page could not be found, but you can continue reading Adrian Marikar's latest notes, build logs, and self-hosting guides.">
   <meta name="robots" content="noindex,follow">
-  <link rel="stylesheet" href="/styles.css?v=20260611-organic1">
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
   <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
 </head>
 <body>
@@ -15,15 +15,21 @@
         <span class="brand-mark">AM</span>
         <span>Adrian Marikar</span>
       </a>
-      <nav aria-label="Primary navigation">
-        <a href="/#writing">Writing</a>
-        <a href="/categories/ai-agents.html">AI agents</a>
-        <a href="/categories/newbizfeed.html">NewBizFeed</a>
-        <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-        <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-        <a href="/#about">About</a>
-        <a href="mailto:hello@adrianmarikar.com">Contact</a>
-      </nav>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
     </header>
 
   <main>
@@ -65,6 +71,6 @@
   <footer class="site-footer">
     <p>© <span id="year"></span> Adrian Marikar. Notes on software, systems, and self-hosted tools.</p>
   </footer>
-  <script src="/script.js"></script>
+  <script src="/script.js?v=20260816-mobile-nav1"></script>
 </body>
 </html>
