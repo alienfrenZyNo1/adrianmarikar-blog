@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It: https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html
+  - Evidence-led Postfix 550 5.1.1 troubleshooting covering the exact envelope recipient, virtual versus local address classes, Docker Mailserver accounts and aliases, effective mailbox maps, persistent configuration, SMTP recipient tests, and final delivery verification.
 |- Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993: https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html
   - Evidence-led IMAP troubleshooting covering port 993 implicit TLS, public certificate checks, full mailbox identities, DMS account provisioning, interactive Dovecot authentication tests, storage failures, Fail2Ban, and end-to-end mailbox verification.
 |- Docker Mailserver Mailbox Quota Exceeded? Diagnose and Fix It: https://adrianmarikar.com/posts/docker-mailserver-mailbox-quota-exceeded.html

@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html</guid>
+      <pubDate>Fri, 21 Aug 2026 10:00:00 GMT</pubDate>
+      <description>A practical Docker Mailserver guide to fixing Postfix 550 5.1.1 user unknown in virtual mailbox table by checking the exact recipient, account, alias, domain class, active maps, and final delivery.</description>
+    </item>
+    <item>
       <title>Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html</guid>

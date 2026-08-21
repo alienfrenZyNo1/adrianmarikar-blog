@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver 550 5.1.1 user unknown in virtual mailbox table by testing the exact recipient, account, alias, domain class, and active Postfix maps.">
+  <meta name="keywords" content="Docker Mailserver user unknown in virtual mailbox table, Postfix 550 5.1.1, recipient address rejected, virtual mailbox maps, Docker Mailserver alias">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It">
+  <meta property="og:description" content="Trace a rejected recipient through DNS, the SMTP log, Docker Mailserver accounts and aliases, and Postfix’s effective address maps.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">
+  <meta property="article:published_time" content="2026-08-21T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-21T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It">
+  <meta name="twitter:description" content="An evidence-led runbook for Postfix 550 5.1.1 recipient rejections in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It","description":"Fix Docker Mailserver 550 5.1.1 user unknown in virtual mailbox table by testing the exact recipient, account, alias, domain class, and active Postfix maps.","url":"https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html"},"datePublished":"2026-08-21T10:00:00Z","dateModified":"2026-08-21T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","user unknown in virtual mailbox table","Postfix 550 5.1.1","virtual mailbox maps","mail aliases","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / recipient rejection 046</p>
+      <h1>Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It</h1>
+    </header>
+
+    <p>A sender receives a bounce containing <code>550 5.1.1 Recipient address rejected: User unknown in virtual mailbox table</code>. The domain reaches your Docker Mailserver host, Postfix answers, but it refuses the recipient during the SMTP conversation. That wording is useful: it points to recipient recognition, not a generic outage.</p>
+
+    <p>Do not disable recipient checks or turn the domain into a catch-all just to make the error disappear. Postfix rejects unknown recipients at SMTP time so it does not accept mail that cannot be delivered. The safe repair is to prove which address was rejected, determine whether it should be a mailbox or alias, update the configured Docker Mailserver account source, and test the active lookup.</p>
+
+    <blockquote>Keep real addresses, server addresses, complete logs, account files, password hashes, and private configuration out of tickets and public posts. The examples below use <code>person@example.com</code>.</blockquote>
+
+    <h2>What the error proves—and what it does not</h2>
+    <table>
+      <thead><tr><th>Evidence</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>550 5.1.1</code> during <code>RCPT TO</code></td><td>The receiving SMTP server rejected that envelope recipient before accepting the message.</td></tr>
+        <tr><td><code>virtual mailbox table</code></td><td>Postfix classified the domain as a virtual mailbox domain and did not find a valid recipient in its effective maps.</td></tr>
+        <tr><td><code>local recipient table</code></td><td>A different address class is involved; inspect <code>mydestination</code> and the mail hostname/domain relationship.</td></tr>
+        <tr><td>A later non-delivery report after acceptance</td><td>This is not the same failure; follow the queue ID and final delivery error.</td></tr>
+        <tr><td>One spelling works and another fails</td><td>The path is healthy; compare the exact mailbox or alias definition.</td></tr>
+      </tbody>
+    </table>
+    <p>The official Postfix address-class documentation says valid recipients for virtual mailbox domains are listed through <code>virtual_mailbox_maps</code>; invalid recipients are rejected with this exact response. That rejection does not, by itself, prove which Docker Mailserver source is stale or missing.</p>
+
+    <h2>1. Capture the exact rejected envelope recipient</h2>
+    <p>Read the sender’s complete SMTP response or a narrow private server-log window. Do not rely on the visible <code>To:</code> header: mailing software, aliases, forwarding, and blind-copy delivery can make the SMTP envelope recipient different.</p>
+    <pre><code>docker compose logs --since 10m mailserver</code></pre>
+    <p>Use your actual Compose service name. Find the single rejection and record privately:</p>
+    <ul>
+      <li>the exact address after <code>to=&lt;...&gt;</code> or in the <code>RCPT TO</code> rejection;</li>
+      <li>whether the text says <code>virtual mailbox table</code> or <code>local recipient table</code>;</li>
+      <li>which hostname received the connection;</li>
+      <li>whether the event is current rather than an old bounce being retried.</li>
+    </ul>
+    <p>Common causes at this point are mundane: a typo, an old address retained by a contact form, a removed mailbox, or an alias that was planned but never provisioned.</p>
+
+    <h2>2. Prove public mail routes to this server</h2>
+    <p>Confirm the recipient domain’s MX records and resolve each target:</p>
+    <pre><code>dig +short MX example.com
+
+dig +short A mail.example.com
+dig +short AAAA mail.example.com</code></pre>
+    <p>A rejection in your current Docker Mailserver logs already proves that one attempt reached this instance. DNS checks still matter when some senders succeed and others hit a retired host, a stale IPv6 route, or a secondary MX with different account data. Mail records should normally remain DNS-only when using Cloudflare; Cloudflare’s ordinary orange-cloud web proxy is not an SMTP proxy.</p>
+
+    <h2>3. Decide whether the address should be an account or an alias</h2>
+    <p>Docker Mailserver’s account-management overview distinguishes the two:</p>
+    <ul>
+      <li><strong>Account:</strong> owns a mailbox and login identity, with a password and optional quota.</li>
+      <li><strong>Alias:</strong> accepts an additional delivery address and routes it to an existing account or another intended target.</li>
+    </ul>
+    <p>If a person needs a separate inbox and IMAP login, create an account. If <code>sales@example.com</code> should arrive in <code>person@example.com</code>, create an alias. An alias does not become a separate IMAP user. This distinction also prevents unnecessary duplicate mailboxes.</p>
+
+    <h2>4. List provisioned accounts and aliases through the supported CLI</h2>
+    <p>For Docker Mailserver’s default file provisioner, use the setup commands rather than opening files that contain account hashes:</p>
+    <pre><code>docker compose exec mailserver setup email list
+
+docker compose exec mailserver setup alias list</code></pre>
+    <p>Check the exact full address, including its domain. If you use LDAP, the container environment, or another documented provisioner, query that active source instead. Adding an entry to the file provisioner cannot repair an LDAP lookup.</p>
+    <p>Also check the alias target. An alias that points to a misspelled, removed, or unintended target is not a valid end-to-end repair merely because its left-hand address appears in a list.</p>
+
+    <h2>5. Add the smallest correct recipient definition</h2>
+    <p>To add a real mailbox with the file provisioner, use an interactive prompt so the password is not placed in shell history:</p>
+    <pre><code>docker compose exec mailserver \
+  setup email add person@example.com</code></pre>
+    <p>To add an alias that delivers to an existing mailbox:</p>
+    <pre><code>docker compose exec mailserver \
+  setup alias add sales@example.com person@example.com</code></pre>
+    <p>Use the syntax documented for your pinned Docker Mailserver version. Do not paste passwords into command arguments, publish the generated account file, or create a domain-wide catch-all as a shortcut. Catch-alls attract typo mail and spam, hide address mistakes, and make recipient ownership harder to audit.</p>
+
+    <h2>6. Query Postfix’s effective maps instead of guessing</h2>
+    <p>First inspect the active parameters:</p>
+    <pre><code>docker compose exec mailserver \
+  postconf virtual_mailbox_domains virtual_mailbox_maps virtual_alias_maps mydestination</code></pre>
+    <p>Keep the output private because it can reveal hosted domains and internal lookup paths. Then use the lookup type and map shown by <code>postconf</code> to query the exact address. A typical map query has this shape:</p>
+    <pre><code>docker compose exec mailserver \
+  postmap -q person@example.com &lt;map-from-postconf&gt;
+
+docker compose exec mailserver \
+  postmap -q sales@example.com &lt;alias-map-from-postconf&gt;</code></pre>
+    <p>Do not copy a map path from an old forum answer. Docker Mailserver versions and provisioners can expose different lookup types. The effective <code>postconf</code> result on the running container is the evidence that matters.</p>
+    <ul>
+      <li><strong>Account query returns a result:</strong> the mailbox map recognizes it.</li>
+      <li><strong>Alias query returns its intended target:</strong> the alias map recognizes the delivery route.</li>
+      <li><strong>Configured source lists it but the active query is empty:</strong> regeneration, reload, mount, or source-selection state is inconsistent.</li>
+      <li><strong>The domain is in both virtual mailbox domains and <code>mydestination</code>:</strong> fix the address-class conflict using supported persistent configuration.</li>
+    </ul>
+
+    <h2>7. Check persistence before restarting anything</h2>
+    <p>Confirm the configuration volume is the intended persistent host path or named volume and that the change was made through the provisioner your deployment actually uses:</p>
+    <pre><code>docker compose config
+
+docker compose ps</code></pre>
+    <p>Review the rendered Compose output locally and redact it before sharing; it may contain domains, paths, and environment details. A recipient added only inside an ephemeral container or to the wrong mounted directory can vanish on recreation. Conversely, blindly restarting may hide which supported setup operation should have updated the running maps.</p>
+    <p>If your version documents a reload or restart after an account-source change, use that narrow action and immediately re-run the exact map query. Avoid editing generated Postfix files in the container: the next startup can overwrite the change.</p>
+
+    <h2>8. Handle “local recipient table” as a different branch</h2>
+    <p>If the response says <code>User unknown in local recipient table</code>, inspect the mail hostname and <code>mydestination</code>. Docker Mailserver’s FAQ specifically warns against listing the same domain in both <code>mydestination</code> and <code>virtual_mailbox_domains</code>.</p>
+    <p>A frequent mistake is using the bare mailbox domain as the server hostname, then unintentionally making Postfix classify addresses under the local domain rules. Keep a stable host identity such as <code>mail.example.com</code>, while <code>example.com</code> remains a hosted mailbox domain. Make persistent changes through Compose environment or documented override files, then compare effective <code>postconf</code> output.</p>
+
+    <h2>9. Test SMTP recipient acceptance without sending a message</h2>
+    <p>After the map recognizes the recipient, test from a permitted external network over port 25. You can stop after <code>RCPT TO</code> and <code>QUIT</code>; do not send message content:</p>
+    <pre><code>openssl s_client -quiet -starttls smtp \
+  -connect mail.example.com:25 \
+  -servername mail.example.com
+
+EHLO test.example.net
+MAIL FROM:&lt;sender@test.example.net&gt;
+RCPT TO:&lt;person@example.com&gt;
+QUIT</code></pre>
+    <p>Use domains and addresses you control. A <code>250</code>-class recipient response proves Postfix now accepts that envelope address; it does not prove final mailbox delivery. If your provider blocks outbound port 25 from the test network, use a controlled message from an external mailbox and correlate it with the server log.</p>
+
+    <h2>10. Prove final delivery and persistence</h2>
+    <ol>
+      <li>Send one harmless message from an external account to the repaired address.</li>
+      <li>Match the SMTP event and queue ID in a short private log window.</li>
+      <li>Confirm the message reaches the intended mailbox, not merely that Postfix accepted it.</li>
+      <li>If it is an alias, confirm it reaches the exact intended target.</li>
+      <li>Restart or recreate only as your normal deployment procedure requires.</li>
+      <li>Repeat the account/alias listing and Postfix map query after recreation.</li>
+      <li>Send one final controlled message and confirm there is no fresh <code>550 5.1.1</code>.</li>
+    </ol>
+    <p>This catches two false fixes: an ephemeral account that disappears after deployment, and an alias accepted by SMTP but routed to the wrong destination.</p>
+
+    <h2>Do not “fix” it by weakening recipient validation</h2>
+    <p>Postfix documentation explains why rejecting unknown recipients during SMTP is desirable: the sender receives an immediate, accurate response, while your server avoids accepting undeliverable mail and generating backscatter later. Emptying recipient maps, accepting every local part, or broadly trusting networks changes the security model instead of repairing the address.</p>
+    <p>If you genuinely need many role addresses, define explicit aliases and keep their targets reviewed. If you need a temporary migration address, give it an owner and removal date. Recipient validity should be intentional and testable.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Capture the exact envelope recipient and full rejection class.</li>
+      <li>Confirm MX, A, and AAAA route senders to the intended host.</li>
+      <li>Decide whether the address should be a mailbox account or an alias.</li>
+      <li>List it through the active Docker Mailserver provisioner.</li>
+      <li>Add only the missing account or explicit alias through supported tooling.</li>
+      <li>Inspect effective Postfix domain, mailbox, and alias maps.</li>
+      <li>Resolve any virtual-versus-local address-class conflict.</li>
+      <li>Test <code>RCPT TO</code>, then prove final mailbox delivery.</li>
+      <li>Recheck map recognition and delivery after normal recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/overview/" rel="noopener noreferrer">account-management overview</a>, <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/provisioner/file/" rel="noopener noreferrer">file provisioner documentation</a>, and <a href="https://docker-mailserver.github.io/docker-mailserver/latest/faq/" rel="noopener noreferrer">FAQ</a>; plus Postfix’s official <a href="https://www.postfix.org/ADDRESS_CLASS_README.html" rel="noopener noreferrer">address classes</a> and <a href="https://www.postfix.org/LOCAL_RECIPIENT_README.html" rel="noopener noreferrer">unknown local recipient</a> documentation. Match commands to the versions and provisioner you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Add multiple domains without breaking existing mail</a><span>Provision the domain, account, DNS, signing, and verification path deliberately.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Use this after delivery works but the mailbox user cannot authenticate on port 993.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Follow this when Postfix accepted a message and delivery failed later.</span></li>
+        <li><a href="/posts/docker-mailserver-relay-access-denied.html">Relay access denied?</a><span>Separate authenticated submission and inbound recipient handling without opening a relay.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Trace DNS, firewalls, port publication, listeners, and TLS when no SMTP rejection is returned.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
