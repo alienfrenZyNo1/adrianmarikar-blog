@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html</guid>
+      <pubDate>Sun, 23 Aug 2026 10:00:00 GMT</pubDate>
+      <description>An evidence-led Docker Mailserver guide to tracing a legitimate email through Rspamd actions, scores, symbols, thresholds, DNS, authentication, custom rules, and narrow safe exceptions.</description>
+    </item>
+    <item>
       <title>Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html</guid>

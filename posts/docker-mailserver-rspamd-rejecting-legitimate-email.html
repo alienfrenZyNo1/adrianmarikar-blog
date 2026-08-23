@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score — Adrian Marikar</title>
+  <meta name="description" content="Fix a legitimate email rejected by Docker Mailserver and Rspamd by tracing the SMTP reply, score, symbols, thresholds, DNS, authentication, and narrow exceptions.">
+  <meta name="keywords" content="Docker Mailserver Rspamd rejecting legitimate email, Rspamd false positive, Rspamd reject score, Docker Mailserver spam filter, Rspamd symbols">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score">
+  <meta property="og:description" content="An evidence-led runbook for diagnosing a real sender that Rspamd rejects, grey-lists, or marks as spam in Docker Mailserver.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html">
+  <meta property="article:published_time" content="2026-08-23T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-23T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score">
+  <meta name="twitter:description" content="Trace the SMTP outcome, Rspamd action, symbols, DNS and authentication before changing a spam threshold or adding an exception.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score","description":"Fix a legitimate email rejected by Docker Mailserver and Rspamd by tracing the SMTP reply, score, symbols, thresholds, DNS, authentication, and narrow exceptions.","url":"https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html"},"datePublished":"2026-08-23T10:00:00Z","dateModified":"2026-08-23T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Rspamd false positive","Rspamd reject score","spam filtering","email authentication","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / Rspamd false positive 047</p>
+      <h1>Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score</h1>
+    </header>
+
+    <p>A legitimate sender says your Docker Mailserver host refused their message as spam. Raising the global reject threshold or allowlisting the visible <code>From:</code> address may make the next test pass, but neither action explains the decision—and both can weaken filtering for everyone.</p>
+
+    <p>Rspamd evaluates many signals, adds their symbol scores, and recommends an action to Postfix through the Milter interface. The safe fix is to preserve one failed attempt, identify the exact action and symbols, repair the bad signal where possible, and use a narrow authenticated exception only when the sender cannot repair it.</p>
+
+    <blockquote>Keep real addresses, message bodies, queue IDs, IP addresses, authentication results, hosted domains, and configuration dumps private. The examples below use reserved domains and placeholders.</blockquote>
+
+    <h2>First identify the actual outcome</h2>
+    <table>
+      <thead><tr><th>Sender or mailbox evidence</th><th>What happened</th></tr></thead>
+      <tbody>
+        <tr><td>Permanent <code>5xx</code> SMTP response mentioning spam or policy</td><td>The server rejected the transaction. The sender normally receives a non-delivery report.</td></tr>
+        <tr><td>Temporary <code>4xx</code> response</td><td>The message was deferred or grey-listed. A conforming sender should retry; this is not a permanent rejection.</td></tr>
+        <tr><td>Message arrives with spam headers or in Junk</td><td>It was accepted. Follow the score and mailbox filtering path rather than a reject investigation.</td></tr>
+        <tr><td>No matching server event</td><td>The sender may have reached another MX, an old address, or a different IPv4/IPv6 host.</td></tr>
+      </tbody>
+    </table>
+    <p>Rspamd’s action model distinguishes <em>reject</em>, <em>greylist/soft reject</em>, <em>add header</em>, and <em>no action</em>. Treat the full SMTP response and your own log event as the starting evidence, not the sender’s summary that “the server blocked it.”</p>
+
+    <h2>1. Capture one narrow Docker Mailserver log window</h2>
+    <p>Ask the sender privately for the complete SMTP response, attempted time with timezone, and envelope recipient. Then inspect a short period on the mail host:</p>
+    <pre><code>docker compose logs --since 20m mailserver</code></pre>
+    <p>Use the real Compose service name. Locate the matching connection and record privately:</p>
+    <ul>
+      <li>the SMTP reply and enhanced status code;</li>
+      <li>the envelope sender and recipient—not only the message headers;</li>
+      <li>the Rspamd action, total score, required threshold, and symbol list;</li>
+      <li>whether Postfix accepted a queue ID or rejected before queueing;</li>
+      <li>which public source address and hostname the server actually observed.</li>
+    </ul>
+    <p>If no event matches, verify the domain’s MX, then resolve every MX target. Split delivery across a stale secondary MX or old AAAA record can make two senders see different filters.</p>
+
+    <h2>2. Read the symbols, not just the total</h2>
+    <p>A total such as <code>16.2</code> explains little by itself. The useful evidence is the set of named symbols that produced it. Group them by cause:</p>
+    <ul>
+      <li><strong>Authentication:</strong> SPF, DKIM, and DMARC failures or missing records.</li>
+      <li><strong>Identity and DNS:</strong> reverse-DNS, HELO, resolver, DNSBL, or reputation signals.</li>
+      <li><strong>Message construction:</strong> malformed MIME, suspicious URLs, mismatched sender headers, missing plain-text parts, or unusual attachments.</li>
+      <li><strong>Statistical learning:</strong> Bayes or neural symbols influenced by prior training.</li>
+      <li><strong>Policy overrides:</strong> a force-action, map, or custom rule chose an action beyond ordinary score arithmetic.</li>
+    </ul>
+    <p>One high-value symbol can dominate a decision, or several modest failures can cross the threshold together. Do not disable every symbol in the list. First ask which symbol is factually wrong and which accurately describes a repairable sender fault.</p>
+
+    <h2>3. Confirm the effective action thresholds</h2>
+    <p>Do not assume defaults from a forum post. Docker Mailserver and Rspamd versions can differ, and persistent overrides may change the packaged policy. Query the running container:</p>
+    <pre><code>docker compose exec mailserver \
+  rspamadm configdump actions
+
+docker compose exec mailserver \
+  rspamadm configtest</code></pre>
+    <p>Keep the complete dump private. In a simplified example, an installation might grey-list at one score, add spam headers at a higher score, and reject only above a final threshold. The values on your running instance are what matter.</p>
+    <p>Rspamd uses layered configuration. Docker Mailserver documents persistent custom Rspamd files through its configuration volume, while Rspamd distinguishes <code>local.d</code> additions from <code>override.d</code> replacements. An override can replace more packaged configuration than intended, so review mounted custom files before changing a number.</p>
+
+    <h2>4. Repair authentication and sender identity first</h2>
+    <p>If the symbols point to SPF, DKIM, DMARC, reverse DNS, or HELO, the best fix belongs with the sender. For a domain you control, verify:</p>
+    <pre><code>dig +short TXT example.net
+
+dig +short TXT selector._domainkey.example.net
+
+dig +short TXT _dmarc.example.net
+
+dig +short -x &lt;sender-address&gt;</code></pre>
+    <p>Use the observed envelope and signing domains from the failed attempt. A message can show <code>spf=pass</code> yet still fail DMARC because the envelope domain does not align with the visible <code>From:</code> domain. A forwarded message can also break SPF while retaining valid aligned DKIM. Diagnose the actual combination rather than requiring every mechanism to pass independently.</p>
+    <p>If this is a third-party sender, return the exact redacted symbols and authentication result to its administrator. A broad local allowlist hides its broken identity only for your users.</p>
+
+    <h2>5. Check DNS from inside the container</h2>
+    <p>Docker Mailserver’s Rspamd guide warns that Rspamd depends heavily on working DNS. Compare a basic lookup on the host and inside the service:</p>
+    <pre><code>dig example.net
+
+docker compose exec mailserver \
+  getent ahosts example.net</code></pre>
+    <p>Then inspect the container’s configured resolver privately and check logs for timeouts, SERVFAIL, or unavailable DNS lists. Do not publish resolver addresses or internal network details.</p>
+    <p>If many unrelated senders suddenly gain DNS-related symbols, suspect the resolver path before creating many sender exceptions. Confirm outbound DNS reachability, Docker DNS state, upstream resolver health, and whether a DNSBL has usage or resolver restrictions. Repair the shared fault, restart only the affected component if required, and compare one fresh scan.</p>
+
+    <h2>6. Preserve and rescan the original message carefully</h2>
+    <p>If the sender can provide the complete original message as an <code>.eml</code> file through a private channel, save it outside the public repository and scan it with the Rspamd client available in the running container:</p>
+    <pre><code>docker compose exec -T mailserver \
+  rspamc &lt; /private/path/sample.eml</code></pre>
+    <p>Never commit the sample: raw messages contain addresses, message IDs, routing headers, and often personal content. Also understand the limitation: an offline rescan may not reproduce connection-level facts such as the original source address, SMTP authentication, recipient context, time-sensitive DNS data, or prior greylisting state. The original server log remains primary evidence.</p>
+    <p>A rescan is most useful for message-content and MIME symbols. Compare it with the original decision; do not treat a different score as proof that the problem disappeared.</p>
+
+    <h2>7. Inspect custom rules and learning state</h2>
+    <p>Review only the persistent Rspamd customization paths mounted into the container. Look for:</p>
+    <ul>
+      <li>global score changes copied from an old guide;</li>
+      <li>an <code>override.d</code> file that unintentionally replaced packaged settings;</li>
+      <li>sender, recipient, domain, or address maps that are too broad;</li>
+      <li>forced actions that explain a rejection below the apparent threshold;</li>
+      <li>Bayes or neural symbols with unexpectedly large influence.</li>
+    </ul>
+    <p>Docker Mailserver notes that its optional spam-learning database is global rather than isolated per user. Training a disputed message as ham can therefore affect filtering for every mailbox. Do not use learning as the first response to broken DKIM, a malformed newsletter, or an unsafe URL. Train only when a complete representative message is genuinely misclassified and trusted administrators control the process.</p>
+
+    <h2>8. Prefer a narrow, authenticated exception</h2>
+    <p>Sometimes a necessary third party cannot change its mail promptly. If an exception is justified, bind it to evidence that is hard to forge. A visible <code>From:</code> address alone is not enough; headers are easy to spoof.</p>
+    <p>Depending on the legitimate route, a narrow rule might require a specific domain plus valid aligned DKIM, or a tightly controlled sending route plus another authenticated property. Rspamd’s whitelist module supports conditions involving valid DKIM and SPF, while its settings and maps can scope behavior. Test the exact semantics against the version you run.</p>
+    <ul>
+      <li>Document the business owner and reason.</li>
+      <li>Limit the sender/domain and, if appropriate, recipient scope.</li>
+      <li>Require authentication rather than trusting display text.</li>
+      <li>Set a review or expiry date.</li>
+      <li>Run <code>rspamadm configtest</code> before reload or recreation.</li>
+      <li>Verify that an unauthenticated spoof does not receive the exception.</li>
+    </ul>
+    <p>Avoid a prefilter “accept everything from this domain” rule unless you fully understand that it can bypass later filters. Lowering or disabling the global reject action to accommodate one sender is broader still.</p>
+
+    <h2>9. Verify with a controlled matrix</h2>
+    <p>After the smallest repair, test outcomes rather than only container health:</p>
+    <ol>
+      <li>Ask the affected sender to send one new, ordinary message.</li>
+      <li>Correlate its exact timestamp and recipient with a fresh log event.</li>
+      <li>Confirm the intended action and symbol changes.</li>
+      <li>Confirm the message reaches the intended inbox or expected Junk policy.</li>
+      <li>Send one normal message from another known-good external provider.</li>
+      <li>If you added an authenticated exception, test a safe controlled message that lacks that authentication and confirm it does not match.</li>
+      <li>Re-run <code>rspamadm configtest</code> after normal container recreation and verify the persistent policy remains active.</li>
+    </ol>
+    <p>An HTTP health check, a running container, or one accepted SMTP connection does not prove the filter now makes the right decision. The evidence is a fresh message with the expected action and no unintended bypass.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Classify the result as reject, temporary deferral, or accepted spam.</li>
+      <li>Match one attempt in a narrow Docker Mailserver log window.</li>
+      <li>Record the Rspamd action, score, threshold, and complete symbol set privately.</li>
+      <li>Query effective actions and validate configuration.</li>
+      <li>Repair sender authentication, DNS, identity, or message construction.</li>
+      <li>Check shared resolver faults when many senders are affected.</li>
+      <li>Review custom rules and global learning before changing policy.</li>
+      <li>If unavoidable, create a narrow authenticated, expiring exception.</li>
+      <li>Test the affected sender, a known-good sender, and an exception-negative case.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/rspamd/" rel="noopener noreferrer">Rspamd integration guide</a> and <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/" rel="noopener noreferrer">environment-variable reference</a>; Rspamd’s official documentation for <a href="https://docs.rspamd.com/configuration/metrics/" rel="noopener noreferrer">actions and scores</a>, <a href="https://docs.rspamd.com/modules/whitelist/" rel="noopener noreferrer">authenticated whitelist conditions</a>, and <a href="https://docs.rspamd.com/faq/" rel="noopener noreferrer">client and learning behavior</a>; plus Postfix’s <a href="https://www.postfix.org/MILTER_README.html" rel="noopener noreferrer">before-queue Milter documentation</a>. Match every command and configuration path to your pinned versions.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Outgoing email landing in spam?</a><span>Use recipient headers to diagnose PTR, SPF, DKIM, DMARC, reputation, and message construction.</span></li>
+        <li><a href="/posts/read-dmarc-aggregate-reports-docker-mailserver.html">Read DMARC aggregate reports</a><span>Build a sender inventory and distinguish authentication from alignment before enforcing policy.</span></li>
+        <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">DKIM body hash did not verify?</a><span>Preserve the raw message and isolate changes made after signing.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Follow this when your own outbound mail receives temporary remote errors.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Trace DNS, ports, firewall rules, Docker publication, listeners, and TLS before filtering.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Rspamd Rejecting Legitimate Email? Trace the Score: https://adrianmarikar.com/posts/docker-mailserver-rspamd-rejecting-legitimate-email.html
+  - Evidence-led Rspamd false-positive diagnosis covering SMTP outcomes, action thresholds, complete symbol sets, sender authentication, container DNS, private message rescans, persistent custom rules, global learning risks, narrow authenticated exceptions, and negative-case verification.
 |- Docker Mailserver “User Unknown in Virtual Mailbox Table”? Fix It: https://adrianmarikar.com/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html
   - Evidence-led Postfix 550 5.1.1 troubleshooting covering the exact envelope recipient, virtual versus local address classes, Docker Mailserver accounts and aliases, effective mailbox maps, persistent configuration, SMTP recipient tests, and final delivery verification.
 |- Docker Mailserver IMAP Login Failed? Test Dovecot and Port 993: https://adrianmarikar.com/posts/docker-mailserver-imap-login-failed.html
