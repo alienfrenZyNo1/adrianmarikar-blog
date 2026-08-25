@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name — Adrian Marikar</title>
+  <meta name="description" content="Fix a Docker Mailserver TLS certificate hostname mismatch by aligning the client hostname, DNS, container FQDN, certificate SANs, mounted chain, and live SMTP/IMAP services.">
+  <meta name="keywords" content="Docker Mailserver TLS certificate hostname mismatch, Docker Mailserver wrong certificate, SMTP certificate name mismatch, IMAP certificate error, mail server TLS SAN">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-tls-certificate-hostname-mismatch.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name">
+  <meta property="og:description" content="Trace the name a client uses through DNS, Docker Mailserver's FQDN, certificate SANs, mounted files, Postfix, and Dovecot.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-tls-certificate-hostname-mismatch.html">
+  <meta property="article:published_time" content="2026-08-25T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-25T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name">
+  <meta name="twitter:description" content="An evidence-led fix for SMTP or IMAP certificate-name errors in Docker Mailserver without disabling TLS verification.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name","description":"Fix a Docker Mailserver TLS certificate hostname mismatch by aligning the client hostname, DNS, container FQDN, certificate SANs, mounted chain, and live SMTP/IMAP services.","url":"https://adrianmarikar.com/posts/docker-mailserver-tls-certificate-hostname-mismatch.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-tls-certificate-hostname-mismatch.html"},"datePublished":"2026-08-25T10:00:00Z","dateModified":"2026-08-25T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","TLS hostname mismatch","SMTP certificate","IMAP certificate","subject alternative name","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / mail TLS identity 048</p>
+      <h1>Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name</h1>
+    </header>
+
+    <p>An email client connects to your Docker Mailserver host and warns that the certificate belongs to another name. Or an SMTP test reports a hostname mismatch even though the certificate is current and issued by a trusted authority. This is not an expiry problem: the client asked for one hostname, but the live certificate does not identify that hostname in its Subject Alternative Name list.</p>
+
+    <p>Do not fix this by disabling certificate verification, accepting a permanent warning, or putting Cloudflare’s web proxy in front of mail ports. Identify the exact name and endpoint the client reaches, then make the client configuration, public DNS, Docker Mailserver FQDN, certificate SANs, and live Postfix/Dovecot handshakes agree.</p>
+
+    <blockquote>Keep real addresses, public server addresses, private-key paths, certificate automation credentials, and full configuration dumps out of tickets and public repositories. The examples below use reserved domains and placeholders.</blockquote>
+
+    <h2>What must match?</h2>
+    <p>If the account is <code>person@example.com</code>, the incoming and outgoing server can still be <code>mail.example.com</code>. Docker Mailserver’s documentation makes this distinction explicit: the server FQDN is used for service identity and certificate selection; it does not change the domain of mailbox addresses.</p>
+    <p>A normal arrangement has:</p>
+    <ul>
+      <li>the mail client configured to use <code>mail.example.com</code> for IMAP and submission;</li>
+      <li>the MX record pointing to <code>mail.example.com</code> for inbound SMTP;</li>
+      <li><code>mail.example.com</code> resolving directly to the mail host;</li>
+      <li>the Docker Mailserver service hostname set to <code>mail.example.com</code>;</li>
+      <li>a public certificate whose SAN list includes <code>mail.example.com</code>;</li>
+      <li>Postfix and Dovecot serving that certificate on their respective ports.</li>
+    </ul>
+    <p>The certificate does not normally need every hosted email domain. If one Docker Mailserver instance handles <code>example.com</code> and <code>example.net</code>, users from both can connect to the same canonical server name.</p>
+
+    <h2>1. Record the exact failing name, port, and TLS mode</h2>
+    <p>Start with the client settings rather than the certificate directory. Record the hostname exactly as entered and classify the service:</p>
+    <table>
+      <thead><tr><th>Typical service</th><th>Port</th><th>Handshake</th></tr></thead>
+      <tbody>
+        <tr><td>SMTP server-to-server</td><td><code>25</code></td><td>Plain connection upgraded with STARTTLS</td></tr>
+        <tr><td>Message submission</td><td><code>587</code></td><td>Plain connection upgraded with STARTTLS</td></tr>
+        <tr><td>Implicit TLS submission</td><td><code>465</code></td><td>TLS begins immediately</td></tr>
+        <tr><td>IMAP with STARTTLS</td><td><code>143</code></td><td>Plain connection upgraded with STARTTLS</td></tr>
+        <tr><td>Implicit TLS IMAP</td><td><code>993</code></td><td>TLS begins immediately</td></tr>
+      </tbody>
+    </table>
+    <p>Using an IP address, the bare domain, an old host alias, or the VPS provider’s generated hostname can all cause a mismatch even when <code>mail.example.com</code> is correctly covered. The TLS mode matters too: an implicit-TLS test against a STARTTLS port produces a different failure and should not be diagnosed as a certificate-name problem.</p>
+
+    <h2>2. Inspect the certificate served to a real external client</h2>
+    <p>Run the test from outside the VPS so it follows public DNS and reaches the same endpoint as users. For SMTP STARTTLS:</p>
+    <pre><code>openssl s_client \
+  -connect mail.example.com:587 \
+  -starttls smtp \
+  -servername mail.example.com \
+  -verify_hostname mail.example.com \
+  -showcerts &lt;/dev/null</code></pre>
+    <p>For implicit TLS IMAP:</p>
+    <pre><code>openssl s_client \
+  -connect mail.example.com:993 \
+  -servername mail.example.com \
+  -verify_hostname mail.example.com \
+  -showcerts &lt;/dev/null</code></pre>
+    <p>Look for the peer certificate’s issuer, validity dates, SAN list, and final verification result. <code>-servername</code> sends SNI where supported; <code>-verify_hostname</code> actually checks the identity you care about. A generic <code>Verify return code: 0</code> chain result alone does not prove that your chosen hostname matches unless the hostname check was requested.</p>
+
+    <h2>3. Prove DNS is reaching one intended host</h2>
+    <p>Check the mail name and MX without publishing the returned addresses:</p>
+    <pre><code>dig +short MX example.com
+
+dig +short A mail.example.com
+
+dig +short AAAA mail.example.com</code></pre>
+    <p>Test IPv4 and IPv6 separately when both exist:</p>
+    <pre><code>openssl s_client -4 -connect mail.example.com:993 \
+  -servername mail.example.com -verify_hostname mail.example.com &lt;/dev/null
+
+openssl s_client -6 -connect mail.example.com:993 \
+  -servername mail.example.com -verify_hostname mail.example.com &lt;/dev/null</code></pre>
+    <p>If the two families serve different certificates, repair or remove the stale path deliberately. Also remember that Cloudflare’s normal orange-cloud proxy is for supported web traffic, not arbitrary SMTP or IMAP. Keep ordinary mail host records DNS-only unless you use a product specifically designed to proxy those protocols.</p>
+
+    <h2>4. Align Docker Mailserver’s FQDN</h2>
+    <p>Docker Mailserver documents the service <code>hostname</code> as the source of its FQDN. Inspect the effective Compose model and the running value privately:</p>
+    <pre><code>docker compose config
+
+docker compose exec mailserver hostname -f</code></pre>
+    <p>A simplified service definition is:</p>
+    <pre><code>services:
+  mailserver:
+    hostname: mail.example.com
+    environment:
+      SSL_TYPE: letsencrypt
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro</code></pre>
+    <p>Do not copy that mount blindly. Use the certificate method and persistent host location appropriate to your installation. With the documented Let’s Encrypt method, mounting the whole tree matters because files under <code>live/</code> commonly point into <code>archive/</code> through symlinks.</p>
+
+    <h2>5. Check the SANs and the full chain inside the container</h2>
+    <p>Inspect the certificate Docker Mailserver can actually read, not only the one Certbot reports on the host. For the documented Let’s Encrypt layout:</p>
+    <pre><code>docker compose exec mailserver \
+  openssl x509 \
+  -in /etc/letsencrypt/live/mail.example.com/fullchain.pem \
+  -noout -subject -issuer -dates -ext subjectAltName</code></pre>
+    <p>The SAN extension must cover the canonical mail name. A wildcard such as <code>*.example.com</code> can cover <code>mail.example.com</code>, but not the bare <code>example.com</code> and not a deeper name such as <code>imap.mail.example.com</code>. Prefer one clear canonical mail hostname unless there is a real need for several client-facing aliases.</p>
+    <p>If you use <code>SSL_TYPE=manual</code>, confirm that <code>SSL_CERT_PATH</code> points to a PEM-encoded full chain and <code>SSL_KEY_PATH</code> points to its matching unencrypted private key. Never print or copy the key into diagnostics.</p>
+
+    <h2>6. Compare Postfix and Dovecot, not just one port</h2>
+    <p>A renewal hook or mount error can leave services out of sync. Compare fingerprints without exposing private keys:</p>
+    <pre><code>for test in \
+  "587 -starttls smtp" \
+  "993"; do
+  set -- $test
+  port=$1
+  shift
+  openssl s_client -connect mail.example.com:$port \
+    -servername mail.example.com "$@" &lt;/dev/null 2&gt;/dev/null \
+    | openssl x509 -noout -fingerprint -sha256 -dates -ext subjectAltName
+done</code></pre>
+    <p>If SMTP and IMAP return different fingerprints, inspect the effective Postfix and Dovecot certificate paths inside the container and the recent startup/reload logs. Docker Mailserver notes that a restart may be necessary after certificate changes; use your pinned version’s change-detection behavior and recreate only after confirming the mounted source is correct.</p>
+
+    <h2>7. Choose the smallest correct repair</h2>
+    <ul>
+      <li><strong>Client uses the wrong alias:</strong> change it to the canonical covered mail hostname.</li>
+      <li><strong>DNS points to an old endpoint:</strong> correct the stale A/AAAA or MX path and wait for normal DNS caching to expire.</li>
+      <li><strong>Container FQDN is wrong:</strong> update the Compose service hostname, validate the model, and recreate the service in a controlled window.</li>
+      <li><strong>Certificate lacks the name:</strong> reissue it with the intended SAN, then confirm the mounted chain and key pair before reload.</li>
+      <li><strong>Wrong lineage or bind mount:</strong> point Docker Mailserver at the maintained certificate tree; avoid a file-level bind mount when renewal replaces the file’s inode.</li>
+      <li><strong>Services are stale:</strong> reload or restart after confirming the new certificate is visible inside the running container.</li>
+    </ul>
+    <p>Do not add every historical alias to the certificate merely to silence old clients. That expands public Certificate Transparency exposure and creates more names to renew and protect. Retire obsolete names when you can.</p>
+
+    <h2>8. Verify a complete client path</h2>
+    <ol>
+      <li>Repeat external SMTP and IMAP tests with <code>-verify_hostname</code>.</li>
+      <li>Confirm the expected SAN, issuer, dates, and fingerprint on both services.</li>
+      <li>Test IPv4 and IPv6 independently if both are published.</li>
+      <li>Configure a real mail client with the canonical hostname and normal verification enabled.</li>
+      <li>Receive one message through the public MX path.</li>
+      <li>Submit one message through authenticated port 587 or 465 and confirm final delivery.</li>
+      <li>Re-run the checks after the next automated certificate renewal.</li>
+    </ol>
+    <p>A green container health check does not prove hostname verification. The useful final evidence is a real external handshake on each published mail service, using the same DNS name and TLS mode as clients, with certificate-name verification enabled.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Record the exact client hostname, port, and TLS mode.</li>
+      <li>Inspect the live external certificate with SNI and hostname verification.</li>
+      <li>Split-test A and AAAA routes.</li>
+      <li>Confirm the Docker Mailserver FQDN.</li>
+      <li>Inspect SANs and the full chain inside the container.</li>
+      <li>Compare Postfix and Dovecot fingerprints.</li>
+      <li>Repair the narrowest wrong name, DNS route, mount, certificate, or stale service.</li>
+      <li>Verify receiving, authenticated submission, and the next renewal.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/ssl/" rel="noopener noreferrer">SSL/TLS configuration guide</a>, including its FQDN, certificate provisioning, SAN inspection, SNI, IPv4/IPv6, and external-test guidance; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/" rel="noopener noreferrer">mail-port and TLS-mode guide</a>; Postfix’s official <a href="https://www.postfix.org/TLS_README.html" rel="noopener noreferrer">TLS support documentation</a>; and OpenSSL’s <a href="https://docs.openssl.org/3.6/man1/openssl-s_client/" rel="noopener noreferrer"><code>s_client</code> reference</a>. Match paths and behavior to the Docker Mailserver and OpenSSL versions you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Still serving an old Let’s Encrypt certificate?</a><span>Trace a renewed certificate through the host, mount, Postfix, Dovecot, SMTP, and IMAP.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Separate DNS, firewall, Docker publication, listener, and TLS-mode faults.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Test port 993 transport and TLS before changing accounts or passwords.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Hosting multiple mail domains?</a><span>Use one stable server identity while preserving per-domain mail authentication.</span></li>
+        <li><a href="/posts/caa-records-letsencrypt-cloudflare-coolify.html">CAA records for self-hosted sites</a><span>Ensure the intended certificate authority can issue and renew mail certificates.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
