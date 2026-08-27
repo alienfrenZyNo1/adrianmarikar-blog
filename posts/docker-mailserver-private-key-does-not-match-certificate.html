@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Private Key Does Not Match Certificate? — Adrian Marikar</title>
+  <meta name="description" content="Fix a Docker Mailserver certificate and private-key mismatch by comparing public keys, checking mounts and PEM files, then verifying live SMTP and IMAP TLS.">
+  <meta name="keywords" content="Docker Mailserver private key does not match certificate, Docker Mailserver key values mismatch, Postfix TLS private key mismatch, Dovecot certificate key mismatch, SSL_CERT_PATH SSL_KEY_PATH">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-private-key-does-not-match-certificate.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Private Key Does Not Match Certificate?">
+  <meta property="og:description" content="Prove which certificate and key belong together without exposing the private key, repair the mount or file pair, and test Postfix and Dovecot externally.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-private-key-does-not-match-certificate.html">
+  <meta property="article:published_time" content="2026-08-27T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-27T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Private Key Does Not Match Certificate?">
+  <meta name="twitter:description" content="An evidence-led fix for mismatched TLS certificate and private-key files in Docker Mailserver, Postfix, and Dovecot.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Private Key Does Not Match Certificate?","description":"Fix a Docker Mailserver certificate and private-key mismatch by comparing public keys, checking mounts and PEM files, then verifying live SMTP and IMAP TLS.","url":"https://adrianmarikar.com/posts/docker-mailserver-private-key-does-not-match-certificate.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-private-key-does-not-match-certificate.html"},"datePublished":"2026-08-27T10:00:00Z","dateModified":"2026-08-27T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","certificate private-key mismatch","Postfix TLS","Dovecot TLS","OpenSSL public key comparison","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / TLS key pair 049</p>
+      <h1>Docker Mailserver Private Key Does Not Match Certificate?</h1>
+    </header>
+
+    <p>Docker Mailserver starts and reports that a private key does not match its certificate. Postfix may log a TLS library problem, Dovecot may refuse to load its SSL context, or one service may remain available with an older certificate while the other fails. The tempting response is to copy certificate files around until startup succeeds. That is risky: it can pair the wrong identity with the wrong key, hide a broken renewal handoff, or expose sensitive material in shell history.</p>
+
+    <p>A certificate contains a public key. Its private key must be the unique corresponding half of that pair. The safe diagnosis is therefore to derive and compare public-key fingerprints. You never need to print, paste, email, or commit a private key.</p>
+
+    <blockquote>The certificate’s expiry date, filename, and domain label cannot prove that a private key matches it. Compare the derived public keys, then repair the narrowest wrong path, mount, or file pair.</blockquote>
+
+    <h2>First, preserve the failure evidence</h2>
+    <p>Before restarting repeatedly, capture the service state and a small, private log window:</p>
+    <pre><code>docker compose ps
+
+docker compose logs --since 10m mailserver</code></pre>
+    <p>Look for the first certificate, key, PEM, permission, or TLS error—not only the later health-check failure. Keep real hostnames, addresses, account names, full environment output, certificate automation credentials, and private-key paths out of public issues. Do not run <code>docker compose down -v</code>; TLS repair does not require deleting mail volumes.</p>
+
+    <h2>1. Confirm the effective Docker Mailserver TLS mode</h2>
+    <p>Docker Mailserver supports several certificate arrangements. Diagnose the one the running deployment actually uses. Inspect the relevant environment variable names and mounts without dumping secret values:</p>
+    <pre><code>docker inspect mailserver \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^SSL_(TYPE|CERT_PATH|KEY_PATH)='
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Destination " read-only=" (not .RW)}}{{end}}'</code></pre>
+    <p>With <code>SSL_TYPE=letsencrypt</code>, Docker Mailserver selects certificate material for its configured FQDN from the mounted Let’s Encrypt tree. With <code>SSL_TYPE=manual</code>, <code>SSL_CERT_PATH</code> and <code>SSL_KEY_PATH</code> must name readable files inside the container. Do not mix a certificate from one mode with a key path left over from another.</p>
+
+    <h2>2. Validate both PEM inputs separately</h2>
+    <p>Run these checks in the environment that can read the mounted files. The commands validate structure and metadata without displaying private-key contents:</p>
+    <pre><code># Certificate: parse it and show safe identifying fields
+openssl x509 -in /path/to/public.crt \
+  -noout -subject -issuer -serial -dates -ext subjectAltName
+
+# Private key: parse and check its internal consistency
+openssl pkey -in /path/to/private.key -check -noout</code></pre>
+    <p>If the first command cannot parse the file, the path may contain the wrong format, an incomplete download, a certificate request, or a private key instead of a certificate. If the second prompts for a passphrase, the key is encrypted; Docker Mailserver’s documented manual setup expects a usable private key file rather than an interactive startup prompt. Do not remove encryption from the only copy: first establish a protected workflow and retain a secure backup.</p>
+
+    <p>The certificate input should contain the server leaf certificate followed by any required intermediate certificates. It should not contain a root certificate as a substitute for the leaf, and it should never contain a private key. Check only the PEM labels when classifying a file:</p>
+    <pre><code>grep '^-----BEGIN ' /path/to/public.crt /path/to/private.key</code></pre>
+
+    <h2>3. Compare public-key fingerprints safely</h2>
+    <p>Extract the public key from each input, encode it identically, and hash it:</p>
+    <pre><code>openssl x509 -in /path/to/public.crt -pubkey -noout \
+  | openssl pkey -pubin -outform DER \
+  | openssl sha256
+
+openssl pkey -in /path/to/private.key -pubout -outform DER \
+  | openssl sha256</code></pre>
+    <p>The two SHA-256 results must be identical. This method works across common RSA and elliptic-curve keys. Older troubleshooting snippets often compare RSA moduli, but those are algorithm-specific; comparing canonical public keys is clearer when the certificate might not use RSA.</p>
+
+    <p>Run the comparison on the host pair and again on the exact pair visible inside the container. A host match does not prove that Docker mounted those files:</p>
+    <pre><code>docker compose exec mailserver sh -lc '
+  openssl x509 -in "$SSL_CERT_PATH" -pubkey -noout |
+    openssl pkey -pubin -outform DER | openssl sha256
+  openssl pkey -in "$SSL_KEY_PATH" -pubout -outform DER |
+    openssl sha256
+'</code></pre>
+    <p>Use that example only for a manual-mode installation where those variables are set. For Let’s Encrypt mode, substitute the documented in-container paths for your configured mail FQDN. The commands output fingerprints, not keys, but the paths themselves may still reveal infrastructure details; keep the transcript private.</p>
+
+    <h2>4. If the host pair matches but the container pair does not</h2>
+    <p>The fault is in the handoff to Docker. Check these boundaries in order:</p>
+    <ol>
+      <li>Render <code>docker compose config</code> privately and confirm the intended source and destination paths.</li>
+      <li>Inspect the running container’s mounts; changing Compose does not alter an already-created container.</li>
+      <li>Confirm the files are readable inside the container without broadening the private key to world-readable.</li>
+      <li>For Let’s Encrypt, mount the certificate tree required by Docker Mailserver so <code>live/</code> symlinks can resolve into <code>archive/</code>.</li>
+      <li>For manual mode, prefer a read-only directory mount containing the managed pair over unrelated one-off copies.</li>
+      <li>Recreate the service only after the rendered configuration points at the matching pair.</li>
+    </ol>
+    <p>A common trap is a file-level bind mount combined with certificate replacement. The host automation writes a new inode, but the container remains attached to the old mounted file. A stable read-only directory mount makes atomic replacement and pair inspection easier. Match this advice to your certificate tool and Docker Mailserver version.</p>
+
+    <h2>5. If the certificate and key genuinely do not match</h2>
+    <p>Do not generate a random new private key and attach the existing certificate; a certificate authority signed the public key already embedded in that certificate. Choose the correct recovery based on provenance:</p>
+    <ul>
+      <li><strong>Wrong file selected:</strong> locate the key created with the certificate request and verify it by public-key fingerprint.</li>
+      <li><strong>Renewal updated only half the pair:</strong> repair the renewal copy or mount step so the certificate and key move as one managed set.</li>
+      <li><strong>Duplicate certificate lineage:</strong> identify the certificate name your automation actually renews and point the service at that complete lineage.</li>
+      <li><strong>Matching private key is lost:</strong> obtain a new certificate for a newly generated protected key. The old certificate cannot be made to match.</li>
+      <li><strong>Key may be exposed:</strong> replace both key and certificate, protect the new key, and revoke the affected certificate when appropriate.</li>
+    </ul>
+    <p>Never search for a key by printing every candidate to the terminal. Derive fingerprints locally, label the results, restrict access, and delete temporary diagnostic lists when finished.</p>
+
+    <h2>6. Check identity and chain after the key pair matches</h2>
+    <p>A matching pair can still be wrong for the service. Confirm that the leaf certificate covers the canonical mail hostname and that the chain is complete:</p>
+    <pre><code>openssl x509 -in /path/to/public.crt \
+  -noout -subject -issuer -dates -ext subjectAltName</code></pre>
+    <p>The SAN list—not the filename—must include the hostname configured in mail clients. If several mailbox domains share <code>mail.example.com</code>, one certificate for that stable service name is usually sufficient. A matching certificate for an obsolete host is still the wrong identity.</p>
+
+    <h2>7. Restart deliberately and test both mail services</h2>
+    <p>After the in-container files parse, match, and cover the intended name, restart or recreate the service in a controlled window according to the change you made:</p>
+    <pre><code>docker compose up -d --force-recreate mailserver
+docker compose ps
+docker compose logs --since 5m mailserver</code></pre>
+    <p>Then test from outside the VPS. Postfix and Dovecot are separate TLS consumers, so verify both submission and IMAP:</p>
+    <pre><code># SMTP submission with STARTTLS
+openssl s_client -connect mail.example.com:587 -starttls smtp \
+  -servername mail.example.com -verify_hostname mail.example.com \
+  &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -noout -serial -dates -fingerprint -sha256
+
+# IMAPS with immediate TLS
+openssl s_client -connect mail.example.com:993 \
+  -servername mail.example.com -verify_hostname mail.example.com \
+  &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -noout -serial -dates -fingerprint -sha256</code></pre>
+    <p>Finally, receive one harmless message and submit one authenticated message through the normal client settings. A healthy container alone does not prove that public DNS, port routing, Postfix, and Dovecot all serve the repaired certificate.</p>
+
+    <h2>Compact acceptance checklist</h2>
+    <ol>
+      <li>The first startup error has been identified and preserved privately.</li>
+      <li>The effective <code>SSL_TYPE</code> and in-container paths match the intended setup.</li>
+      <li>The certificate and private key each parse successfully.</li>
+      <li>Their derived public-key SHA-256 fingerprints match on the host.</li>
+      <li>The same pair and fingerprints are visible inside the running container.</li>
+      <li>The leaf SAN covers the canonical mail hostname and the chain is complete.</li>
+      <li>The private key has not been printed, copied into Git, or made world-readable.</li>
+      <li>Postfix submission and Dovecot IMAPS serve the expected certificate externally.</li>
+      <li>One controlled receive-and-send test succeeds.</li>
+      <li>The renewal process updates the pair and reloads services together.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/ssl/" rel="noopener noreferrer">SSL/TLS guide</a> documents its Let’s Encrypt and manual certificate modes, in-container paths, key requirements, and external checks. OpenSSL’s official <a href="https://docs.openssl.org/3.6/man1/openssl-x509/" rel="noopener noreferrer"><code>x509</code></a> and <a href="https://docs.openssl.org/3.6/man1/openssl-pkey/" rel="noopener noreferrer"><code>pkey</code></a> references document public-key extraction, output formats, and key checks. Docker’s <a href="https://docs.docker.com/engine/storage/bind-mounts/" rel="noopener noreferrer">bind-mount documentation</a> explains read-only mounts and host/container path behavior. Use the documentation matching your pinned versions.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-tls-certificate-hostname-mismatch.html">TLS certificate hostname mismatch?</a><span>Align the client name, DNS, DMS FQDN, SANs, Postfix, and Dovecot after proving the key pair.</span></li>
+        <li><a href="/posts/docker-mailserver-lets-encrypt-renewal-old-certificate.html">Still serving an old Let’s Encrypt certificate?</a><span>Trace a renewed pair through its lineage, symlinks, mount, reload, SMTP, and IMAP.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Separate network reachability and TLS-mode errors from certificate-loading failures.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Prove port 993 transport and TLS before changing accounts or passwords.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail data, configuration, DKIM material, and certificate automation before recovery work.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
