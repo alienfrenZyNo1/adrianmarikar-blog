@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Not Signing Outgoing Email with DKIM? — Adrian Marikar</title>
+  <meta name="description" content="Fix missing DKIM signatures in Docker Mailserver by tracing one message through submission, Rspamd, keys, domain selection, DNS, and recipient verification.">
+  <meta name="keywords" content="Docker Mailserver not signing outgoing email, Docker Mailserver missing DKIM signature, Rspamd DKIM signing, dkim=none, setup config dkim">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Not Signing Outgoing Email with DKIM?">
+  <meta property="og:description" content="Trace one outbound message from authenticated submission to Rspamd, the correct domain key, public DNS, and the recipient’s raw authentication results.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html">
+  <meta property="article:published_time" content="2026-08-29T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-29T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Not Signing Outgoing Email with DKIM?">
+  <meta name="twitter:description" content="An evidence-led checklist for missing DKIM-Signature headers in Docker Mailserver and Rspamd.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Not Signing Outgoing Email with DKIM?","description":"Fix missing DKIM signatures in Docker Mailserver by tracing one message through submission, Rspamd, keys, domain selection, DNS, and recipient verification.","url":"https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html"},"datePublished":"2026-08-29T10:00:00Z","dateModified":"2026-08-29T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","missing DKIM signature","Rspamd DKIM signing","DKIM DNS","DMARC alignment","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / DKIM signing 050</p>
+      <h1>Docker Mailserver Not Signing Outgoing Email with DKIM?</h1>
+    </header>
+
+    <p>A message sent through Docker Mailserver reaches an external mailbox, but its raw source has no <code>DKIM-Signature</code> header and the receiver reports <code>dkim=none</code>. Publishing another TXT record at random will not make the signer run. The missing signature has to be traced across four separate boundaries: was the message eligible for signing, did the active signer select a domain and private key, was the signature preserved in transit, and could the receiver retrieve the matching public key?</p>
+
+    <p>This guide uses <code>example.com</code>, <code>mail.example.com</code>, and selector <code>mail</code> as placeholders. Keep real addresses, account names, server addresses, complete configuration output, and private-key contents out of public troubleshooting transcripts.</p>
+
+    <blockquote><code>dkim=none</code> and <code>dkim=fail</code> are different incidents. First prove whether a signature exists in the complete received message; only then debug signing or verification.</blockquote>
+
+    <h2>Start with the receiver’s complete raw message</h2>
+    <p>Download “Show original” or “View source” from a newly delivered test message. Search the untouched source for every <code>DKIM-Signature:</code> header and the final receiver’s <code>Authentication-Results:</code>. Do not inspect a forwarded copy or only the webmail summary.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Meaning</th><th>Next boundary</th></tr></thead>
+      <tbody>
+        <tr><td>No <code>DKIM-Signature</code>; <code>dkim=none</code></td><td>No signature reached the verifier</td><td>Eligibility, signer, key selection, or a relay that removed it</td></tr>
+        <tr><td>Signature exists; <code>no key</code></td><td>The signer ran, but selector DNS is unavailable or wrong</td><td>Query <code>s=</code> + <code>d=</code> publicly</td></tr>
+        <tr><td>Signature exists; <code>dkim=fail</code></td><td>The key or signed message did not verify</td><td>Read the exact failure reason</td></tr>
+        <tr><td><code>dkim=pass</code>; <code>dmarc=fail</code></td><td>Cryptography worked, but the signing domain may not align with From</td><td>Compare <code>header.d</code> and visible From domain</td></tr>
+      </tbody>
+    </table>
+
+    <p>Give the test a unique subject token. Record its timestamp and Docker Mailserver queue ID privately so every later log line belongs to the same message.</p>
+
+    <h2>1. Confirm the image and active signing implementation</h2>
+    <p>Current Docker Mailserver documentation integrates DKIM signing with Rspamd. Older pinned releases and migrated installations may still contain OpenDKIM-era configuration. Identify what is actually running before copying a fix:</p>
+
+    <pre><code>docker compose images mailserver
+docker compose ps mailserver
+
+docker compose exec mailserver sh -lc \
+  'pgrep -a rspamd || true; pgrep -a opendkim || true'
+
+docker compose logs --since 20m mailserver | \
+  grep -Ei 'dkim|rspamd|opendkim|milter|sign|queue'</code></pre>
+
+    <p>Do not dump the complete environment or print configuration files that may contain credentials and infrastructure details. If the logs show neither an active signer nor a signing attempt, check the security features enabled for the exact image tag and compare them with that version’s Docker Mailserver documentation.</p>
+
+    <h2>2. Prove the message was submitted through a signable path</h2>
+    <p>The clean baseline is a mail account authenticated on submission port 587 with STARTTLS (or the documented implicit-TLS submission service), using a full mailbox identity such as <code>sender@example.com</code>. Send one plain-text message that way before debugging an application container.</p>
+
+    <p>Rspamd’s signing policy can select authenticated messages and messages from explicitly recognised local networks. A web application that opens port 25 anonymously from an arbitrary Docker network is not equivalent to authenticated submission. Do not “fix” that by trusting a broad private address range: any compromised container in that range could then submit mail under a local identity. Prefer SMTP AUTH with a dedicated least-privilege mailbox, TLS, and normal submission policy.</p>
+
+    <p>Correlate the test in the logs:</p>
+    <pre><code>docker compose logs --since 20m mailserver | grep 'UNIQUE_SUBJECT_TOKEN'
+
+# Then use the discovered queue ID for the full path
+docker compose logs --since 20m mailserver | grep 'QUEUE_ID'</code></pre>
+
+    <p>If authenticated client mail is signed but application mail is not, the key and DNS are probably healthy. The fault is the application’s submission route or identity, not DKIM generation.</p>
+
+    <h2>3. Check that a persisted key exists for the From domain</h2>
+    <p>Docker Mailserver’s supported helper generates DKIM material with good defaults. Run the help from your pinned image before generating or replacing anything:</p>
+
+    <pre><code>docker compose exec mailserver setup config dkim help
+
+# Inventory names and permissions only; never print private keys
+docker compose exec mailserver sh -lc \
+  'find /tmp/docker-mailserver -type f \
+   \( -path "*dkim*" -o -path "*opendkim*" \) \
+   -printf "%p %m\n" 2&gt;/dev/null'</code></pre>
+
+    <p>If no key exists for a newly added mail domain, follow the current official <code>setup config dkim</code> procedure and restart Docker Mailserver as documented. Generate keys only after at least one mail account exists, preserve a private backup, and publish only the generated public DNS value. Never paste a private key into DNS, Git, an issue, or a chat.</p>
+
+    <p>If keys exist on the host but disappear after container recreation, the configuration directory is not mounted or persisted as intended. Repair the Compose mount rather than generating a new key on every start. If the signer reports permission denied, restore the ownership and restrictive mode expected by the image; do not make signing keys world-readable.</p>
+
+    <h2>4. Match the signing domain to the visible From domain</h2>
+    <p>Multi-domain installations expose selection mistakes quickly. A mailbox may authenticate as one domain while an application supplies a different visible <code>From:</code>. The signer needs a private key and supported domain mapping for the identity it selects. DMARC additionally requires the successful DKIM <code>d=</code> domain to align with the visible From domain.</p>
+
+    <p>For one test message, record these identities separately:</p>
+    <ul>
+      <li>SMTP authenticated username;</li>
+      <li>envelope sender / Return-Path domain;</li>
+      <li>visible RFC5322 <code>From:</code> domain;</li>
+      <li>expected DKIM <code>d=</code> domain and <code>s=</code> selector.</li>
+    </ul>
+
+    <p>Do not let a contact form impersonate a visitor’s external address in <code>From:</code>. Use a local address you control in From, put the visitor in <code>Reply-To:</code>, and preserve safe input validation. That provides a stable local signing identity and avoids DMARC alignment failures for someone else’s domain.</p>
+
+    <h2>5. Validate Rspamd configuration before restarting</h2>
+    <p>Rspamd supports policy controls such as signing authenticated or local messages, domain-based key selection, selector choice, and key paths. Docker Mailserver supplies an integrated configuration, so custom overrides should be minimal and live in the documented persisted override directory—not in generated files inside the running container.</p>
+
+    <pre><code># Validate active Rspamd configuration without displaying private keys
+docker compose exec mailserver rspamadm configtest
+
+# Read recent signer decisions around the matching queue ID
+docker compose logs --since 20m mailserver | \
+  grep -Ei 'QUEUE_ID|dkim_signing|cannot load|private key|selector|domain'</code></pre>
+
+    <p>A config test catches syntax and nesting errors, but it does not prove the policy selects your message. Logs may reveal that the message was not authenticated or local, the domain was absent, the selector could not be resolved to a key, or the key was unreadable. Change the narrowest responsible setting and retain a rollback copy.</p>
+
+    <h2>6. Restart safely and verify that the signature is added</h2>
+    <p>After generating a missing persisted key or changing supported configuration, restart the mail service deliberately:</p>
+
+    <pre><code>docker compose restart mailserver
+docker compose ps mailserver
+docker compose logs --since 5m mailserver</code></pre>
+
+    <p>Do not use <code>docker compose down -v</code>; missing DKIM is not a reason to delete mail or state volumes. Send a completely new authenticated message. Old queued messages may retain their previous processing result, so they are poor proof of a repaired signer.</p>
+
+    <p>If local logs say the message was signed but the external raw message contains no signature, inspect every downstream relay, smarthost, and gateway. A later system may rebuild the message or remove headers. Compare direct delivery with the relay route using separate harmless test messages.</p>
+
+    <h2>7. Query the exact selector in public DNS</h2>
+    <p>Once the new message contains <code>DKIM-Signature</code>, copy only its non-secret <code>d=</code> and <code>s=</code> tags. The verifier queries <code>selector._domainkey.domain</code>:</p>
+
+    <pre><code>dig +short TXT mail._domainkey.example.com @1.1.1.1
+dig +short TXT mail._domainkey.example.com @8.8.8.8</code></pre>
+
+    <p>The response should be one coherent DKIM public-key record. A Cloudflare-hosted DKIM TXT record is DNS-only by nature; there is no HTTP proxy switch for TXT records. Long TXT values may appear as several quoted strings and are concatenated by DNS clients. Avoid publishing two conflicting records at the same selector.</p>
+
+    <p>DNS cannot explain a genuinely absent signature, but it determines whether a newly present signature verifies. If you are replacing a key, use a new selector and a DNS-first overlap rather than changing key material under a cached selector; the <a href="/posts/rotate-dkim-keys-docker-mailserver.html">DKIM rotation runbook</a> covers that sequence.</p>
+
+    <h2>8. Require end-to-end authentication evidence</h2>
+    <p>The repair is complete only when the raw source of a fresh externally received message shows:</p>
+
+    <pre><code>DKIM-Signature: ... d=example.com; s=mail; ...
+Authentication-Results: receiver.example;
+  dkim=pass header.d=example.com header.s=mail;
+  dmarc=pass header.from=example.com</code></pre>
+
+    <p>Also require a matching remote <code>250</code> delivery response in the sender log and repeat one test for every hosted From domain. Inbox placement is a later deliverability question; a message can pass authentication and still be filtered for reputation or content reasons.</p>
+
+    <h2>Common wrong turns</h2>
+    <ul>
+      <li><strong>Adding DNS before proving a signature exists:</strong> a public key cannot activate a local signer.</li>
+      <li><strong>Regenerating keys immediately:</strong> this can overwrite a working identity and create a DNS cache mismatch.</li>
+      <li><strong>Trusting an entire Docker subnet:</strong> broadens relay or signing trust beyond the application that needs it.</li>
+      <li><strong>Testing only the inbox badge:</strong> preserve the complete raw message and exact authentication result.</li>
+      <li><strong>Editing the running container:</strong> the change disappears on recreation; use supported persisted overrides.</li>
+      <li><strong>Assuming one domain proves all domains:</strong> every signing domain needs the correct key, mapping, DNS, and alignment.</li>
+      <li><strong>Publishing private material:</strong> DNS contains only the public key; private keys stay restricted and backed up.</li>
+      <li><strong>Weakening DMARC:</strong> policy changes do not make Docker Mailserver add a signature.</li>
+    </ul>
+
+    <h2>Compact acceptance checklist</h2>
+    <ol>
+      <li>A complete fresh received message—not a forwarded copy—shows whether DKIM is absent or failed.</li>
+      <li>The test is matched to one queue ID and a narrow private log window.</li>
+      <li>The pinned Docker Mailserver image and active Rspamd or legacy signer are identified.</li>
+      <li>Authenticated submission mail is tested separately from application mail.</li>
+      <li>A persisted, restricted key exists for the intended signing domain.</li>
+      <li><code>rspamadm configtest</code> passes and logs show a successful signing decision.</li>
+      <li>The fresh message contains the expected <code>d=</code> domain and <code>s=</code> selector.</li>
+      <li>The exact selector’s public TXT record resolves through independent DNS resolvers.</li>
+      <li>The recipient reports <code>dkim=pass</code> and aligned <code>dmarc=pass</code>.</li>
+      <li>Every hosted sending domain passes its own controlled test.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC, and SPF guide</a> documents key generation, DNS publication, restarts, and message verification. Its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/rspamd/" rel="noopener noreferrer">Rspamd integration guide</a> covers the current filtering and signing stack. Rspamd’s official <a href="https://docs.rspamd.com/modules/dkim_signing/" rel="noopener noreferrer">DKIM signing module reference</a> explains message eligibility, domain selection, selectors, keys, and signing policy. Use the pages matching your pinned versions.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26</a><span>Trace SPF, DKIM, DMARC, and alignment when Gmail rejects unauthenticated mail.</span></li>
+        <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">DKIM body hash did not verify?</a><span>If a signature exists but fails, isolate changes made after signing.</span></li>
+        <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys safely</a><span>Publish and verify a new selector before changing the active signer.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep accounts, signing keys, DNS records, and identities separate per domain.</span></li>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into reputation and placement only after authentication passes.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

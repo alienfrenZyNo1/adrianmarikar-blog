@@ -201,7 +201,8 @@ dig +short TXT selector1._domainkey.example.com @8.8.8.8</code></pre>
         <p class="eyebrow">// keep reading</p>
         <h2>Related self-hosted mail guides</h2>
         <ul>
-          <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Prove SPF, DKIM, and DMARC identities and alignment on a real received message.</span></li>
+            <li><a href="/posts/docker-mailserver-not-signing-outgoing-email-dkim.html">Docker Mailserver not signing outgoing email?</a><span>Start here when the received message has no DKIM-Signature at all rather than a failing body hash.</span></li>
+            <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26 with Docker Mailserver</a><span>Prove SPF, DKIM, and DMARC identities and alignment on a real received message.</span></li>
           <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys without breaking DMARC</a><span>Use a DNS-first selector transition when key rotation is actually required.</span></li>
           <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into PTR, TLS, reputation, and placement after authentication passes.</span></li>
           <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix Relay Access Denied safely</a><span>Separate authenticated submission, inbound delivery, and relay policy.</span></li>

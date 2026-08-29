@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Not Signing Outgoing Email with DKIM?: https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html
+  - Evidence-led missing-signature diagnosis covering the receiver’s raw source, queue-ID correlation, active Rspamd or legacy signer, authenticated submission, persisted per-domain keys, signing eligibility, selector DNS, DMARC alignment, and multi-domain verification.
 |- Docker Mailserver Private Key Does Not Match Certificate?: https://adrianmarikar.com/posts/docker-mailserver-private-key-does-not-match-certificate.html
   - Evidence-led TLS key-pair recovery covering effective Docker Mailserver certificate mode, safe PEM validation, algorithm-neutral public-key fingerprint comparison, host/container mount drift, key-loss and compromise paths, SAN and chain checks, and external Postfix/Dovecot verification.
 |- Docker Mailserver TLS Certificate Hostname Mismatch? Fix the Name: https://adrianmarikar.com/posts/docker-mailserver-tls-certificate-hostname-mismatch.html
