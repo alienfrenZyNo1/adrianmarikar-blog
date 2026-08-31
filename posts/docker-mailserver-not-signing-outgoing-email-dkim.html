@@ -23,23 +23,26 @@
 </head>
 <body>
 <header class="site-header">
-  <a class="brand" href="/" aria-label="Adrian Marikar home">
-    <span class="brand-mark">AM</span>
-    <span>Adrian Marikar</span>
-  </a>
-  <details class="nav-menu" open>
-    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
-    <nav id="primary-navigation" aria-label="Primary navigation">
-      <a href="/#writing">Writing</a>
-      <a href="/categories/ai-agents.html">AI agents</a>
-      <a href="/categories/newbizfeed.html">NewBizFeed</a>
-      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-      <a href="/#about">About</a>
-      <a href="mailto:hello@adrianmarikar.com">Contact</a>
-    </nav>
-  </details>
-</header>
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
 
 <main>
   <article class="article">
@@ -202,6 +205,7 @@ Authentication-Results: receiver.example;
       <ul>
         <li><a href="/posts/docker-mailserver-gmail-550-5-7-26.html">Fix Gmail 550 5.7.26</a><span>Trace SPF, DKIM, DMARC, and alignment when Gmail rejects unauthenticated mail.</span></li>
         <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">DKIM body hash did not verify?</a><span>If a signature exists but fails, isolate changes made after signing.</span></li>
+        <li><a href="/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html">Rspamd cannot load the DKIM key?</a><span>Repair key-path, mount, ownership, and directory-traversal faults without broad permissions.</span></li>
         <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys safely</a><span>Publish and verify a new selector before changing the active signer.</span></li>
         <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep accounts, signing keys, DNS records, and identities separate per domain.</span></li>
         <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Continue into reputation and placement only after authentication passes.</span></li>

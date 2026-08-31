@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html</guid>
+      <pubDate>Mon, 31 Aug 2026 10:00:00 GMT</pubDate>
+      <description>A least-privilege Docker Mailserver guide to fixing Rspamd DKIM key permission errors across effective paths, mounts, directory traversal, numeric ownership, and end-to-end signing.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Not Signing Outgoing Email with DKIM?</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-not-signing-outgoing-email-dkim.html</guid>

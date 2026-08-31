@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver Rspamd DKIM permission denied errors by proving the active key path, host mount, directory traversal, container UID, and a fresh signed delivery.">
+  <meta name="keywords" content="Docker Mailserver Rspamd cannot load DKIM key, Rspamd DKIM permission denied, Docker Mailserver DKIM key permissions, Rspamd private key unreadable">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions">
+  <meta property="og:description" content="Trace an unreadable DKIM private key across Rspamd configuration, bind mounts, directory permissions, ownership, and end-to-end signing.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html">
+  <meta property="article:published_time" content="2026-08-31T10:00:00Z">
+  <meta property="article:modified_time" content="2026-08-31T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions">
+  <meta name="twitter:description" content="A least-privilege repair checklist for unreadable DKIM keys in Docker Mailserver and Rspamd.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions","description":"Fix Docker Mailserver Rspamd DKIM permission denied errors by proving the active key path, host mount, directory traversal, container UID, and a fresh signed delivery.","url":"https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html"},"datePublished":"2026-08-31T10:00:00Z","dateModified":"2026-08-31T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Rspamd","DKIM key permissions","permission denied","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.08 / DKIM permissions 051</p>
+      <h1>Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions</h1>
+    </header>
+
+    <p>Docker Mailserver accepts and delivers an outbound message, but Rspamd logs <code>permission denied</code>, <code>cannot load DKIM key</code>, or an unreadable private-key path. The tempting fix is <code>chmod 777</code>. Do not do that: it turns a signing identity into a secret readable or replaceable by unrelated processes and may still leave the real mount or path problem untouched.</p>
+
+    <p>This runbook finds the narrowest fault: the wrong signing stack, an unexpected effective key path, a missing bind mount, a directory that the Rspamd process cannot traverse, mismatched numeric ownership, or an invalid key. Examples use <code>example.com</code> and selector <code>mail</code>. Never print or paste a private key, complete environment, real server address, or credential-bearing configuration into a public ticket.</p>
+
+    <blockquote>A private key must be readable by the signer and not broadly readable. Both halves matter. Prove access as the actual Rspamd user instead of weakening permissions until the error disappears.</blockquote>
+
+    <h2>First prove this is a key-access failure</h2>
+    <p>Send one new message through authenticated submission and give it a unique harmless subject. Keep its timestamp and queue ID private. Then inspect a narrow log window:</p>
+
+    <pre><code>docker compose logs --since 15m mailserver | \
+  grep -Ei 'QUEUE_ID|dkim|rspamd|permission|cannot load|private key|sign'</code></pre>
+
+    <p>Separate these incidents before changing files:</p>
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely boundary</th></tr></thead>
+      <tbody>
+        <tr><td><code>Permission denied</code> for a named key path</td><td>Directory traversal, file ownership/mode, mount labelling, or signer identity</td></tr>
+        <tr><td><code>No such file</code></td><td>Wrong effective path, missing persisted mount, wrong domain/selector, or absent key</td></tr>
+        <tr><td>PEM/parser error</td><td>Empty, damaged, wrong-format, or accidentally public key—not primarily permissions</td></tr>
+        <tr><td>No signing attempt at all</td><td>Message eligibility, active stack, domain selection, or disabled signing</td></tr>
+        <tr><td>Signature exists but receiver says <code>no key</code></td><td>Public selector DNS, not private-key file access</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Identify the active signer and pinned image</h2>
+    <p>Current Docker Mailserver documentation uses Rspamd for DKIM when its security stack is enabled. Older releases and migrated configurations may use OpenDKIM. A permission recipe for the wrong daemon can change irrelevant files.</p>
+
+    <pre><code>docker compose images mailserver
+
+docker compose exec mailserver sh -lc \
+  'pgrep -a rspamd || true; pgrep -a opendkim || true; id _rspamd 2&gt;/dev/null || true'</code></pre>
+
+    <p>Use documentation for the image tag you actually run. Do not enable both signers merely to test a permissions theory; duplicate signing and conflicting key paths make the evidence harder to interpret.</p>
+
+    <h2>2. Discover the effective path without exposing the key</h2>
+    <p>Rspamd can choose a key through a per-domain block, a selector map, or a path template containing variables such as domain and selector. Docker Mailserver supplies an integrated layout, so the path copied from a generic Rspamd tutorial may not be the path used by your container.</p>
+
+    <pre><code>docker compose exec mailserver rspamadm configtest
+
+docker compose exec mailserver sh -lc \
+  'rspamadm configdump dkim_signing 2&gt;/dev/null | \
+   grep -Ei "enabled|path|selector|domain|sign_authenticated|sign_local"'</code></pre>
+
+    <p>Review the output privately before sharing it: custom paths can reveal domain names or internal layout. Never run a command that prints the key file. Match the logged path with the expected From domain and selector. If the log names a different domain, fix domain selection first; changing ownership on the key you expected will not help the key Rspamd actually opened.</p>
+
+    <h2>3. Compare host and container mounts</h2>
+    <p>A host key can have perfect permissions and still be absent from the container. Inspect mount destinations without dumping environment variables:</p>
+
+    <pre><code>docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Destination .RW}}{{end}}'
+
+# Inside the container: names, types, owners and modes only
+# Replace the placeholder with the logged parent directory, not the key contents.
+docker compose exec mailserver sh -lc \
+  'ls -ld /path /path/to /path/to/dkim; \
+   find /path/to/dkim -maxdepth 2 -type f -printf "%p %u:%g %m\n"'</code></pre>
+
+    <p>If the key was generated only inside a running container, recreation can remove it. If it exists only on the host, repair the documented configuration mount. Keep signing material in the persisted Docker Mailserver configuration location rather than adding an ad hoc second mount over an image-managed directory.</p>
+
+    <h2>4. Test traversal and read access as Rspamd</h2>
+    <p>Reading a file requires more than a readable final file. The process needs execute (traverse) permission on every parent directory. A restrictive parent owned by an unrelated host UID commonly causes <code>EACCES</code>.</p>
+
+    <pre><code># Show every path component and its numeric ownership/mode
+# Run only against the exact private key path found in the log.
+docker compose exec mailserver sh -lc \
+  'namei -l /path/to/dkim/example.com/mail.private'
+
+# Test readability as the daemon user without printing the file.
+docker compose exec --user _rspamd mailserver sh -lc \
+  'test -r /path/to/dkim/example.com/mail.private'
+
+echo $?</code></pre>
+
+    <p>An exit status of zero proves the process can read that path at that moment. It does not validate the key or prove signing policy. A non-zero result confirms access is broken without disclosing a byte of private material.</p>
+
+    <h2>5. Repair ownership and modes at the persisted source</h2>
+    <p>Back up the private key securely before changing metadata. Determine the numeric UID and GID used by <code>_rspamd</code> inside the running image, and compare them with numeric ownership on the mounted files. User names shown on the host and in the container are not reliable if their IDs differ.</p>
+
+    <pre><code>docker compose exec mailserver id _rspamd
+
+# Inspect numeric metadata; do not display file contents.
+docker compose exec mailserver sh -lc \
+  'stat -c "%n uid=%u gid=%g mode=%a type=%F" \
+   /path/to/dkim /path/to/dkim/example.com \
+   /path/to/dkim/example.com/mail.private'</code></pre>
+
+    <p>Use Docker Mailserver’s supported DKIM setup/helper for your version when generating or repairing its managed key layout. If manual metadata correction is genuinely required, apply it to the persisted host source with the exact signer UID/GID and least privilege appropriate to that layout. A common end state is:</p>
+
+    <ul>
+      <li>private key: readable by the signing account only, commonly mode <code>600</code>;</li>
+      <li>key directory: owned by the signing account and traversable by it, commonly mode <code>700</code>;</li>
+      <li>generated public DNS text: not secret, but not a substitute for the private file;</li>
+      <li>all parent directories: traversable by the signer without becoming writable by unrelated users.</li>
+    </ul>
+
+    <p>Those are principles, not a blind command. Bind-mounted UID mapping, Kubernetes secrets, rootless Docker, and image versions can require a different exact owner. Do not recursively <code>chown</code> the whole Docker Mailserver configuration tree: mail accounts, TLS files, Postfix maps, and other services can require different ownership.</p>
+
+    <h2>6. Check read-only mounts and mandatory access control</h2>
+    <p>A read-only mount is usually compatible with signing because Rspamd only needs to read an existing private key. It becomes relevant if a helper is trying to generate or rotate a key in place. Generate through the supported workflow and persist the result; do not make a secret directory broadly writable.</p>
+
+    <p>If Unix mode and ownership are correct but the daemon still receives <code>EACCES</code>, inspect the host’s security layer privately:</p>
+
+    <pre><code># Host-specific examples; use only the tool your system provides.
+journalctl --since '15 minutes ago' | grep -Ei 'apparmor|avc:|selinux|denied'
+
+docker inspect mailserver \
+  --format '{{json .HostConfig.SecurityOpt}}'</code></pre>
+
+    <p>On SELinux hosts, a bind mount can need the correct container label. Do not disable SELinux globally or run the mail container privileged. Adjust only the affected persisted mount using the platform’s documented container-labelling mechanism, then retest as <code>_rspamd</code>.</p>
+
+    <h2>7. Validate the key without printing it</h2>
+    <p>Once the access test passes, distinguish readable from valid. First rerun Rspamd’s configuration test and watch for a key-load error on a new message. If your pinned tooling provides a DKIM signing or key test, pass it the exact domain, selector, and path—but direct any generated signed output to a private temporary file and delete it afterward.</p>
+
+    <p>Do not use <code>cat</code>, shell tracing, CI artifact uploads, or broad debug dumps around private keys. If the parser says the file is empty or malformed, restore the matching key from a trusted backup or generate a new selector and follow a DNS-first <a href="/posts/rotate-dkim-keys-docker-mailserver.html">DKIM rotation</a>. Never overwrite the old selector and assume cached public DNS updates instantly.</p>
+
+    <h2>8. Restart narrowly and prove a fresh signature</h2>
+    <pre><code>docker compose restart mailserver
+docker compose ps mailserver
+docker compose logs --since 5m mailserver | \
+  grep -Ei 'rspamd|dkim|permission|cannot load|error'</code></pre>
+
+    <p>Do not run <code>docker compose down -v</code>; a DKIM permission fault is not a reason to remove mail or state volumes. Send a completely new authenticated message. At the receiver, inspect the untouched raw source and require:</p>
+
+    <pre><code>DKIM-Signature: ... d=example.com; s=mail; ...
+Authentication-Results: receiver.example;
+  dkim=pass header.d=example.com header.s=mail;
+  dmarc=pass header.from=example.com</code></pre>
+
+    <p>Confirm the local log shows the same test’s successful signing decision and remote delivery. Then recreate the container once during a planned window and repeat the readability test. That final recreation proves the repair lives in persisted configuration instead of the old container layer.</p>
+
+    <h2>Common wrong turns</h2>
+    <ul>
+      <li><strong><code>chmod -R 777</code>:</strong> exposes and permits replacement of sensitive signing material while masking the path that actually needed access.</li>
+      <li><strong>Making only the file readable:</strong> a blocked parent directory still prevents access.</li>
+      <li><strong>Using host user names:</strong> containers enforce numeric IDs; matching names can map to different IDs.</li>
+      <li><strong>Recursively owning all mail configuration:</strong> breaks components that intentionally use different service accounts.</li>
+      <li><strong>Regenerating immediately:</strong> turns a metadata problem into a key and DNS migration.</li>
+      <li><strong>Editing inside the container:</strong> creates a repair that disappears on recreation.</li>
+      <li><strong>Publishing the private key:</strong> DKIM DNS contains only the generated public value.</li>
+      <li><strong>Testing an old message:</strong> only a new message proves that the signer can now load the key.</li>
+    </ul>
+
+    <h2>Compact acceptance checklist</h2>
+    <ol>
+      <li>The active Docker Mailserver image and Rspamd process are identified.</li>
+      <li>One queue ID produces an explicit key path and access error.</li>
+      <li>The effective domain, selector, and key path are confirmed without exposing the key.</li>
+      <li>The persisted host source appears at the expected container destination.</li>
+      <li>Every parent directory is traversable by the actual Rspamd UID/GID.</li>
+      <li>The private key is least-privilege readable—not world-readable or broadly writable.</li>
+      <li><code>rspamadm configtest</code> passes and a fresh message logs successful signing.</li>
+      <li>The external raw message contains the expected signature and reports <code>dkim=pass</code>.</li>
+      <li>DKIM aligns with the visible From domain so DMARC passes.</li>
+      <li>The repair survives a controlled container recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/best-practices/dkim_dmarc_spf/" rel="noopener noreferrer">DKIM, DMARC, and SPF guide</a> documents its supported key-generation and verification workflow; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/rspamd/" rel="noopener noreferrer">Rspamd integration guide</a> explains the current security stack. Rspamd’s official <a href="https://docs.rspamd.com/modules/dkim_signing/" rel="noopener noreferrer">DKIM signing module reference</a> describes key paths, selectors, maps, and signing eligibility, while the <a href="https://docs.rspamd.com/tutorials/dkim_signing_guide/" rel="noopener noreferrer">DKIM signing guide</a> covers private-key ownership and restrictive permissions. Match every command to your pinned versions.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-not-signing-outgoing-email-dkim.html">Docker Mailserver not signing outgoing email?</a><span>Trace eligibility, domain selection, keys, DNS, and receiver evidence when the signature is absent.</span></li>
+        <li><a href="/posts/rotate-dkim-keys-docker-mailserver.html">Rotate DKIM keys safely</a><span>Use a DNS-first selector overlap if a key is invalid, lost, or compromised.</span></li>
+        <li><a href="/posts/docker-mailserver-dkim-body-hash-did-not-verify.html">DKIM body hash did not verify?</a><span>If the key loads and a signature exists, isolate message changes after signing.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Keep key paths, selectors, and sending identities separate for each domain.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
