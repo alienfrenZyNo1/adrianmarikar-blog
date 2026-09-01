@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Health Check Fails: curl or wget Not Found</title>
+      <link>https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html</guid>
+      <pubDate>Tue, 01 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to fixing Coolify containers marked unhealthy when curl or wget is absent, then verifying the health path, port, bind address, startup period, and public route.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html</guid>

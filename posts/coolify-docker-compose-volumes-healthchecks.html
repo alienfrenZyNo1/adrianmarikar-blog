@@ -143,7 +143,7 @@ volumes:
         <li>make it stable enough that deploys do not flap.</li>
       </ul>
 
-      <p>Then verify the healthcheck in Coolify after deploy. A green container list is useful, but the live application URL and the application logs still matter.</p>
+      <p>Then verify the healthcheck in Coolify after deploy. A green container list is useful, but the live application URL and the application logs still matter. If the deployment says <code>curl: not found</code> or <code>wget: not found</code>, use the focused <a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Coolify health-check runtime-image guide</a> to repair the probe without hiding readiness failures.</p>
 
       <h2>Backups are part of the deploy, not a later chore</h2>
       <p>The first production deploy should already have a restore story. For a small single-VPS setup, I want at least three layers:</p>
@@ -191,6 +191,7 @@ volumes:
           <li><a href="/posts/hetzner-vps-setup-self-hosting.html">Setting up a Hetzner VPS for self-hosting</a><span>The base server, Docker, and Coolify foundation that stateful apps sit on.</span></li>
           <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>SSH, firewalling, automatic updates, and backup habits before production apps matter.</span></li>
           <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>When the image build belongs in CI and Coolify should redeploy a known artifact.</span></li>
+          <li><a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Fix a Coolify health check when curl or wget is missing</a><span>Put the probe in the final runtime image and verify its exact path, port, status, and startup window.</span></li>
           <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The simpler stateless version of the same deploy-and-verify habit.</span></li>
         </ul>
       </section>

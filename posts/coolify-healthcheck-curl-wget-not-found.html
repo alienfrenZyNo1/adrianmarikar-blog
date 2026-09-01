@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Health Check Fails: curl or wget Not Found — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify deployment marked unhealthy because curl or wget is missing: inspect the real health command, install the probe in the final image, and verify path, port, bind address, and status.">
+  <meta name="keywords" content="Coolify health check curl not found, Coolify wget not found, Coolify container unhealthy, Dockerfile healthcheck, Coolify health endpoint">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Health Check Fails: curl or wget Not Found">
+  <meta property="og:description" content="Trace a Coolify container’s real health command, put its probe in the final runtime image, and separate missing tools from path, port, bind-address, and startup faults.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html">
+  <meta property="article:published_time" content="2026-09-01T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-01T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Health Check Fails: curl or wget Not Found">
+  <meta name="twitter:description" content="A practical fix for Coolify deployments marked unhealthy when the runtime image lacks the configured HTTP probe.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Health Check Fails: curl or wget Not Found","description":"Fix a Coolify deployment marked unhealthy because curl or wget is missing: inspect the real health command, install the probe in the final image, and verify path, port, bind address, and status.","url":"https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html"},"datePublished":"2026-09-01T10:00:00Z","dateModified":"2026-09-01T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","health check","curl","wget","Dockerfile","unhealthy container"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / Coolify healthcheck 052</p>
+      <h1>Coolify health check fails: curl or wget not found</h1>
+    </header>
+
+    <p>Your image builds, the application process starts, and its logs may even say it is listening. Then Coolify reports the container as unhealthy or the deployment fails with a line like <code>/bin/sh: curl: not found</code> or <code>wget: not found</code>. This is usually not an application crash. The command used to prove readiness is missing from the <em>final runtime image</em>.</p>
+
+    <p>Coolify’s health-check documentation says its HTTP checks require <code>curl</code> or <code>wget</code> inside the container. Installing a client on the VPS, in a CI runner, or only in a discarded Docker build stage does not satisfy that requirement. This guide fixes the tool boundary first, then separates it from the next four common faults: wrong path, wrong port, loopback binding, and insufficient startup time.</p>
+
+    <blockquote>Do not disable health checks merely to turn a deployment green. First reproduce the exact probe inside the exact image that Coolify is running.</blockquote>
+
+    <h2>Read the failure before changing the Dockerfile</h2>
+    <p>Open the failed deployment logs and the application’s health-check settings. Record the configured path, port, expected status, interval, timeout, retries, and start period. Then inspect Docker’s current view on the server:</p>
+
+    <pre><code>docker inspect APP_CONTAINER --format '{{json .Config.Healthcheck}}'
+docker inspect APP_CONTAINER --format '{{json .State.Health}}'
+
+docker exec APP_CONTAINER sh -lc \
+  'command -v curl || command -v wget || true'</code></pre>
+
+    <p>Replace <code>APP_CONTAINER</code> privately with the real container name. The first command reveals the command Docker actually executes. The second preserves the probe’s exit codes and recent output. Do not dump the complete container environment into a ticket: it can contain database URLs, tokens, and passwords.</p>
+
+    <table>
+      <thead><tr><th>Probe output</th><th>Boundary to fix</th></tr></thead>
+      <tbody>
+        <tr><td><code>curl: not found</code> or <code>wget: not found</code></td><td>The final image lacks the requested executable</td></tr>
+        <tr><td><code>Connection refused</code></td><td>The app is not ready, uses another port, or listens on another address</td></tr>
+        <tr><td>HTTP <code>404</code></td><td>The configured health path does not exist</td></tr>
+        <tr><td>HTTP <code>301</code>, <code>302</code>, <code>401</code>, or <code>403</code></td><td>The endpoint redirects or requires authentication</td></tr>
+        <tr><td>Timeout</td><td>The app is blocked, starts too slowly, or the probe targets the wrong endpoint</td></tr>
+        <tr><td>HTTP <code>500</code> or <code>503</code></td><td>The endpoint ran but the application reports a dependency or readiness fault</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Install the probe in the final runtime stage</h2>
+    <p>For an Alpine-based runtime image, install one small HTTP client in the stage that becomes the deployed image:</p>
+
+    <pre><code>FROM node:22-alpine AS runtime
+RUN apk add --no-cache curl
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+CMD ["node", "dist/server.js"]</code></pre>
+
+    <p>For Debian or Ubuntu based images:</p>
+
+    <pre><code>FROM node:22-bookworm-slim AS runtime
+RUN apt-get update \
+    &amp;&amp; apt-get install -y --no-install-recommends curl \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+CMD ["node", "dist/server.js"]</code></pre>
+
+    <p>The stage name is unimportant; its position is not. In a multi-stage Dockerfile, packages installed in <code>build</code> disappear unless that stage is also the final image. Run <code>docker build</code>, then test the resulting image—not the build stage:</p>
+
+    <pre><code>docker build -t app-healthcheck-test .
+docker run --rm app-healthcheck-test sh -lc 'command -v curl'
+
+docker run --rm -d --name app-healthcheck-test -p 127.0.0.1:18080:3000 \
+  app-healthcheck-test
+curl --fail --silent --show-error http://127.0.0.1:18080/health
+docker rm -f app-healthcheck-test</code></pre>
+
+    <p>The published test port is bound to loopback so it does not create a new public service. Adapt the internal port and path to the application. If the image is intentionally distroless or <code>scratch</code>, it may contain neither a shell nor a package manager. In that case, prefer an application-native probe binary or define a Docker <code>HEALTHCHECK</code> that invokes a binary already present. Do not copy a dynamically linked <code>curl</code> executable alone without its libraries and certificate store.</p>
+
+    <h2>Choose one clear source of health truth</h2>
+    <p>A health check can come from the Dockerfile, a Compose <code>healthcheck:</code>, or Coolify’s application settings. Multiple layers can override or disagree with one another. Inspect the effective command and keep one intentional definition wherever possible.</p>
+
+    <p>A Dockerfile-owned HTTP check might look like this:</p>
+
+    <pre><code>HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
+  CMD curl --fail --silent --show-error \
+  http://127.0.0.1:3000/health || exit 1</code></pre>
+
+    <p>Docker treats exit code <code>0</code> as healthy and <code>1</code> as unhealthy. The command runs inside the container’s own network namespace, so <code>127.0.0.1</code> means that container—not the VPS and not another Compose service. If Coolify generates the check instead, configure its path and port to match the application and leave the Dockerfile definition out. After changing or removing a Dockerfile <code>HEALTHCHECK</code>, force a clean rebuild so an old image layer is not mistaken for current configuration.</p>
+
+    <h2>If curl exists, test the next boundaries in order</h2>
+
+    <h3>1. Is the application listening on the expected internal port?</h3>
+    <pre><code>docker exec APP_CONTAINER sh -lc \
+  'curl --fail --silent --show-error http://127.0.0.1:3000/health'
+
+docker logs --since 10m APP_CONTAINER</code></pre>
+    <p>Use the container port, not a host-side published port. Coolify routing also needs the application’s configured port to agree with the process. A public <code>200</code> does not prove the internal readiness command is correct, and an internal success does not prove the public router is correct; verify both.</p>
+
+    <h3>2. Does the app bind to a reachable address?</h3>
+    <p>For normal container routing, web servers should usually bind to <code>0.0.0.0</code> on their internal port. Binding only to <code>127.0.0.1</code> can prevent Traefik or other containers from reaching the service, even though a health command executed inside the same container succeeds. Fix the application’s listen setting rather than probing a host address.</p>
+
+    <h3>3. Is the health path deliberately boring?</h3>
+    <p>Use an unauthenticated endpoint such as <code>/health</code> that returns a small <code>200</code> response when the app is ready. Exempt it from canonical-host redirects and login middleware. Do not return environment values, database details, internal hostnames, version dumps, or stack traces. A health endpoint should answer readiness, not become a diagnostics leak.</p>
+
+    <h3>4. Does startup need a grace period?</h3>
+    <p>Migrations, cache warming, and large runtime initialization can make a correct app temporarily refuse connections. Set a realistic start period and enough retries after measuring startup logs. Do not hide a permanent dependency failure behind a ten-minute grace period. The endpoint should become healthy predictably, and a broken database or required dependency should still be visible.</p>
+
+    <h2>Rebuild and verify the deployment</h2>
+    <ol>
+      <li>Commit the final-stage package change or native probe with the application source.</li>
+      <li>Trigger a force rebuild if the previous image may be cached.</li>
+      <li>Read the deployment’s terminal status and health output—not only the queued response.</li>
+      <li>Confirm Docker reports the replacement container as <code>healthy</code>.</li>
+      <li>Run the effective health command manually inside the replacement container.</li>
+      <li>Request the public application through HTTPS and assert unique page or API content.</li>
+      <li>Restart or recreate once and verify the state becomes healthy again within the measured window.</li>
+    </ol>
+
+    <pre><code>docker inspect APP_CONTAINER \
+  --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{end}}'
+
+curl --fail --silent --show-error https://app.example.com/health
+curl --fail --silent --show-error https://app.example.com/ | \
+  grep -F 'EXPECTED PUBLIC CONTENT'</code></pre>
+
+    <p>Use a placeholder hostname in shared notes and the real hostname only in your private terminal. Checking unique content matters because a proxy fallback, stale container, or SPA fallback can return HTTP <code>200</code> for the wrong thing.</p>
+
+    <h2>Wrong turns that create a second problem</h2>
+    <ul>
+      <li><strong>Installing curl on the VPS:</strong> the probe executes inside the application container.</li>
+      <li><strong>Installing it only in the build stage:</strong> multi-stage builds discard that filesystem.</li>
+      <li><strong>Disabling health checks immediately:</strong> this can route traffic to a process that is not ready.</li>
+      <li><strong>Changing the expected code to match a redirect or login page:</strong> repair the health endpoint instead.</li>
+      <li><strong>Probing the public domain from inside the container:</strong> this adds DNS, TLS, Cloudflare, and router dependencies to an application-readiness test.</li>
+      <li><strong>Using <code>localhost</code> for another Compose service:</strong> address that service by its Compose service name; localhost is the current container.</li>
+      <li><strong>Dumping all settings while debugging:</strong> health-check evidence does not require publishing secrets or complete environments.</li>
+    </ul>
+
+    <h2>Compact acceptance checklist</h2>
+    <ol>
+      <li>The effective Docker health command is known.</li>
+      <li>Its executable exists in the final deployed image.</li>
+      <li>The exact command exits zero when run inside the container.</li>
+      <li>The process listens on the configured internal port and appropriate bind address.</li>
+      <li>The path returns the expected status without auth, redirects, or sensitive output.</li>
+      <li>The start period covers measured startup without concealing permanent failures.</li>
+      <li>Coolify reaches a terminal successful deployment state and Docker reports healthy.</li>
+      <li>The public HTTPS route serves the intended application content after recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/knowledge-base/health-checks" rel="noopener noreferrer">health-check documentation</a> states that its container-side HTTP checks need <code>curl</code> or <code>wget</code> and explains Dockerfile-defined checks. Its <a href="https://coolify.io/docs/troubleshoot/applications/no-available-server" rel="noopener noreferrer">no available server troubleshooting guide</a> recommends running the health command manually and checking that required tools exist. Docker’s <a href="https://docs.docker.com/reference/dockerfile/#healthcheck" rel="noopener noreferrer">Dockerfile HEALTHCHECK reference</a> defines probe execution, exit codes, intervals, timeouts, start periods, and retries.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Model readiness, startup order, persistent data, backups, and recovery for stateful apps.</span></li>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Trace stale production through source, builds, health, routing, and caches.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>Verify a complete GitHub-to-nginx deployment rather than trusting one status code.</span></li>
+        <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions Docker builds and Coolify deploys</a><span>Build a known image in CI and trigger Coolify only after publication.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
