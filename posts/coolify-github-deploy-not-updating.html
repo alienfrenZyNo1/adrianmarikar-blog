@@ -77,7 +77,7 @@
 
       <pre><code># Shape only: do not paste real tokens into public docs
 curl -sS -X POST https://coolify.example.com/api/v1/deploy \
-  -H 'Authorization: Bearer REDACTED_TOKEN_VALUE' \
+  -H 'Authorization: Bearer REDACTED' \
   -H 'Content-Type: application/json' \
   --data '{"uuid":"APP_UUID","force_rebuild":false}'</code></pre>
 
@@ -157,6 +157,7 @@ curl -fsS https://example.com/llms.txt | grep 'New post title'</code></pre>
         <p class="eyebrow">// keep reading</p>
         <h2>Related deployment notes</h2>
         <ul>
+          <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate build back-pressure from a stalled command, resource exhaustion, stale logs, and control-plane trouble before cancelling or retrying.</span></li>
           <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The normal publish path for static HTML, nginx, RSS, sitemap, Docker, and live verification.</span></li>
           <li><a href="/posts/cache-control-static-html-cloudflare.html">Cache-Control for static HTML behind Cloudflare</a><span>Set short-lived document caching and long-lived versioned asset caching before reaching for a full CDN purge.</span></li>
           <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions CI/CD for Docker builds and Coolify deploys</a><span>Use a workflow and deployment webhook when GitHub should build the image before Coolify runs it.</span></li>

@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely: https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html
+  - Evidence-led recovery for Coolify deployments that remain queued or in progress, covering exact deployment IDs, stale log streams, concurrent-build capacity, Git and registry waits, Docker resources, bytes and inodes, narrow cleanup, safe cancellation, controlled retry, and commit-level live verification.
 |- Coolify Health Check Fails: curl or wget Not Found: https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html
   - Runtime-image troubleshooting for Coolify containers marked unhealthy, covering the effective Docker probe, final-stage curl or wget installation, distroless alternatives, path and port checks, bind addresses, startup grace, terminal deployment state, and unique public-content verification.
 |- Docker Mailserver Rspamd Cannot Load DKIM Key? Fix Permissions: https://adrianmarikar.com/posts/docker-mailserver-rspamd-cannot-load-dkim-key-permission-denied.html

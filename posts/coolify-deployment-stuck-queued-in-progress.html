@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely — Adrian Marikar</title>
+  <meta name="description" content="Diagnose a Coolify deployment stuck in queued or in progress: identify the exact deployment, check build capacity, logs, Docker resources and disk, cancel safely, then verify the live commit.">
+  <meta name="keywords" content="Coolify deployment stuck queued, Coolify deployment stuck in progress, Coolify deployment queue, cancel Coolify deployment, Coolify build troubleshooting">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely">
+  <meta property="og:description" content="An evidence-led runbook for separating a busy build queue from a stalled build, resource exhaustion, control-plane trouble, and a stale browser view.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html">
+  <meta property="article:published_time" content="2026-09-03T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-03T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Deployment Stuck Queued or In Progress?">
+  <meta name="twitter:description" content="Trace one Coolify deployment through queue capacity, build output, Docker resources, cancellation, retry, and commit-level production verification.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely","description":"Diagnose a Coolify deployment stuck in queued or in progress: identify the exact deployment, check build capacity, logs, Docker resources and disk, cancel safely, then verify the live commit.","url":"https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html"},"datePublished":"2026-09-03T10:00:00Z","dateModified":"2026-09-03T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","deployment queue","Docker builds","deployment troubleshooting","self-hosting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / deployment queue 053</p>
+      <h1>Coolify deployment stuck queued or in progress? Diagnose it safely</h1>
+    </header>
+
+    <p>A Coolify deployment that stays <code>queued</code> has not necessarily failed, and one that stays <code>in_progress</code> is not necessarily still building. The useful question is more precise: <strong>which deployment is waiting, what resource or operation owns the wait, and is production still serving the previous healthy release?</strong></p>
+
+    <p>This runbook is for a self-hosted Coolify application whose deployment does not reach a terminal state. It separates queue capacity from a silent build, a browser log-view problem, exhausted disk or memory, and a control-plane fault. It also avoids the two tempting destructive shortcuts: repeatedly adding deployments to the queue and running an unscoped Docker prune.</p>
+
+    <blockquote>Preserve the deployment ID and its last useful log line before cancelling or restarting anything. A queue badge without that evidence is not a diagnosis.</blockquote>
+
+    <h2>First classify the symptom</h2>
+    <table>
+      <thead><tr><th>What you observe</th><th>Most useful next check</th></tr></thead>
+      <tbody>
+        <tr><td><code>queued</code>, with another build active</td><td>Server build concurrency and the active deployment’s progress</td></tr>
+        <tr><td><code>queued</code>, with no build apparently active</td><td>Exact deployment record, Coolify worker/control-plane logs, and server health</td></tr>
+        <tr><td><code>in_progress</code>, logs still advancing</td><td>The current command, elapsed time, CPU, memory, network and disk activity</td></tr>
+        <tr><td><code>in_progress</code>, no new log output</td><td>Whether the build process still exists and whether the dashboard view itself is stale</td></tr>
+        <tr><td>Deployment says complete but the site is old</td><td>The deployed commit, container, router and caches—not the queue</td></tr>
+      </tbody>
+    </table>
+
+    <p>Refresh the deployment page once and reopen the exact record. A log stream can stop updating when the browser sleeps or its realtime connection drops while the server-side operation continues. Compare the UI with the deployment API or the server’s actual Docker activity before treating a frozen log panel as a frozen build.</p>
+
+    <h2>Identify one deployment, not just the application</h2>
+    <p>Record the application UUID, source branch and commit, deployment ID, creation time, current status, and final visible log line. Coolify’s deploy endpoint returns deployment details when a request is queued. Treat the returned deployment identifier as an opaque string; do not assume it has a particular UUID shape.</p>
+
+    <pre><code># Generic API shapes; keep the real bearer token private
+curl --fail --silent --show-error \
+  -H 'Authorization: Bearer REDACTED' \
+  https://coolify.example.com/api/v1/deployments/DEPLOYMENT_ID
+
+curl --fail --silent --show-error \
+  -H 'Authorization: Bearer REDACTED' \
+  https://coolify.example.com/api/v1/applications/APP_UUID</code></pre>
+
+    <p>If your installed version exposes different routes, use that version’s API documentation or run Coolify’s local route listing privately. Do not paste full API responses into a public issue without reviewing them: application records and logs can disclose repository URLs, domains, environment names, or credentials.</p>
+
+    <h2>If it is queued, inspect build capacity before touching workers</h2>
+    <p>Coolify limits concurrent builds per server. A queued deployment behind a real active build can be normal back-pressure. In the server settings, check the configured concurrent-build limit. Then inspect all current deployments: a slow image build, package download, or health-gated rollout at the front of the line can explain every later queue entry.</p>
+
+    <ol>
+      <li>Stop clicking Deploy; duplicate requests make the queue harder to read.</li>
+      <li>Find the oldest active deployment and open its output.</li>
+      <li>Decide whether its command is making progress or waiting indefinitely.</li>
+      <li>Increase concurrency only if the server has measured CPU, memory and disk headroom.</li>
+    </ol>
+
+    <p>More parallel builds are not free throughput. On a small VPS they can create memory pressure, slower disk I/O, package-manager timeouts, or an out-of-memory kill. Coolify’s own server-crash guidance recommends using a separate build server, moving image builds to CI, or increasing resources when builds overload the deployment host.</p>
+
+    <h2>If it is in progress, follow the last command</h2>
+    <p>The final visible line usually identifies the boundary. Do not start by restarting the application container; builds run outside the old serving container, and the previous release may still be handling production traffic correctly.</p>
+
+    <table>
+      <thead><tr><th>Last operation</th><th>Evidence to collect</th></tr></thead>
+      <tbody>
+        <tr><td>Cloning or fetching Git</td><td>Repository authentication, DNS and outbound HTTPS/SSH from the build host</td></tr>
+        <tr><td>Pulling a base image</td><td>Registry status, rate limits, credentials, DNS and free space</td></tr>
+        <tr><td>Installing packages</td><td>Whether output advances, lockfiles, registry reachability and memory use</td></tr>
+        <tr><td>Building an image</td><td>Docker build process, BuildKit cache, host CPU/memory, disk bytes and inodes</td></tr>
+        <tr><td>Starting the replacement</td><td>Application logs, port binding, migrations and dependency readiness</td></tr>
+        <tr><td>Waiting for health</td><td>The effective probe, executable, internal port, path, status and start period</td></tr>
+      </tbody>
+    </table>
+
+    <p>On the server, begin with read-only checks:</p>
+
+    <pre><code>docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+docker system df
+df -h
+df -i
+free -h
+
+docker logs --since 20m coolify
+# Use the actual worker/container name shown by docker ps:
+docker logs --since 20m COOLIFY_WORKER_CONTAINER</code></pre>
+
+    <p>Inspect only the relevant log window and redact before sharing. <code>docker system df</code> reports Docker’s disk use; <code>df -h</code> catches full filesystems, while <code>df -i</code> catches inode exhaustion that a gigabyte summary can miss. Kernel OOM evidence and a vanished build process point toward resource exhaustion rather than a bad application command.</p>
+
+    <h2>Clean disk through the narrowest safe path</h2>
+    <p>If storage is genuinely the blocker, prefer Coolify’s automated Docker cleanup configuration. Its documentation says cleanup can remove stopped containers, unused images and build cache according to a schedule or disk threshold. Review what your installed version selects before running it.</p>
+
+    <p>Do not jump to <code>docker system prune --all --volumes</code>. Docker documents that system prune removes unused containers, networks, images and build cache, with volumes included only when explicitly requested. On a multi-application server, broad cleanup can remove rollback images, caches needed by another build, or unused-looking volumes that still matter operationally. Check reclaimable categories, backups and rollback needs first; never prune volumes as queue troubleshooting.</p>
+
+    <h2>Cancel only after preserving evidence</h2>
+    <p>Coolify provides an authenticated endpoint to cancel a deployment by its deployment UUID. Use the specific stalled deployment, not a mass kill, and expect API availability or response details to vary with the installed Coolify version.</p>
+
+    <pre><code>curl --fail --silent --show-error -X POST \
+  -H 'Authorization: Bearer REDACTED' \
+  https://coolify.example.com/api/v1/deployments/DEPLOYMENT_ID/cancel</code></pre>
+
+    <p>Cancel when the underlying operation is conclusively stuck, not merely slow. After cancellation, confirm the deployment reaches a terminal cancelled state and check whether the build process/container was removed. If it remains, investigate the Coolify worker and installed-version issues before adding a new attempt.</p>
+
+    <h2>Restart in layers, not all at once</h2>
+    <ol>
+      <li>If only the browser log stream is stale, reopen it; do not restart the server.</li>
+      <li>If one build is stuck, cancel that deployment and confirm cleanup.</li>
+      <li>If all new work queues while the dashboard and Docker are healthy, inspect Coolify’s worker/control-plane logs and health.</li>
+      <li>Restart only the affected Coolify service when its fault is evidenced and you know the installation’s supported procedure.</li>
+      <li>Reboot the host only for a host-level fault that narrower recovery cannot resolve.</li>
+    </ol>
+
+    <p>Before control-plane maintenance, verify whether any database backup, restore, migration or deployment is active. Keep a current Coolify backup and know the documented recovery route. A blind restart can erase the most useful transient evidence and interrupt unrelated applications.</p>
+
+    <h2>Retry once, then verify the replacement</h2>
+    <p>Repair the diagnosed cause before retrying: free measured space, correct Git access, fix the Dockerfile command, add build capacity, or restore the worker. Trigger one deployment and follow its returned ID to a terminal state. A queued response is not success.</p>
+
+    <pre><code>curl --fail --silent --show-error -X POST \
+  -H 'Authorization: Bearer REDACTED' \
+  -H 'Content-Type: application/json' \
+  --data '{"uuid":"APP_UUID","force_rebuild":false}' \
+  https://coolify.example.com/api/v1/deploy</code></pre>
+
+    <p>After the deployment reports success, prove the intended release rather than accepting HTTP <code>200</code>:</p>
+
+    <ol>
+      <li>Match the successful deployment to the intended Git commit.</li>
+      <li>Confirm the replacement container is running and, when configured, healthy.</li>
+      <li>Fetch a unique heading, version endpoint, or changed response from the public hostname.</li>
+      <li>Check an intentionally nonexistent path does not return the homepage through a fallback.</li>
+      <li>Verify critical API, asset and persistence paths—not only the root page.</li>
+      <li>Confirm the old release remains available for rollback until acceptance passes.</li>
+    </ol>
+
+    <pre><code>curl --fail --silent --show-error \
+  'https://app.example.com/release-check?verify=EXPECTED_COMMIT' | \
+  grep -F 'EXPECTED RELEASE MARKER'
+
+curl --silent --output /dev/null --write-out '%{http_code}\n' \
+  https://app.example.com/this-path-must-not-exist</code></pre>
+
+    <h2>A compact decision checklist</h2>
+    <ol>
+      <li>The exact deployment ID, source commit, status and last log line are recorded.</li>
+      <li>A stale browser/realtime view has been ruled out.</li>
+      <li>Queued work has been compared with active builds and the concurrency limit.</li>
+      <li>The final operation has been mapped to Git, registry, build, startup or health.</li>
+      <li>Host memory, Docker disk usage, filesystem bytes and inodes have been checked.</li>
+      <li>No broad prune, volume deletion or host reboot was used as a first step.</li>
+      <li>Only the proven-stalled deployment was cancelled.</li>
+      <li>One retry reached a terminal state and matches the intended commit.</li>
+      <li>Unique live content and important routes pass after deployment.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/api-reference/api/operations/cancel-deployment-by-uuid" rel="noopener noreferrer">cancel-deployment API reference</a>, <a href="https://coolify.io/docs/knowledge-base/faq" rel="noopener noreferrer">FAQ entry on concurrent builds</a>, <a href="https://coolify.io/docs/troubleshoot/server/crash-during-build" rel="noopener noreferrer">server crash during build guide</a>, and <a href="https://coolify.io/docs/knowledge-base/server/automated-cleanup" rel="noopener noreferrer">automated Docker cleanup guide</a>. Docker’s official references explain <a href="https://docs.docker.com/reference/cli/docker/system/df/" rel="noopener noreferrer"><code>docker system df</code></a> and exactly what <a href="https://docs.docker.com/reference/cli/docker/system/prune/" rel="noopener noreferrer"><code>docker system prune</code></a> removes.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Trace the source commit through Coolify, Docker, routing, caches and discovery files.</span></li>
+        <li><a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Coolify health check fails: curl or wget not found</a><span>Repair a replacement container that builds but cannot pass its configured readiness probe.</span></li>
+        <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions Docker builds and Coolify deploys</a><span>Move image builds to CI when the deployment server should only pull and run them.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>Verify source, image, nginx content, metadata and production rather than trusting a badge.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
