@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify 502 Bad Gateway? Fix the Port and Listen Address: https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html
+  - Evidence-led proxy troubleshooting covering the live application process, internal container port, all-interface binding, Coolify Ports Exposes, unnecessary host mappings, same-network requests, Docker health, Traefik service selection, controlled redeployment, and unique live-content verification.
 |- Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely: https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html
   - Evidence-led recovery for Coolify deployments that remain queued or in progress, covering exact deployment IDs, stale log streams, concurrent-build capacity, Git and registry waits, Docker resources, bytes and inodes, narrow cleanup, safe cancellation, controlled retry, and commit-level live verification.
 |- Coolify Health Check Fails: curl or wget Not Found: https://adrianmarikar.com/posts/coolify-healthcheck-curl-wget-not-found.html

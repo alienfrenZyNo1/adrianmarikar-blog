@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify 502 Bad Gateway? Fix the Port and Listen Address — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify 502 Bad Gateway by proving the app process, internal container port, 0.0.0.0 listen address, Docker network, health status and Traefik route in order.">
+  <meta name="keywords" content="Coolify 502 Bad Gateway, Coolify wrong port, Coolify app localhost, Coolify Port Exposes, Traefik 502 Docker">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify 502 Bad Gateway? Fix the Port and Listen Address">
+  <meta property="og:description" content="An evidence-led runbook for finding the broken hop between Traefik and a Coolify application without opening unnecessary host ports.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html">
+  <meta property="article:published_time" content="2026-09-05T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-05T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify 502 Bad Gateway? Fix the Port and Listen Address">
+  <meta name="twitter:description" content="Trace one 502 through the app process, internal port, bind address, Docker network, health and Traefik routing.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify 502 Bad Gateway? Fix the Port and Listen Address","description":"Fix a Coolify 502 Bad Gateway by proving the app process, internal container port, 0.0.0.0 listen address, Docker network, health status and Traefik route in order.","url":"https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html"},"datePublished":"2026-09-05T10:00:00Z","dateModified":"2026-09-05T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","502 Bad Gateway","Traefik","Docker networking","container ports","self-hosting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / proxy routing 054</p>
+      <h1>Coolify 502 Bad Gateway? Fix the port and listen address</h1>
+    </header>
+
+    <p>A Coolify application can deploy successfully, show a running container, and still return <code>502 Bad Gateway</code> at its domain. That combination usually means the public proxy accepted the request but could not complete the next hop to the application process. The shortest repair path is to prove four values agree: <strong>the port the process actually listens on, the address it binds to, Coolify’s exposed port, and Traefik’s selected backend</strong>.</p>
+
+    <p>This guide is for Git-based Coolify applications and Docker Compose services behind Coolify’s proxy. It deliberately does not “fix” the problem by opening an arbitrary VPS port. Traefik normally reaches the container over a Docker network; publishing the application to the whole internet is neither required nor a substitute for correct internal routing.</p>
+
+    <blockquote>A running container proves only that its main process has not exited. It does not prove that a web server is listening where Coolify expects or that another container can reach it.</blockquote>
+
+    <h2>Classify the response before changing anything</h2>
+    <table>
+      <thead><tr><th>Observed result</th><th>Likely boundary</th></tr></thead>
+      <tbody>
+        <tr><td>Coolify deployment failed before startup</td><td>Build or deployment problem; read that deployment’s logs first</td></tr>
+        <tr><td>Domain returns <code>404</code></td><td>Hostname/router rule may not match, or the app itself returned 404</td></tr>
+        <tr><td>Domain returns <code>502</code></td><td>Proxy has a route but its upstream connection or response failed</td></tr>
+        <tr><td>Domain returns <code>503 no available server</code></td><td>No eligible backend, often due to health or router/service configuration</td></tr>
+        <tr><td>Domain returns <code>504</code></td><td>Upstream accepted too slowly or failed to respond before the proxy timeout</td></tr>
+        <tr><td>Direct container request works, domain fails</td><td>Docker network, selected port, health eligibility, or Traefik configuration</td></tr>
+      </tbody>
+    </table>
+
+    <p>Capture response headers and the recent application log window. If Cloudflare fronts the domain, note whether the error page identifies Cloudflare or the origin, but do not assume Cloudflare caused it. A proxy chain can have more than one gateway.</p>
+
+    <pre><code>curl --silent --show-error --dump-header - \
+  --output /dev/null https://app.example.com/
+
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Networks}}'
+docker logs --since 10m APP_CONTAINER</code></pre>
+
+    <p>Use the real hostname and container name only in your private terminal. Do not share complete inspect output or environments publicly; they can contain repository details, credentials, and internal service names.</p>
+
+    <h2>1. Prove a web process is listening inside the container</h2>
+    <p>Application logs often print the intended port. Treat that as a clue, then test it. Use a client already present in the image and target the container’s own loopback address:</p>
+
+    <pre><code>docker exec APP_CONTAINER sh -lc \
+  'wget -qSO- http://127.0.0.1:3000/health 2&gt;&amp;1 || true'
+
+# If the image includes curl instead:
+docker exec APP_CONTAINER sh -lc \
+  'curl --silent --show-error --include http://127.0.0.1:3000/health'</code></pre>
+
+    <p>Replace <code>3000</code> and <code>/health</code> with the application’s real internal port and endpoint. A connection refusal means nothing is listening there yet. A <code>404</code> proves the HTTP server answered, so the port is probably right and only the path may be wrong. A <code>500</code> proves the server answered but the application has an internal fault. If neither HTTP client exists, inspect the startup log and process configuration rather than installing ad hoc tools into the running production container; make diagnostic tooling an intentional image choice.</p>
+
+    <h2>2. Distinguish loopback from all-interface binding</h2>
+    <p>An application bound to <code>127.0.0.1:3000</code> can answer a command executed inside its own container, while Traefik receives a refusal when it connects to the container’s Docker-network address. For normal reverse-proxy routing, configure the server to listen on <code>0.0.0.0</code> at the internal port. This exposes it to the container’s network interfaces, not automatically to the public internet.</p>
+
+    <pre><code># Framework-neutral intention:
+HOST=0.0.0.0
+PORT=3000
+
+# Example Node server:
+server.listen(process.env.PORT || 3000, '0.0.0.0')</code></pre>
+
+    <p>Do not set an application’s listen address to the VPS’s public address, the domain name, or another container’s address. Also do not confuse IPv6-only listening with an IPv4 Docker-network connection. Restart or redeploy after changing the bind setting, then repeat the in-container request.</p>
+
+    <h2>3. Set Coolify’s exposed port to the container port</h2>
+    <p>For a Coolify Application, the <strong>Ports Exposes</strong> value must match the port inside the container—<code>3000</code> in this example. It is not the public HTTPS port <code>443</code>, not a temporary host port such as <code>18080</code>, and not necessarily the port used by a developer’s local machine.</p>
+
+    <p>Traefik’s Docker documentation explains the underlying rule: when automatic port detection is unsuitable, the service’s load-balancer port tells Traefik which container port to connect to. A wrong value sends a perfectly valid public request to a socket where no process is listening, producing the familiar gateway failure.</p>
+
+    <p>If the application exposes several ports, make the intended HTTP port explicit. Administrative, metrics, debug, and database ports should not be accidentally selected as the public web backend. Re-fetch the application settings after saving and redeploy once; do not create repeated deployments while settings are still changing.</p>
+
+    <h2>4. Do not use host publishing as a proxy repair</h2>
+    <p>Docker distinguishes container networking from host port publishing. In Compose, this publishes a host port:</p>
+
+    <pre><code>services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"</code></pre>
+
+    <p>Coolify’s official 502 guide recommends removing incorrect host mappings for applications so its proxy can route correctly. In the normal setup, Traefik and the application share a Docker network and Traefik connects directly to the container port. A host mapping can cause conflicts, expose an unintended service, or encourage testing a path that the production proxy never uses.</p>
+
+    <p>If a Compose service genuinely needs a host-published port, bind it deliberately and document why. Docker warns that published ports are externally reachable by default; binding to <code>127.0.0.1</code> limits host access, but that is still a separate path from container-to-container proxy routing.</p>
+
+    <h2>5. Prove the proxy can reach the same socket</h2>
+    <p>Once the request succeeds inside the application container, test from a temporary diagnostic container attached to the same Docker network. This separates application readiness from cross-container reachability:</p>
+
+    <pre><code>docker run --rm --network COOLIFY_NETWORK curlimages/curl:latest \
+  --fail --silent --show-error http://APP_CONTAINER:3000/health</code></pre>
+
+    <p>Use the exact application container name and one of its networks as shown by <code>docker inspect</code>. Do not attach containers to database-only networks casually. Remove the temporary container automatically with <code>--rm</code>. Interpret the result precisely:</p>
+
+    <ul>
+      <li><strong>In-container works; same-network fails:</strong> check the <code>0.0.0.0</code> bind, shared network, container name and network policy.</li>
+      <li><strong>Both work; domain is 502:</strong> inspect Coolify’s port/domain settings and the effective Traefik service labels.</li>
+      <li><strong>Both fail:</strong> return to application startup, port and dependency logs.</li>
+      <li><strong>Health works; root fails:</strong> the application route or middleware may be failing even though readiness is good.</li>
+    </ul>
+
+    <h2>6. Check health without confusing 502 and 503</h2>
+    <p>Health checks determine whether a backend is eligible to receive traffic. Inspect the effective Docker health state and recent probe output:</p>
+
+    <pre><code>docker inspect APP_CONTAINER \
+  --format '{{json .State.Health}}'
+
+docker inspect APP_CONTAINER \
+  --format '{{json .Config.Healthcheck}}'</code></pre>
+
+    <p>The probe must use the internal port and a real, unauthenticated path. If it reports <code>curl: not found</code> or <code>wget: not found</code>, repair the final runtime image using the dedicated <a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Coolify health-check executable guide</a>. If it succeeds inside a loopback-bound app while Traefik still cannot connect, the health check is producing a false sense of readiness: fix the listen address.</p>
+
+    <h2>7. Inspect effective Traefik routing last</h2>
+    <p>After the process, port, bind and network tests pass, inspect the application container’s proxy labels. Focus on the router’s hostname rule, named service, selected load-balancer port, and network. Avoid editing generated labels directly on a running container because a Coolify redeploy will replace them.</p>
+
+    <pre><code>docker inspect APP_CONTAINER \
+  --format '{{json .Config.Labels}}'
+
+# Keep this local and redact before sharing.</code></pre>
+
+    <p>Repair the source setting in Coolify or the Compose file, then redeploy. If multiple replicas or old containers exist, check each backend; one stale replica can make the failure intermittent. A direct request to the right container does not prove every backend in the service is correct.</p>
+
+    <h2>Framework defaults that commonly cause the fault</h2>
+    <table>
+      <thead><tr><th>Application behaviour</th><th>What to verify</th></tr></thead>
+      <tbody>
+        <tr><td>Development server defaults to localhost</td><td>Production command explicitly binds <code>0.0.0.0</code></td></tr>
+        <tr><td>Platform injects <code>PORT</code></td><td>Process reads that variable and Coolify exposes the same value</td></tr>
+        <tr><td>Dockerfile says <code>EXPOSE 8080</code>, process uses 3000</td><td>Make image metadata, runtime command and Coolify setting agree</td></tr>
+        <tr><td>Multi-service Compose stack</td><td>Domain is attached to the web service, not the worker or database</td></tr>
+        <tr><td>Server starts before a dependency</td><td>Logs and readiness distinguish temporary startup from permanent failure</td></tr>
+        <tr><td>App trusts proxy headers incorrectly</td><td>Look for redirect loops or request rejection after connectivity succeeds</td></tr>
+      </tbody>
+    </table>
+
+    <p><code>EXPOSE</code> documents an intended container port but does not make the process listen and does not publish the port to the host. Likewise, adding a Coolify port setting cannot repair a process that exited or chose another port. Verify runtime behaviour, not declarations alone.</p>
+
+    <h2>Redeploy once and verify every hop</h2>
+    <ol>
+      <li>Commit the bind-address, runtime-port, Dockerfile, Compose, or configuration repair to the source branch.</li>
+      <li>Trigger one Coolify deployment and follow its returned deployment identifier to a terminal state.</li>
+      <li>Confirm the replacement container is running and healthy.</li>
+      <li>Repeat the in-container and same-network requests.</li>
+      <li>Fetch the public HTTPS domain and assert unique expected content—not only status <code>200</code>.</li>
+      <li>Check an important API or asset route and an intentionally nonexistent path.</li>
+      <li>Retain the previous known-good release until acceptance checks pass.</li>
+    </ol>
+
+    <pre><code>curl --fail --silent --show-error https://app.example.com/ | \
+  grep -F 'EXPECTED APPLICATION HEADING'
+
+curl --silent --output /dev/null --write-out '%{http_code}\n' \
+  https://app.example.com/path-that-must-not-exist</code></pre>
+
+    <p>A SPA fallback can return its home page with <code>200</code> for a nonexistent URL, and a CDN can return an old successful page while the origin is still broken. Match a heading, release marker, API field, or other unique content from the intended deployment.</p>
+
+    <h2>Compact 502 acceptance checklist</h2>
+    <ol>
+      <li>The application process stays running and its recent logs are understood.</li>
+      <li>An HTTP request succeeds on the actual internal port inside the container.</li>
+      <li>The server binds to <code>0.0.0.0</code>, not only container-local loopback.</li>
+      <li>Coolify’s exposed port matches the process’s internal port.</li>
+      <li>No unnecessary public host-port mapping was added as a workaround.</li>
+      <li>A request from the shared Docker network reaches the application.</li>
+      <li>The health probe uses the same intended port and returns success.</li>
+      <li>The effective router selects the intended service, network and load-balancer port.</li>
+      <li>One new deployment reaches a terminal successful state.</li>
+      <li>The public domain serves unique content from the intended release.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/troubleshoot/applications/bad-gateway" rel="noopener noreferrer">Bad Gateway troubleshooting guide</a> identifies incorrect exposed ports, host mapping, localhost-only binding, domain ports and container health as primary checks. Traefik’s <a href="https://doc.traefik.io/traefik/reference/routing-configuration/other-providers/docker/" rel="noopener noreferrer">Docker routing reference</a> explains explicit load-balancer server ports and wrong-port 502 errors. Docker’s <a href="https://docs.docker.com/engine/network/" rel="noopener noreferrer">networking documentation</a> explains container networks and the separate security implications of published host ports.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify diagnostics</h2>
+      <ul>
+        <li><a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Coolify health check fails: curl or wget not found</a><span>Repair a container-side readiness probe before relying on its health state.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate routing trouble from a deployment that never reached startup.</span></li>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Trace the intended commit through build, replacement, route and cache.</span></li>
+        <li><a href="/posts/cloudflare-526-coolify-lets-encrypt.html">Fix Cloudflare error 526 on a Coolify app</a><span>Use the TLS runbook when the failing boundary is Cloudflare-to-origin certificate validation.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
