@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Environment Variables Not Updating? Build vs Runtime Fix: https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html
+  - Practical configuration-layer diagnosis covering Coolify build/runtime flags, source-code consumers, Docker ARG and ENV scope, frozen frontend bundles, Compose and env-file overrides, controlled rebuilds, private-value hygiene, and release-level verification.
 |- Coolify 502 Bad Gateway? Fix the Port and Listen Address: https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html
   - Evidence-led proxy troubleshooting covering the live application process, internal container port, all-interface binding, Coolify Ports Exposes, unnecessary host mappings, same-network requests, Docker health, Traefik service selection, controlled redeployment, and unique live-content verification.
 |- Coolify Deployment Stuck Queued or In Progress? Diagnose It Safely: https://adrianmarikar.com/posts/coolify-deployment-stuck-queued-in-progress.html

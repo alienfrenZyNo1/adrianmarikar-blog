@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Environment Variables Not Updating? Build vs Runtime Fix</title>
+      <link>https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html</guid>
+      <pubDate>Mon, 07 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to tracing stale Coolify environment variables through build-time flags, runtime injection, Docker ARG and ENV, frontend bundles, overrides, rebuilds, and safe verification.</description>
+    </item>
+    <item>
       <title>Coolify 502 Bad Gateway? Fix the Port and Listen Address</title>
       <link>https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html</guid>

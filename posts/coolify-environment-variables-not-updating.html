@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Environment Variables Not Updating? Build vs Runtime Fix — Adrian Marikar</title>
+  <meta name="description" content="Fix stale Coolify environment variables by identifying build-time and runtime consumers, setting the right flags, rebuilding immutable frontend assets, and verifying safely.">
+  <meta name="keywords" content="Coolify environment variables not updating, Coolify build variable, Coolify runtime variable, Next.js environment variables Coolify, Docker build ARG ENV">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Environment Variables Not Updating? Build vs Runtime Fix">
+  <meta property="og:description" content="A practical way to trace a stale setting through Coolify, the image build, the running container, server code, and browser bundles without exposing its value.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html">
+  <meta property="article:published_time" content="2026-09-07T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-07T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Environment Variables Not Updating? Build vs Runtime Fix">
+  <meta name="twitter:description" content="Decide whether a stale Coolify setting belongs at build time, runtime, or both—then rebuild and verify the correct layer.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify Environment Variables Not Updating? Build vs Runtime Fix","description":"Fix stale Coolify environment variables by identifying build-time and runtime consumers, setting the right flags, rebuilding immutable frontend assets, and verifying safely.","url":"https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html"},"datePublished":"2026-09-07T10:00:00Z","dateModified":"2026-09-07T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","environment variables","build time","runtime","Docker","Next.js","static frontend","deployment debugging"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / configuration layers 055</p>
+      <h1>Coolify environment variables not updating? Separate build time from runtime</h1>
+    </header>
+
+    <p>You change an environment variable in Coolify, redeploy the application, and the old value remains on the page. The deployment is green. The replacement container is running. Another server-side setting may have changed correctly, which makes the stale one even more confusing.</p>
+
+    <p>The usual cause is not that environment variables are random. It is that the value crossed a boundary you have not identified. It may have been read while building the Docker image, injected when the container started, copied into a browser bundle, overridden by a file, or cached after a successful release. The fix is to classify the consumer first, then rebuild or restart the layer that actually owns the value.</p>
+
+    <blockquote>A runtime restart cannot rewrite JavaScript or HTML that was generated at build time. A rebuild cannot help if the new container is still receiving an overridden runtime value.</blockquote>
+
+    <h2>The three places a value can live</h2>
+    <table>
+      <thead><tr><th>Layer</th><th>Typical consumers</th><th>What a change requires</th></tr></thead>
+      <tbody>
+        <tr><td>Build time</td><td>Static-site generator, bundler, Dockerfile <code>RUN</code>, compiled assets</td><td>A new image build with the variable available to that build</td></tr>
+        <tr><td>Runtime</td><td>Node, Python, PHP or another server process reading its environment</td><td>A replacement or restarted container with the new variable</td></tr>
+        <tr><td>Browser/runtime configuration</td><td>Client code fetching a config endpoint or generated <code>config.js</code></td><td>A changed response or startup-generated file, plus cache-aware verification</td></tr>
+      </tbody>
+    </table>
+
+    <p>A variable can be needed in more than one layer. For example, a server-rendered app may read a private API origin at runtime while its build system needs a public analytics hostname to create client assets. Coolify’s environment-variable settings therefore expose independent <strong>Build Variable</strong> and <strong>Runtime Variable</strong> controls. Its documentation says both are enabled by default for newly created variables, but imported, edited or older application configurations still deserve inspection rather than assumption.</p>
+
+    <h2>1. Find where the application reads the variable</h2>
+    <p>Start in source. Search for the exact variable name, including Dockerfiles, Compose files, framework configuration, startup scripts and generated-config templates:</p>
+
+    <pre><code>git grep -n 'PUBLIC_API_ORIGIN'
+git grep -nE 'ARG |ENV |environment:|env_file:|NEXT_PUBLIC_|VITE_|PUBLIC_' \
+  -- Dockerfile* '*compose*.yml' '*compose*.yaml' '*.js' '*.ts' '*.mjs'</code></pre>
+
+    <p>Do not search for or print a secret’s value. The variable name and the code path normally provide enough evidence. Classify each read:</p>
+
+    <ul>
+      <li>If it runs during <code>npm run build</code>, <code>next build</code>, <code>vite build</code>, an Astro build, or a Dockerfile <code>RUN</code> step, it is a build-time input.</li>
+      <li>If application server code reads <code>process.env</code> while handling a request or starting the server, it is a runtime input.</li>
+      <li>If source uses a client-exposure prefix such as <code>NEXT_PUBLIC_</code> or <code>VITE_</code>, expect the value to be compiled into public browser assets unless the framework documents a separate runtime-config mechanism.</li>
+      <li>If Compose declares a literal under <code>environment:</code> or loads an <code>env_file</code>, that source may override or bypass what you edited in the application UI.</li>
+    </ul>
+
+    <p>Next.js documents the important frozen-value behaviour directly: <code>NEXT_PUBLIC_</code> variables are inlined into the browser bundle during <code>next build</code>. Once that image exists, changing the container environment does not rewrite the bundle. Other frontend bundlers use different prefixes, but the same principle often applies: public client configuration becomes build output.</p>
+
+    <h2>2. Check the Coolify flags, scope and exact name</h2>
+    <p>Open the application’s Environment Variables view and inspect the variable without revealing its value. Confirm:</p>
+
+    <ol>
+      <li>The name matches source exactly, including case.</li>
+      <li>The variable belongs to the intended application, environment and destination server.</li>
+      <li><strong>Build Variable</strong> is enabled if a build command reads it.</li>
+      <li><strong>Runtime Variable</strong> is enabled if the running process reads it.</li>
+      <li>The value is not accidentally defined twice at different scopes.</li>
+      <li>A preview or pull-request environment is not being confused with production.</li>
+    </ol>
+
+    <p>Save the setting before deploying. If automation updates Coolify through its API, write the environment variable through Coolify’s environment-variable endpoint rather than modifying encrypted database fields or generated container definitions directly. Then fetch the application configuration again and compare the variable’s name and flags—not its secret value—to prove the change reached the control plane.</p>
+
+    <h2>3. Understand Docker <code>ARG</code> and <code>ENV</code></h2>
+    <p>Docker’s build-variable documentation distinguishes build arguments from environment variables. An <code>ARG</code> is available to Dockerfile instructions in the build stage where it is declared. An <code>ENV</code> sets an environment variable that can persist in the image and its containers. Neither is a safe secret store.</p>
+
+    <pre><code># Public build configuration only—not a secret
+ARG PUBLIC_API_ORIGIN
+ENV PUBLIC_API_ORIGIN=$PUBLIC_API_ORIGIN
+RUN npm run build</code></pre>
+
+    <p>This pattern can make a public value available to the build, but do not copy API tokens, database passwords or private keys into an image layer or browser bundle. Docker explicitly warns that build arguments and environment variables are inappropriate for build secrets because they can persist in image metadata or layers. Use supported secret mounts for private build credentials, and keep browser-exposed variables genuinely public.</p>
+
+    <p>Multi-stage builds add another trap: an <code>ARG</code> declared in one stage is not automatically a normal runtime variable in the final stage. Declare and consume inputs deliberately in the stage that needs them. Then remember that a static frontend copied from the build stage contains the result of the build, not a live connection to future container variables.</p>
+
+    <h2>4. Choose rebuild, restart, or both</h2>
+    <table>
+      <thead><tr><th>Evidence</th><th>Correct action</th></tr></thead>
+      <tbody>
+        <tr><td>Only server-side runtime code reads the variable</td><td>Replace/restart the container; a source rebuild may be unnecessary</td></tr>
+        <tr><td>Build command or frontend bundler reads it</td><td>Run a new image build with Build Variable enabled</td></tr>
+        <tr><td>Both build and server code read it</td><td>Enable both flags and deploy a newly built replacement container</td></tr>
+        <tr><td>Startup script generates public config</td><td>Replace the container and verify the generated config response or file</td></tr>
+        <tr><td>Value comes from Compose or an env file</td><td>Repair that source of truth, commit when appropriate, then redeploy</td></tr>
+      </tbody>
+    </table>
+
+    <p>For a build-time value, use a forced rebuild once if an ordinary deploy can legitimately reuse a previously built image or cached build result. This is diagnostic, not a reason to disable caching forever. The deployment log should show the expected build command running from the intended Git commit. Follow the specific deployment identifier until it reaches a terminal successful state.</p>
+
+    <p>If the deployment fails, read that deployment’s log. Do not keep clicking redeploy: a missing build variable may appear as an explicit validation error, while some tools quietly replace it with an empty string. Either outcome is more useful than a queue full of identical attempts. For deployment-state troubleshooting, use the <a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify queued or in-progress deployment runbook</a>.</p>
+
+    <h2>5. Check for higher-precedence configuration</h2>
+    <p>If Coolify shows the expected flags and a rebuild still produces the old behaviour, identify every competing source:</p>
+
+    <ul>
+      <li>repository files such as <code>.env.production</code>,</li>
+      <li>a Compose <code>environment:</code> entry or <code>env_file</code>,</li>
+      <li>a Dockerfile <code>ENV</code> default,</li>
+      <li>a framework configuration file,</li>
+      <li>a startup script that writes config from another variable,</li>
+      <li>an external secret manager or mounted configuration file,</li>
+      <li>a proxy, CDN or browser serving an older generated asset.</li>
+    </ul>
+
+    <p>Do not commit a real production <code>.env</code> file just to win a precedence fight. Remove an obsolete public default or align the deployment configuration instead. Repository history is permanent enough that deleting a secret in the next commit is not an adequate repair; rotate anything accidentally committed.</p>
+
+    <h2>6. Verify presence without leaking the value</h2>
+    <p>For a non-sensitive public value, you can inspect the rendered output directly. For anything private, verify only whether the variable exists or compare a one-way digest locally. Avoid pasting complete <code>docker inspect</code> output into tickets because container environments commonly hold credentials.</p>
+
+    <pre><code># Presence only; does not print the value
+
+docker exec APP_CONTAINER sh -lc \
+  'test -n "$PRIVATE_SERVICE_TOKEN" &amp;&amp; echo present || echo missing'
+
+# Names only from the configured container environment
+
+docker inspect APP_CONTAINER \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' | \
+  cut -d= -f1 | sort</code></pre>
+
+    <p>Even a digest should remain private when the input has low entropy. The safest production acceptance check is usually behavioural: call a narrow endpoint that depends on the setting and confirm the expected non-secret result. Do not add a debug route that dumps the environment.</p>
+
+    <h2>7. Prove which release the public route serves</h2>
+    <p>A correct container can exist while the domain still reaches an older replica, old route or cached asset. Verify the source commit or harmless release marker in the running application, then fetch unique public content with cache awareness:</p>
+
+    <pre><code>curl --fail --silent --show-error \
+  'https://app.example.com/settings-check?v=RELEASE_ID' | \
+  grep -F 'EXPECTED PUBLIC LABEL'
+
+curl --silent --show-error --head \
+  'https://app.example.com/assets/app.RELEASE_ID.js'</code></pre>
+
+    <p>Use a real fingerprinted asset name from the generated manifest rather than inventing one. If HTML points to a new bundle but a browser displays old behaviour, test the bundle URL directly and inspect cache headers. If the HTML itself is old, return to deployment, routing and CDN checks. The broader <a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy-not-updating checklist</a> traces that complete path.</p>
+
+    <h2>A safer pattern for one image across environments</h2>
+    <p>Inlining public configuration at build time means the image is tied to that environment. Promoting the exact same image from staging to production will also promote the values baked into its client bundle. If one immutable image must run in several environments, move environment-specific public configuration to runtime deliberately—for example, a server-rendered response, a small startup-generated config file, or an authenticated server endpoint.</p>
+
+    <p>That design has trade-offs. A public config file must not contain secrets, needs an explicit cache policy, and must load before client code that depends on it. Server-only values should remain server-only. The important part is not which pattern you choose; it is that the source, lifecycle and exposure of each value are documented.</p>
+
+    <h2>Compact acceptance checklist</h2>
+    <ol>
+      <li>The exact variable name and every source-code read have been identified.</li>
+      <li>Each read is classified as build-time, runtime or browser/runtime configuration.</li>
+      <li>The variable is attached to the intended Coolify application and environment.</li>
+      <li>Build Variable and Runtime Variable flags match the actual consumers.</li>
+      <li>No Compose, env-file, Dockerfile or framework default unexpectedly overrides it.</li>
+      <li>No private value is copied into a Docker layer, log, client bundle or public report.</li>
+      <li>A new build runs when generated assets depend on the value.</li>
+      <li>The replacement container receives required runtime variables.</li>
+      <li>The intended commit/release is the one behind the public domain.</li>
+      <li>Unique public behaviour or content proves the corrected configuration is live.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s <a href="https://coolify.io/docs/knowledge-base/environment-variables" rel="noopener noreferrer">environment variables documentation</a> describes independent build-time and runtime flags. Docker’s <a href="https://docs.docker.com/build/building/variables/" rel="noopener noreferrer">build variables guide</a> explains <code>ARG</code>, <code>ENV</code>, scope and why neither should carry build secrets. Next.js’s <a href="https://nextjs.org/docs/pages/guides/environment-variables" rel="noopener noreferrer">environment-variable guide</a> documents that <code>NEXT_PUBLIC_</code> values are inlined during the build and frozen afterward.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related deployment diagnostics</h2>
+      <ul>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Trace a stale release across Git, build, container replacement, routing and caches.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Diagnose the queue and build before changing application configuration again.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>Verify generated pages, Docker contents, discovery files and live production output.</span></li>
+        <li><a href="/posts/coolify-502-bad-gateway-wrong-port-localhost.html">Coolify 502 Bad Gateway: port and listen address</a><span>Use the routing runbook when the replacement container cannot be reached at all.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
