@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Private GitHub Repo: Fix Permission Denied (Publickey): https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html
+  - Least-privilege private-repository clone recovery covering Coolify source modes, GitHub SSH URLs, matching deploy-key pairs, repository scope, read-only access, host-key trust, branch diagnosis, controlled key rotation, and unique live-release verification.
 |- Coolify Environment Variables Not Updating? Build vs Runtime Fix: https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html
   - Practical configuration-layer diagnosis covering Coolify build/runtime flags, source-code consumers, Docker ARG and ENV scope, frozen frontend bundles, Compose and env-file overrides, controlled rebuilds, private-value hygiene, and release-level verification.
 |- Coolify 502 Bad Gateway? Fix the Port and Listen Address: https://adrianmarikar.com/posts/coolify-502-bad-gateway-wrong-port-localhost.html

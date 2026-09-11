@@ -222,7 +222,7 @@ git push -u origin main</code></pre>
         <li>Use a GitHub App integration if you want smoother long-term repo management.</li>
       </ul>
 
-      <p>I like deploy keys for small private projects because they are narrow: one key, one repo, read-only.</p>
+      <p>I like deploy keys for small private projects because they are narrow: one key, one repo, read-only. If that source clone later fails, use the <a href="/posts/coolify-private-github-repository-permission-denied-publickey.html">Coolify deploy-key and <code>Permission denied (publickey)</code> checklist</a> rather than making the repository public or embedding a token in its URL.</p>
 
       <h2>Step 9 — Make apps deployable with a Dockerfile</h2>
       <p>The agent should produce apps that Coolify can deploy predictably. A simple static site can be as small as:</p>

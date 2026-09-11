@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Private GitHub Repo: Fix Permission Denied (Publickey) — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify private GitHub repository clone that fails with Permission denied (publickey) by checking the source type, SSH URL, deploy-key pair, repository scope, branch, and logs.">
+  <meta name="keywords" content="Coolify permission denied publickey, Coolify private GitHub repository, Coolify deploy key, GitHub repository not found Coolify, Coolify git clone failed">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Private GitHub Repo: Fix Permission Denied (Publickey)">
+  <meta property="og:description" content="Trace a failed private-repository clone through Coolify's source mode, the GitHub SSH URL, one matching deploy-key pair, repository scope, host trust, and branch access.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html">
+  <meta property="article:published_time" content="2026-09-11T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-11T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Private GitHub Repo: Fix Permission Denied (Publickey)">
+  <meta name="twitter:description" content="A least-privilege checklist for repairing Coolify deploy-key authentication without making the repository public or leaking credentials.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify Private GitHub Repo: Fix Permission Denied (Publickey)","description":"Fix a Coolify private GitHub repository clone that fails with Permission denied (publickey) by checking the source type, SSH URL, deploy-key pair, repository scope, branch, and logs.","url":"https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html"},"datePublished":"2026-09-11T10:00:00Z","dateModified":"2026-09-11T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","GitHub","private repository","deploy key","SSH","Permission denied (publickey)","deployment debugging"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary>
+      <span>Menu</span>
+      <span class="nav-icon" aria-hidden="true"></span>
+    </summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / repository access 056</p>
+      <h1>Coolify private GitHub repo: fix “Permission denied (publickey)”</h1>
+    </header>
+
+    <p>A Coolify deployment can fail before the Docker build even starts. The log ends with <code>git@github.com: Permission denied (publickey)</code>, <code>Could not read from remote repository</code>, or <code>Repository not found</code>. Rebuilding the image will not help because Coolify has not obtained the source.</p>
+
+    <p>The reliable fix is to identify the authentication path and repair that path only. For a private GitHub repository, Coolify normally uses either a GitHub App or an SSH deploy key. A deploy key is a good least-privilege choice for one repository: GitHub grants the public half access to that repository, while Coolify stores the matching private half. The repository can remain private and the key can remain read-only.</p>
+
+    <blockquote>Do not make the repository public, paste a personal access token into the clone URL, or turn off SSH host verification to make one deployment pass. Match one source mode, URL and credential pair instead.</blockquote>
+
+    <h2>First, classify the exact Git failure</h2>
+    <p>Open the failed deployment and find the first Git error, not the final generic “deployment failed” line. These messages point to different boundaries:</p>
+
+    <table>
+      <thead><tr><th>Log message</th><th>Most likely boundary</th></tr></thead>
+      <tbody>
+        <tr><td><code>Permission denied (publickey)</code></td><td>GitHub did not accept the SSH key presented by Coolify</td></tr>
+        <tr><td><code>Repository not found</code></td><td>Wrong owner/repository path, deleted repository, or authenticated identity lacks access</td></tr>
+        <tr><td><code>Host key verification failed</code></td><td>The Git host identity is missing, changed or not trusted in the clone environment</td></tr>
+        <tr><td><code>Remote branch ... not found</code></td><td>Authentication may work, but the configured branch name does not exist</td></tr>
+        <tr><td><code>Could not read Username</code> on an HTTPS URL</td><td>A private repository is being cloned through an unauthenticated HTTPS path</td></tr>
+      </tbody>
+    </table>
+
+    <p>Keep the complete failed deployment identifier and timestamp. If several deployments are queued, cancel duplicates and diagnose one. The <a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment queue checklist</a> covers the separate case where the clone has not started yet.</p>
+
+    <h2>1. Confirm which Coolify source type the app uses</h2>
+    <p>Before rotating anything, inspect the application’s source configuration. A private repository connected through a GitHub App and one connected through a deploy key are different authentication systems:</p>
+
+    <ul>
+      <li><strong>GitHub App:</strong> Coolify uses the installed app and its repository permissions. Check that the installation still includes this repository.</li>
+      <li><strong>Deploy key:</strong> Coolify uses an SSH private key selected for the application. GitHub must hold the matching public key on this exact repository.</li>
+      <li><strong>Public repository:</strong> no private credential is required. Do not select this route for a private repository and then hide credentials in the URL.</li>
+    </ul>
+
+    <p>Do not create both a GitHub App connection and a deploy key as a reflex. More credentials make the failure harder to reason about. Repair the configured method or deliberately migrate to the other one.</p>
+
+    <h2>2. Use the SSH clone URL for a deploy-key application</h2>
+    <p>Coolify’s deploy-key documentation explicitly requires the provider’s SSH clone URL for the <strong>Private Repository (with deploy key)</strong> source. For GitHub, the safe generic shape is:</p>
+
+    <pre><code>git@github.com:OWNER/REPOSITORY.git</code></pre>
+
+    <p>Check the owner and repository spelling, including a recent organization transfer or rename. Do not use an address shaped like <code>https://TOKEN@github.com/...</code>. Embedded credentials can leak through configuration screens, process arguments, deployment output or copied support logs.</p>
+
+    <p>A repository rename may be redirected for some Git operations, but production configuration should use the current canonical path. Correct it in Coolify, save it, and verify that a new deployment log shows the intended URL without exposing any credential.</p>
+
+    <h2>3. Prove the public and private halves belong together</h2>
+    <p>In Coolify, open <strong>Keys &amp; Tokens → Private Keys</strong> and identify the private key selected by the application. In GitHub, open the repository’s <strong>Settings → Deploy keys</strong> and identify the corresponding public key. Compare their displayed fingerprints where available; never copy the private material into a terminal transcript, issue, chat or public article.</p>
+
+    <p>The common failure is simple drift:</p>
+    <ul>
+      <li>a new key was generated in Coolify but its public half was never added to GitHub;</li>
+      <li>the GitHub deploy key was deleted during cleanup;</li>
+      <li>the application still selects an older Coolify key;</li>
+      <li>the public key was added to a different repository;</li>
+      <li>a backup restored one side of the pair but not the other.</li>
+    </ul>
+
+    <p>If the match cannot be established, replace the pair rather than guessing. Generate a fresh key in Coolify, add only its public half to the intended GitHub repository, keep write access disabled, select the fresh private key on the application, and run one deployment. Retain the old pair only until the new clone succeeds; then remove the stale key from both systems.</p>
+
+    <h2>4. Keep the deploy key read-only and repository-specific</h2>
+    <p>GitHub deploy keys attach directly to a single repository. GitHub says they are read-only by default, and Coolify only needs clone and fetch access for a source deployment. Leave <strong>Allow write access</strong> off unless a separately justified workflow truly writes to the repository—which ordinary deployment does not.</p>
+
+    <p>Use a different deploy key for each private repository. That limits the damage if one credential is exposed and makes ownership clear during rotation. If one application needs code from several private repositories through Git submodules or private dependencies, its main repository key does not automatically grant access to all of them. Give each dependency an intentional authentication path, or use a narrowly installed GitHub App when repository-by-repository key management becomes cumbersome.</p>
+
+    <h2>5. Separate repository authentication from server SSH</h2>
+    <p>The same phrase—<code>Permission denied (publickey)</code>—can also appear when Coolify cannot SSH into its destination server. Read the host in the error:</p>
+
+    <ul>
+      <li><code>git@github.com</code> points to GitHub repository authentication.</li>
+      <li>A deployment-server user and host points to Coolify’s server connection instead.</li>
+    </ul>
+
+    <p>Changing a GitHub deploy key cannot repair Coolify-to-server SSH, and changing the server key cannot repair a GitHub clone. This distinction prevents a repository incident from turning into an infrastructure access incident.</p>
+
+    <h2>6. Handle host-key failures without disabling verification</h2>
+    <p>If the error is <code>Host key verification failed</code>, the client did not establish a trusted identity for the Git server. That is not the same as GitHub rejecting your deploy key. Do not add <code>StrictHostKeyChecking=no</code> or accept an unexplained changed host key.</p>
+
+    <p>For GitHub, compare the observed host-key fingerprint with GitHub’s published SSH key fingerprints. Then repair the trusted-host entry through the supported Coolify/server mechanism. A changed key can be a legitimate rotation, a stale local record, a DNS/routing mistake, or an interception attempt; verification is what distinguishes them.</p>
+
+    <h2>7. Check the branch only after authentication succeeds</h2>
+    <p>Once the repository can be read, the deployment can still fail if Coolify requests a branch that no longer exists. Compare the application’s configured branch with the repository’s branches and default branch. Names are case-sensitive. Common causes include a move from <code>master</code> to <code>main</code>, a deleted release branch, or an application created from a temporary feature branch.</p>
+
+    <p>Do not switch branches blindly on a stateful or manually hot-fixed application. First compare the configured branch, intended commit and currently running release. The <a href="/posts/coolify-github-deploy-not-updating.html">Coolify GitHub deploy-not-updating guide</a> explains how to trace the expected commit through the build and public route.</p>
+
+    <h2>8. Run one controlled deployment and verify the release</h2>
+    <p>After correcting the source, key and branch, trigger one deployment. The log should prove this sequence:</p>
+
+    <ol>
+      <li>the SSH clone authenticates without prompting;</li>
+      <li>the intended owner/repository is fetched;</li>
+      <li>the configured branch resolves to the intended commit;</li>
+      <li>the Docker or buildpack build starts;</li>
+      <li>the replacement container becomes healthy;</li>
+      <li>the public route serves unique content from that release.</li>
+    </ol>
+
+    <p>Do not stop at a green status or HTTP <code>200</code>. An old container may still be serving, and a single-page application may return its homepage for a missing path. Fetch a release-specific endpoint, heading, asset name or harmless commit marker that only the intended version contains:</p>
+
+    <pre><code>curl --fail --silent --show-error \
+  'https://app.example.com/release-check?v=EXPECTED_RELEASE' | \
+  grep -F 'EXPECTED UNIQUE CONTENT'</code></pre>
+
+    <p>If clone succeeds but no deployment starts after the next push, repository access is fixed; automatic deployment is a separate webhook or GitHub App concern. A deploy key lets Coolify read source. It does not, by itself, notify Coolify that a commit was pushed.</p>
+
+    <h2>Safe recovery checklist</h2>
+    <ol>
+      <li>Capture the first Git error and identify the host it names.</li>
+      <li>Confirm whether the application uses a GitHub App or deploy key.</li>
+      <li>For deploy-key mode, use <code>git@github.com:OWNER/REPOSITORY.git</code>.</li>
+      <li>Confirm the repository owner and name are current.</li>
+      <li>Match the Coolify private key to the public deploy key on that exact repository.</li>
+      <li>Replace an uncertain pair; never expose the private half while testing.</li>
+      <li>Leave write access disabled and use one key per repository.</li>
+      <li>Verify a host-key failure against the provider’s published fingerprints.</li>
+      <li>Check the configured branch after repository authentication succeeds.</li>
+      <li>Deploy once, follow its exact log, and prove unique live release content.</li>
+      <li>Remove stale credentials after the replacement works.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s <a href="https://coolify.io/docs/applications/sources/deploy-keys" rel="noopener noreferrer">deploy-key guide</a> documents generating the key in Coolify, adding the public half to the repository, keeping write access disabled, selecting the SSH URL and verifying the clone. GitHub’s <a href="https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys" rel="noopener noreferrer">deploy-key documentation</a> explains repository scope and read-only defaults. GitHub also maintains dedicated guides for <a href="https://docs.github.com/en/authentication/troubleshooting-ssh/error-permission-denied-publickey" rel="noopener noreferrer">Permission denied (publickey)</a> and <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints" rel="noopener noreferrer">published SSH host-key fingerprints</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Follow an authenticated commit through deployment, container replacement, routing and caches.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate repository access from queue capacity, stalled builds and exhausted host resources.</span></li>
+        <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating</a><span>After source access works, identify whether stale configuration belongs to build time or runtime.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>Verify local Docker output, nginx-readable files, discovery documents and unique production content.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

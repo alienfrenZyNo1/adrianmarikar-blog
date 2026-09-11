@@ -68,7 +68,7 @@
       git log --oneline -5 origin/main
       git status --short --branch</code></pre>
 
-      <p>This catches simple mistakes: committing locally without pushing, pushing to a feature branch, or rebasing after Coolify already built a different revision. For private repositories, also remember that Coolify needs a working GitHub App or deploy-key path. GitHub's Actions documentation makes a related point for CI/CD workflows: secrets and tokens should be stored as repository or environment secrets, not pasted into workflow logs or source files.</p>
+      <p>This catches simple mistakes: committing locally without pushing, pushing to a feature branch, or rebasing after Coolify already built a different revision. For private repositories, Coolify also needs a working GitHub App or deploy-key path. If the log says <code>Permission denied (publickey)</code>, repair the source mode, SSH URL and matching key pair with the <a href="/posts/coolify-private-github-repository-permission-denied-publickey.html">Coolify private GitHub repository checklist</a>. Secrets and tokens belong in supported credential stores, not workflow logs or source files.</p>
 
       <h2>2. Check whether Coolify actually queued a deployment</h2>
       <p>A successful Git push and a successful Coolify deployment are different events. If auto-deploy did not fire, the application may be perfectly healthy while still running yesterday's image.</p>
@@ -157,6 +157,7 @@ curl -fsS https://example.com/llms.txt | grep 'New post title'</code></pre>
         <p class="eyebrow">// keep reading</p>
         <h2>Related deployment notes</h2>
         <ul>
+          <li><a href="/posts/coolify-private-github-repository-permission-denied-publickey.html">Coolify private GitHub repo: fix Permission denied (publickey)</a><span>Repair an SSH clone before debugging image builds, health checks, routing or caches.</span></li>
           <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating</a><span>Separate build-time inputs, runtime injection, frozen frontend bundles, overrides, and cache before redeploying.</span></li>
           <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate build back-pressure from a stalled command, resource exhaustion, stale logs, and control-plane trouble before cancelling or retrying.</span></li>
           <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>The normal publish path for static HTML, nginx, RSS, sitemap, Docker, and live verification.</span></li>
