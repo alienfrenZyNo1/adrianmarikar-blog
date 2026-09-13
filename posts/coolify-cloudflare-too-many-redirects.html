@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify + Cloudflare Too Many Redirects? Fix the Loop — Adrian Marikar</title>
+  <meta name="description" content="Fix ERR_TOO_MANY_REDIRECTS on a Coolify app behind Cloudflare by tracing Location headers, TLS mode, hostname rules, and trusted proxy headers in order.">
+  <meta name="keywords" content="Coolify too many redirects, Cloudflare redirect loop Coolify, ERR_TOO_MANY_REDIRECTS, Cloudflare Flexible SSL loop, Coolify X-Forwarded-Proto">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify + Cloudflare Too Many Redirects? Fix the Loop">
+  <meta property="og:description" content="Trace a Coolify and Cloudflare redirect loop through Location headers, edge TLS mode, canonical-host rules, Traefik, and application proxy trust.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html">
+  <meta property="article:published_time" content="2026-09-13T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-13T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify + Cloudflare Too Many Redirects? Fix the Loop">
+  <meta name="twitter:description" content="An evidence-led checklist for finding which layer keeps redirecting a Cloudflare-fronted Coolify app.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify + Cloudflare Too Many Redirects? Fix the Loop","description":"Fix ERR_TOO_MANY_REDIRECTS on a Coolify app behind Cloudflare by tracing Location headers, TLS mode, hostname rules, and trusted proxy headers in order.","url":"https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html"},"datePublished":"2026-09-13T10:00:00Z","dateModified":"2026-09-13T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Cloudflare","ERR_TOO_MANY_REDIRECTS","redirect loop","TLS","Traefik","X-Forwarded-Proto"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / redirect diagnosis 057</p>
+      <h1>Coolify + Cloudflare too many redirects? Fix the loop</h1>
+    </header>
+
+    <p>A Coolify application behind Cloudflare can be healthy and reachable while the browser reports <code>ERR_TOO_MANY_REDIRECTS</code>. The container is not necessarily crashing. More often, two layers disagree about the request’s scheme or canonical hostname and keep sending the client back to a URL it has already visited.</p>
+
+    <p>The fastest safe fix is not to clear cookies, disable HTTPS, or stack another redirect. Record the actual <code>Location</code> sequence, identify which hop changes, and then remove one conflicting rule. In the common Cloudflare–Coolify–Traefik–application chain, the loop usually comes from <strong>Flexible TLS against an HTTPS-enforcing origin, conflicting hostname rules, or an application that ignores the original HTTPS scheme forwarded by its trusted proxy</strong>.</p>
+
+    <blockquote>A redirect is an HTTP response with evidence: status, host, scheme, path and <code>Location</code>. Capture that evidence before changing Cloudflare, Coolify or application settings.</blockquote>
+
+    <h2>First, prove the redirect sequence</h2>
+    <p>Use a header-only request without following redirects, then a bounded trace that prints each hop. A browser’s final error hides the useful middle:</p>
+
+    <pre><code>curl --silent --show-error --dump-header - \
+  --output /dev/null https://app.example.com/
+
+curl --silent --show-error --location \
+  --max-redirs 10 --output /dev/null \
+  --write-out '%{url_effective} %{http_code}\n' \
+  https://app.example.com/</code></pre>
+
+    <p>For a readable hop-by-hop trace, repeat the first command against each returned <code>Location</code>, or use <code>curl --verbose</code> in a private terminal. Do not publish cookies, authorization headers, origin addresses or full diagnostic dumps. Test a public unauthenticated path such as <code>/health</code> separately so login middleware does not confuse the result.</p>
+
+    <table>
+      <thead><tr><th>Repeated pattern</th><th>Likely disagreement</th></tr></thead>
+      <tbody>
+        <tr><td><code>http://</code> ↔ <code>https://</code></td><td>Cloudflare TLS mode conflicts with an origin or application scheme redirect</td></tr>
+        <tr><td><code>www</code> ↔ apex</td><td>Cloudflare, Coolify or application canonical-host rules point opposite ways</td></tr>
+        <tr><td>The same HTTPS URL redirects to itself</td><td>The app sees the internal proxy hop as HTTP and ignores the forwarded original scheme</td></tr>
+        <tr><td><code>/login</code> ↔ protected path</td><td>Session, callback URL or authentication middleware issue rather than a general TLS loop</td></tr>
+        <tr><td>Only one path loops</td><td>Path-specific redirect, trailing-slash, locale or framework route rule</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Use end-to-end TLS, not Flexible mode</h2>
+    <p>Cloudflare documents the classic loop precisely: in <strong>Flexible</strong> mode, the browser-to-Cloudflare connection can use HTTPS, but Cloudflare contacts the origin over HTTP. If Coolify or the application redirects that HTTP request to HTTPS, the browser requests HTTPS again, Cloudflare sends HTTP to the origin again, and the cycle repeats.</p>
+
+    <p>For a normal public Coolify app with a valid origin certificate, set the Cloudflare zone to <strong>Full (strict)</strong>. That keeps both legs encrypted and validates the certificate presented by the origin. Before changing the mode, make sure the exact application hostname exists in Coolify and the origin can serve a valid certificate for it. If Full (strict) produces error 526, repair the certificate rather than falling back to Flexible; the <a href="/posts/cloudflare-526-coolify-lets-encrypt.html">Cloudflare 526 and Coolify certificate guide</a> covers that sequence.</p>
+
+    <p>Cloudflare also warns about the inverse conflict: with Full or Full (strict), a rule that redirects origin HTTPS back to HTTP will loop. Remove the HTTPS-to-HTTP rule. The completed state should have one direction—HTTP to HTTPS—not rules pushing both ways.</p>
+
+    <h2>2. Inventory every redirect owner</h2>
+    <p>A request may be redirected by Cloudflare before it reaches the VPS, by Coolify’s generated Traefik configuration, by nginx or another web server, or by framework middleware. Write down every active rule before editing one:</p>
+
+    <ul>
+      <li>Cloudflare <strong>Always Use HTTPS</strong>, Redirect Rules, Bulk Redirects and Workers;</li>
+      <li>Coolify domain entries, including their scheme, apex and <code>www</code> forms;</li>
+      <li>Traefik redirect middlewares or entry-point redirects;</li>
+      <li>nginx, Caddy or Apache redirects in the deployed source;</li>
+      <li>application settings such as a base URL, canonical host, force-SSL middleware or authentication callback URL.</li>
+    </ul>
+
+    <p>There can be more than one HTTP-to-HTTPS redirect without a loop if every layer agrees, but duplication makes diagnosis harder and can produce needless hops. Prefer one clear owner for each policy: edge or proxy for scheme enforcement, and one deliberate layer for canonical-host redirects.</p>
+
+    <h2>3. Make apex and www point one way</h2>
+    <p>A common hostname loop looks like this: Cloudflare redirects <code>www.example.com</code> to <code>example.com</code>, while the application redirects the apex back to <code>www</code>. Pick one canonical host, then align every rule with it.</p>
+
+    <p>In Coolify, include every hostname that must reach the application long enough to return its redirect. Merely creating a DNS record does not create a matching Traefik router. Then configure one permanent redirect from the alternate host to the canonical host, preserving the path and query string. Update canonical tags, Open Graph URLs, RSS and the sitemap to use that same host.</p>
+
+    <pre><code># Intended result; use your chosen canonical host
+http://www.example.com/path  → https://example.com/path
+https://www.example.com/path → https://example.com/path
+http://example.com/path      → https://example.com/path
+https://example.com/path     → 200 application response</code></pre>
+
+    <p>Do not redirect a hostname away before Coolify can route it. An unmatched host may hit a default router, hiding the actual rule behind a 404 or certificate error.</p>
+
+    <h2>4. Check the original scheme at the application</h2>
+    <p>Traefik normally terminates public TLS and forwards HTTP to the application container over a private Docker network. That internal HTTP hop is expected. It also forwards the original request context, commonly through <code>X-Forwarded-Proto: https</code>.</p>
+
+    <p>If the framework ignores that trusted proxy information, force-HTTPS middleware sees the internal hop as HTTP and redirects to the same public HTTPS URL. The next request follows the same route and receives the same redirect. This often appears as an HTTPS URL redirecting to itself.</p>
+
+    <p>Use the framework’s supported trusted-proxy configuration so it accepts forwarding information from the actual proxy boundary and derives the public scheme correctly. Do <strong>not</strong> blindly trust forwarded headers from every source: if clients can reach the application directly, arbitrary headers can spoof scheme or client identity. Keep the app private behind Coolify’s proxy and scope trust to the deployment’s supported proxy path.</p>
+
+    <p>Useful application evidence is a temporary, access-controlled diagnostic log containing the derived scheme, host and path—not cookies or complete request headers. Remove verbose request logging after the fault is understood.</p>
+
+    <h2>5. Separate edge behaviour from origin behaviour</h2>
+    <p>If it is safe within your architecture, compare the normal proxied request with a controlled origin test that preserves the real hostname and TLS SNI. Keep the origin destination private:</p>
+
+    <pre><code># Public Cloudflare path
+curl --silent --show-error --head https://app.example.com/
+
+# Controlled origin path; run privately and substitute the real destination
+curl --silent --show-error --head \
+  --resolve app.example.com:443:ORIGIN_ADDRESS \
+  https://app.example.com/</code></pre>
+
+    <ul>
+      <li><strong>Public loops, origin does not:</strong> inspect Cloudflare TLS mode, Redirect Rules, Workers and edge hostname policy.</li>
+      <li><strong>Both loop identically:</strong> inspect Coolify domain redirects, Traefik, web-server rules and application middleware.</li>
+      <li><strong>Origin TLS validation fails:</strong> solve certificate issuance or hostname routing before drawing redirect conclusions.</li>
+      <li><strong>Origin is intentionally tunnel-only:</strong> do not expose or invent a direct route just for this test; inspect tunnel and origin logs instead.</li>
+    </ul>
+
+    <p>Temporarily switching a production record to DNS-only is not a harmless diagnostic step: it can expose the origin and bypass edge controls. Use direct testing only when the origin is designed to accept it and the rollback path is known.</p>
+
+    <h2>6. Do not let cached permanent redirects mislead you</h2>
+    <p>Browsers and CDNs can retain <code>301</code> or <code>308</code> responses after the rule is fixed. Test with <code>curl</code> first because it gives a clean request and visible headers. Then purge only the affected Cloudflare URL if the old redirect was cached, and retest in a fresh browser context.</p>
+
+    <p>Cookie clearing is relevant only when the loop depends on session state. It cannot repair a deterministic scheme or hostname conflict visible to a cookie-free <code>curl</code> request. Likewise, disabling HSTS does not fix servers that contradict each other; HSTS simply makes the browser choose HTTPS before the request.</p>
+
+    <h2>7. Verify the fix without hiding a new fault</h2>
+    <p>After changing the smallest responsible setting, deploy or restart only if that layer requires it. Then verify all entry URLs and one unique page:</p>
+
+    <pre><code>curl --silent --show-error --location \
+  --max-redirs 5 --output /dev/null \
+  --write-out '%{url_effective} %{http_code} %{num_redirects}\n' \
+  http://app.example.com/
+
+curl --fail --silent --show-error \
+  https://app.example.com/expected-path | \
+  grep -F 'EXPECTED UNIQUE HEADING'</code></pre>
+
+    <p>The desired result is a short, finite chain to the canonical HTTPS URL and expected content. Also check <code>/health</code>, login or callback routes if used, an asset, and a nonexistent path. HTTP <code>200</code> alone is weak evidence because a stale cache or single-page fallback can serve the wrong page successfully.</p>
+
+    <h2>Safe repair order</h2>
+    <ol>
+      <li>Capture the first response and every <code>Location</code> value.</li>
+      <li>Classify the loop as scheme, hostname, path or session related.</li>
+      <li>Confirm the exact domain is attached to the intended Coolify app.</li>
+      <li>Use Cloudflare Full (strict) when the Coolify origin has a valid matching certificate.</li>
+      <li>Remove any origin rule that redirects HTTPS back to HTTP.</li>
+      <li>Align apex and <code>www</code> rules toward one canonical host.</li>
+      <li>Ensure the application derives HTTPS through the trusted proxy path.</li>
+      <li>Remove duplicate or contradictory edge, proxy and application rules.</li>
+      <li>Retest without cookies or cached redirects.</li>
+      <li>Prove a finite redirect chain and unique content on the final URL.</li>
+    </ol>
+
+    <p>Authoritative references: Cloudflare’s <a href="https://developers.cloudflare.com/ssl/troubleshooting/too-many-redirects/" rel="noopener noreferrer">ERR_TOO_MANY_REDIRECTS guide</a> documents Flexible-versus-origin HTTPS loops, Full-mode HTTPS-to-HTTP loops, edge settings and conflicting redirect rules. Its <a href="https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/flexible/" rel="noopener noreferrer">Flexible mode documentation</a> explicitly warns against using Flexible when the origin forces HTTPS. Coolify’s <a href="https://coolify.io/docs/core/networking/domains" rel="noopener noreferrer">domain documentation</a> explains how domain schemes and redirect options generate proxy configuration. Traefik’s <a href="https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/redirectscheme/" rel="noopener noreferrer">RedirectScheme reference</a> explains scheme redirects and the importance of forwarded headers when another proxy is in front.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Cloudflare and Coolify guides</h2>
+      <ul>
+        <li><a href="/posts/cloudflare-526-coolify-lets-encrypt.html">Fix Cloudflare error 526 on a Coolify app</a><span>Repair the origin certificate before enabling Full (strict) instead of hiding the problem with Flexible TLS.</span></li>
+        <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Align public hostnames, proxy status, Coolify routes and canonical metadata.</span></li>
+        <li><a href="/posts/coolify-502-bad-gateway-wrong-port-localhost.html">Coolify 502 Bad Gateway: fix the port and listen address</a><span>Use this when Traefik cannot reach the application instead of receiving a redirect.</span></li>
+        <li><a href="/posts/coolify-admin-cloudflare-access-realtime.html">Put Coolify admin behind Cloudflare Access</a><span>Handle dashboard, assets and realtime routes without exposing raw admin ports.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

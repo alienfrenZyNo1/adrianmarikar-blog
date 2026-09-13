@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify + Cloudflare Too Many Redirects? Fix the Loop: https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html
+  - Evidence-led redirect diagnosis covering Location-chain capture, Cloudflare Full (strict) versus Flexible TLS, contradictory HTTP/HTTPS rules, apex/www canonical direction, Coolify domain routing, Traefik forwarding, application trusted-proxy handling, cache effects, and unique final-content verification.
 |- Coolify Private GitHub Repo: Fix Permission Denied (Publickey): https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html
   - Least-privilege private-repository clone recovery covering Coolify source modes, GitHub SSH URLs, matching deploy-key pairs, repository scope, read-only access, host-key trust, branch diagnosis, controlled key rotation, and unique live-release verification.
 |- Coolify Environment Variables Not Updating? Build vs Runtime Fix: https://adrianmarikar.com/posts/coolify-environment-variables-not-updating.html

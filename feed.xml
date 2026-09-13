@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify + Cloudflare Too Many Redirects? Fix the Loop</title>
+      <link>https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html</guid>
+      <pubDate>Sun, 13 Sep 2026 10:00:00 GMT</pubDate>
+      <description>An evidence-led guide to fixing ERR_TOO_MANY_REDIRECTS on a Coolify app behind Cloudflare by tracing Location headers, TLS mode, canonical-host rules, and trusted proxy headers.</description>
+    </item>
+    <item>
       <title>Coolify Private GitHub Repo: Fix Permission Denied (Publickey)</title>
       <link>https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html</guid>
