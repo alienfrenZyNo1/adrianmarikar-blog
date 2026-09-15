@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify “No Space Left on Device”? Clean Docker Disk Safely — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify deployment failing with no space left on device: identify bytes versus inodes, attribute Docker usage, clean the narrowest safe target, protect volumes, and prevent recurrence.">
+  <meta name="keywords" content="Coolify no space left on device, Coolify disk full, Docker disk cleanup, Docker system df, Coolify deployment failed, Docker build cache cleanup">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify “No Space Left on Device”? Clean Docker Disk Safely">
+  <meta property="og:description" content="A measured recovery runbook for full Coolify hosts: distinguish filesystem bytes from inodes, find the real consumer, preserve persistent data, and reclaim only what is safe.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html">
+  <meta property="article:published_time" content="2026-09-15T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-15T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify “No Space Left on Device”? Clean Docker Disk Safely">
+  <meta name="twitter:description" content="Diagnose a full Coolify server, reclaim Docker space without deleting application data, retry one deploy, and add safe cleanup controls.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify ‘No Space Left on Device’? Clean Docker Disk Safely","description":"Fix a Coolify deployment failing with no space left on device: identify bytes versus inodes, attribute Docker usage, clean the narrowest safe target, protect volumes, and prevent recurrence.","url":"https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html"},"datePublished":"2026-09-15T10:00:00Z","dateModified":"2026-09-15T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Docker disk cleanup","no space left on device","build cache","self-hosting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / Docker storage 058</p>
+      <h1>Coolify “no space left on device”? Clean Docker disk safely</h1>
+    </header>
+
+    <p>A Coolify build can fail while cloning, unpacking an image layer, installing packages, exporting a BuildKit result, or starting the replacement container with <code>no space left on device</code>. The message identifies a storage failure, but it does not tell you whether the server ran out of filesystem bytes, inodes, Docker’s allocated storage, or space on a different mounted filesystem.</p>
+
+    <p>The safe response is not to paste <code>docker system prune -a --volumes</code> into production. First locate the exhausted filesystem, identify the objects using it, protect persistent data and rollback options, and remove the narrowest disposable category. Then retry one deployment and verify its actual release.</p>
+
+    <blockquote>Never prune volumes as an emergency reflex. A volume can contain the only durable copy of a database, uploads, mail, or application state.</blockquote>
+
+    <h2>Confirm which limit was exhausted</h2>
+    <p>Preserve the deployment ID, failing command, timestamp, and exact error first. On the deployment server, start with read-only measurements:</p>
+
+    <pre><code>df -h
+df -i
+docker info --format '{{json .DockerRootDir}}'
+docker system df
+docker system df -v</code></pre>
+
+    <p><code>df -h</code> reports space by bytes. <code>df -i</code> reports inode consumption: a filesystem containing huge numbers of tiny cache or log files can reject new files even when the byte summary appears to have room. <code>DockerRootDir</code> tells you where Docker stores managed data; do not assume it is on the root filesystem. <code>docker system df</code> divides Docker usage into images, containers, local volumes, and build cache, while the verbose form helps attribute that usage.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely constraint</th><th>Next action</th></tr></thead>
+      <tbody>
+        <tr><td>Filesystem at or near 100% bytes</td><td>Images, layers, logs, backups, artifacts, or application data</td><td>Attribute large categories on that filesystem</td></tr>
+        <tr><td>Inodes at or near 100%</td><td>Very many small files</td><td>Find the responsible directory or workload; deleting one large image may not help</td></tr>
+        <tr><td>Large reclaimable build cache</td><td>Old build intermediates</td><td>Prune build cache with a retention policy</td></tr>
+        <tr><td>Large stopped-container footprint</td><td>Exited replacements or one-off jobs</td><td>Confirm they are not needed, then remove those containers</td></tr>
+        <tr><td>Large volume footprint</td><td>Potentially durable application data</td><td>Map every volume to an owner; do not bulk-prune</td></tr>
+        <tr><td>Docker usage is modest</td><td>Host logs, backups, package caches, or data outside Docker</td><td>Inspect that filesystem outside Docker</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Map storage to running applications before deleting anything</h2>
+    <p>List containers, their images and mounts. The commands below expose names and paths, so keep the output private if it contains internal project details:</p>
+
+    <pre><code>docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Size}}'
+docker volume ls
+docker inspect APP_CONTAINER --format '{{json .Mounts}}'
+docker inspect APP_CONTAINER --format '{{.Image}}'</code></pre>
+
+    <p>For each candidate, answer four questions: Is a running container using it? Does it hold persistent state? Is it required for rollback? Is there a tested backup? An old image may be unused by a running container yet still be your fastest rollback. An unattached volume may be a deliberately retained database. “Unused” in Docker’s graph is not the same as “worthless” to the operator.</p>
+
+    <p>If a named volume might contain state, inspect its labels and owner, compare it with the application’s Coolify storage configuration, and verify a restorable backup before removal. Do not enter Docker’s data directory and delete overlay files manually; bypassing Docker’s metadata can corrupt the storage graph.</p>
+
+    <h2>Reclaim the narrowest disposable category</h2>
+    <p>Docker provides separate prune commands so cleanup can match the diagnosis. Review each command’s candidate set on your installed Docker version before confirming it.</p>
+
+    <h3>1. Build cache</h3>
+    <p>When failed and historical builds dominate usage, cache is usually a narrower target than all unused images:</p>
+
+    <pre><code># Preview attribution first
+docker system df -v
+
+# Example retention policy: remove eligible cache older than 168 hours
+docker builder prune --filter 'until=168h'</code></pre>
+
+    <p>The confirmation prompt shows the operation is destructive. Choose a retention window that keeps recent cache useful; do not copy <code>168h</code> blindly if your release or rollback cadence needs longer.</p>
+
+    <h3>2. Stopped containers</h3>
+    <p>Identify exited containers, verify that no one-off job or forensic evidence is still needed, and remove specific names first:</p>
+
+    <pre><code>docker ps -a --filter status=exited 
+docker rm VERIFIED_STOPPED_CONTAINER</code></pre>
+
+    <h3>3. Images</h3>
+    <p>Prefer removing a verified obsolete image by ID. Docker’s image prune without <code>-a</code> limits itself to dangling images; adding <code>-a</code> broadens it to images with no associated container. That broader set can include useful rollback releases.</p>
+
+    <pre><code>docker image prune
+docker image rm VERIFIED_OBSOLETE_IMAGE_ID</code></pre>
+
+    <h3>4. Volumes</h3>
+    <p>Do not use volume prune during first-response cleanup. If a specific orphaned volume is later proven disposable, back up any uncertain contents, record why it is orphaned, and remove that one volume explicitly in a maintenance window. Database recovery is a separate operation from freeing build space.</p>
+
+    <h2>What <code>docker system prune</code> actually changes</h2>
+    <p>Docker documents that <code>docker system prune</code> removes stopped containers, unused networks, dangling images, and unused build cache. With <code>-a</code>, it removes all images not used by at least one container. Volumes are not removed by default; a volume flag expands the blast radius.</p>
+
+    <p>On a single-purpose disposable build host, broad cleanup may be acceptable after review. On a Coolify server running several applications, databases, and retained releases, category-specific cleanup is easier to reason about and verify. Capture before-and-after <code>docker system df</code> and <code>df -h</code> output so you know what reclaimed space and whether enough headroom exists for the next build.</p>
+
+    <h2>If logs—not images—filled the disk</h2>
+    <p>Large container logs require a different fix. First attribute them through Docker’s effective log configuration and container metadata rather than deleting random files under Docker’s root:</p>
+
+    <pre><code>docker info --format '{{json .LoggingDriver}}'
+docker inspect APP_CONTAINER --format '{{json .HostConfig.LogConfig}}'
+journalctl --disk-usage</code></pre>
+
+    <p>If the <code>json-file</code> driver is unbounded, add an intentional rotation policy for future containers, then recreate them through the normal Coolify deployment path. Existing containers do not inherit daemon defaults retroactively. If systemd journal usage is responsible, configure retention appropriate to incident investigation and audit needs. Truncating active log files by path can race the writer and destroys evidence; treat it as a last-resort incident action, not routine maintenance.</p>
+
+    <h2>Retry the deployment only after restoring headroom</h2>
+    <ol>
+      <li>Re-run <code>df -h</code>, <code>df -i</code>, and <code>docker system df</code>.</li>
+      <li>Confirm Docker and Coolify are healthy and existing public applications still respond.</li>
+      <li>Confirm important stateful containers and their volumes remain attached.</li>
+      <li>Trigger one deployment; do not stack duplicate retries.</li>
+      <li>Follow its deployment identifier until it reaches a terminal state.</li>
+      <li>Match the deployed source or image to the intended Git commit.</li>
+      <li>Assert unique changed content or an application-specific release marker, not only HTTP 200.</li>
+    </ol>
+
+    <p>If the build still fails after space is available, return to its exact new log. The original full disk may have left a partial package cache, interrupted Git checkout, or damaged temporary build context. A force rebuild can be justified once you have enough headroom, but it should not substitute for finding why storage keeps growing.</p>
+
+    <h2>Prevent the next full disk</h2>
+    <p>Coolify provides automated Docker cleanup settings at server level. Its documentation describes scheduled cleanup, a disk-usage threshold, and retention controls. Configure these in the Coolify dashboard for the actual server rather than adding an unmanaged cron job. Run cleanup during quieter periods if the server is resource-constrained, and review cleanup logs.</p>
+
+    <ul>
+      <li>Alert before the filesystem is critical; leave room for one normal image build and rollback.</li>
+      <li>Monitor both byte and inode utilisation on the Docker filesystem.</li>
+      <li>Set a deliberate cleanup frequency and minimum age for retained resources.</li>
+      <li>Rotate container and host logs with enough retention for diagnosis.</li>
+      <li>Expire obsolete local backups only after confirming off-host, restorable copies.</li>
+      <li>Move builds to a separate build server or CI if build layers routinely crowd application data.</li>
+      <li>Keep databases, uploads, and other state on explicit persistent storage with tested backups.</li>
+    </ul>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>The exact failed deployment and error line are preserved.</li>
+      <li>The exhausted filesystem and Docker root are identified.</li>
+      <li>Both bytes and inodes have been measured.</li>
+      <li>Docker usage has been split into cache, images, containers, and volumes.</li>
+      <li>State, backups, and rollback images are mapped before cleanup.</li>
+      <li>The narrowest disposable category is removed; volumes are not bulk-pruned.</li>
+      <li>Before-and-after free space proves sufficient headroom.</li>
+      <li>Existing applications and state are intact.</li>
+      <li>One retry reaches a terminal state and unique live content proves the release.</li>
+      <li>Coolify-managed cleanup, monitoring, and log rotation reduce recurrence.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/knowledge-base/server/automated-cleanup" rel="noopener noreferrer">automated Docker cleanup guide</a> covers server-level schedules, thresholds, retention, and cleanup logs. Docker’s official documentation explains <a href="https://docs.docker.com/reference/cli/docker/system/df/" rel="noopener noreferrer"><code>docker system df</code></a>, <a href="https://docs.docker.com/engine/manage-resources/pruning/" rel="noopener noreferrer">object-specific prune commands</a>, and the scope of <a href="https://docs.docker.com/reference/cli/docker/system/prune/" rel="noopener noreferrer"><code>docker system prune</code></a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate a full server from queue capacity, a blocked build step, or a control-plane fault.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Make durable state, readiness, backups, and restores explicit before deployment.</span></li>
+        <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions Docker builds and Coolify deploys</a><span>Move image-building pressure away from a small production VPS.</span></li>
+        <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Add monitoring, controlled maintenance, backups, and recovery checks to the host.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static site deploy checklist</a><span>Prove a rebuilt image contains the expected files and production serves them.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

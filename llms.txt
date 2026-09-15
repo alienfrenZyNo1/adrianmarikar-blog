@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify “No Space Left on Device”? Clean Docker Disk Safely: https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html
+  - Measured disk-full recovery covering filesystem bytes versus inodes, Docker root and usage attribution, build cache, stopped containers, rollback images, strict volume protection, log growth, controlled redeployment, and Coolify-managed recurrence prevention.
 |- Coolify + Cloudflare Too Many Redirects? Fix the Loop: https://adrianmarikar.com/posts/coolify-cloudflare-too-many-redirects.html
   - Evidence-led redirect diagnosis covering Location-chain capture, Cloudflare Full (strict) versus Flexible TLS, contradictory HTTP/HTTPS rules, apex/www canonical direction, Coolify domain routing, Traefik forwarding, application trusted-proxy handling, cache effects, and unique final-content verification.
 |- Coolify Private GitHub Repo: Fix Permission Denied (Publickey): https://adrianmarikar.com/posts/coolify-private-github-repository-permission-denied-publickey.html
