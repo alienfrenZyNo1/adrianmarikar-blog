@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Let’s Encrypt Failing? Check a Stale AAAA Record</title>
+      <link>https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html</guid>
+      <pubDate>Thu, 17 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A focused Coolify certificate guide to finding split IPv4 and IPv6 DNS, testing HTTP-01 over both paths, repairing stale AAAA records or incomplete IPv6, and verifying the final certificate.</description>
+    </item>
+    <item>
       <title>Coolify “No Space Left on Device”? Clean Docker Disk Safely</title>
       <link>https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html</guid>

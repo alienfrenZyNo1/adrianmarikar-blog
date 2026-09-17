@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Let’s Encrypt Failing? Check a Stale AAAA Record — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify Let’s Encrypt certificate failure caused by a stale or unreachable IPv6 AAAA record. Compare A and AAAA routes, test HTTP-01 on both, repair DNS, and verify the issued certificate.">
+  <meta name="keywords" content="Coolify Let's Encrypt not working AAAA, Coolify SSL certificate IPv6, stale AAAA record, ACME HTTP-01 IPv6, Traefik certificate error">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Let’s Encrypt Failing? Check a Stale AAAA Record">
+  <meta property="og:description" content="A focused runbook for finding split IPv4/IPv6 DNS, proving the failed ACME path, and restoring Coolify certificate issuance without weakening TLS.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html">
+  <meta property="article:published_time" content="2026-09-17T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-17T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Let’s Encrypt Failing? Check the AAAA Record">
+  <meta name="twitter:description" content="Prove whether IPv6 reaches the same Coolify proxy as IPv4 before retrying ACME certificate issuance.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Let’s Encrypt Failing? Check a Stale AAAA Record","description":"Fix a Coolify Let’s Encrypt certificate failure caused by a stale or unreachable IPv6 AAAA record. Compare A and AAAA routes, test HTTP-01 on both, repair DNS, and verify the issued certificate.","url":"https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html"},"datePublished":"2026-09-17T10:00:00Z","dateModified":"2026-09-17T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Let's Encrypt","IPv6","AAAA record","ACME HTTP-01","Traefik"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / ACME over IPv6 059</p>
+      <h1>Coolify Let’s Encrypt failing? Check a stale AAAA record</h1>
+    </header>
+
+    <p>Your Coolify application works over IPv4, its <code>A</code> record points to the correct VPS, and ports 80 and 443 are open—yet Let’s Encrypt still will not issue a certificate. Before restarting Traefik or repeatedly redeploying, inspect the hostname’s <code>AAAA</code> record.</p>
+
+    <p>A forgotten IPv6 record can create two different public routes for one name. Normal tests may use the working IPv4 route while the certificate authority reaches an old, unreachable, or incorrectly configured IPv6 destination. The result looks like an intermittent Coolify or ACME fault even though DNS is behaving exactly as published.</p>
+
+    <blockquote>If a hostname publishes both A and AAAA records, treat IPv4 and IPv6 as separate production paths. “The domain points to this server” is not proven until both paths agree.</blockquote>
+
+    <h2>Why AAAA can break an otherwise healthy certificate request</h2>
+    <p>Let’s Encrypt’s official IPv6 guidance says that when a name has both <code>A</code> and <code>AAAA</code> records, validation initially prefers IPv6. It may retry IPv4 after a connection timeout, but it does not safely recover from every bad IPv6 response. For example, an IPv6 web server that answers with the wrong content or challenge response can make validation fail rather than fall back.</p>
+
+    <p>For the usual HTTP-01 flow, Let’s Encrypt requests a token below <code>/.well-known/acme-challenge/</code>. Its challenge documentation says HTTP-01 begins on port 80 and only follows redirects to HTTP or HTTPS on ports 80 or 443. Coolify’s proxy must therefore receive the request for the exact hostname on the address the validator chooses.</p>
+
+    <h2>Recognise the stale-AAAA pattern</h2>
+    <p>This failure is plausible when several of these observations line up:</p>
+    <ul>
+      <li><code>curl -4</code> reaches the expected Coolify application, but <code>curl -6</code> times out or returns another site.</li>
+      <li>The <code>A</code> record was changed during a VPS migration, but the <code>AAAA</code> record was not.</li>
+      <li>The new server has no routed IPv6 address, although public DNS still advertises one.</li>
+      <li>Traefik listens on IPv4 but the host firewall, provider firewall, or Docker path blocks IPv6.</li>
+      <li>Certificate logs mention authorization failure, timeout, connection refusal, unexpected status, or the wrong challenge content.</li>
+      <li>Some visitors see a different certificate or application depending on their network.</li>
+    </ul>
+
+    <p>Do not infer the cause from a browser alone. Many client networks prefer one address family, and a proxied Cloudflare record can hide the origin route. Compare DNS and force each protocol explicitly.</p>
+
+    <h2>1. Inventory every public DNS answer</h2>
+    <p>Query more than one recursive resolver, then query the authoritative nameserver if answers disagree:</p>
+
+    <pre><code>dig +short A app.example.com
+ dig +short AAAA app.example.com
+ dig +short CNAME app.example.com
+
+ dig @1.1.1.1 +short A app.example.com
+ dig @1.1.1.1 +short AAAA app.example.com
+ dig @8.8.8.8 +short A app.example.com
+ dig @8.8.8.8 +short AAAA app.example.com
+
+ dig +trace app.example.com</code></pre>
+
+    <p>Cloudflare documents that <code>A</code> records map names to IPv4 addresses and <code>AAAA</code> records map names to IPv6 addresses. Having both is correct only when both destinations intentionally serve this hostname. A documentation-only example might use <code>192.0.2.10</code> and <code>2001:db8::10</code>; replace neither placeholder with a real address in a public incident report.</p>
+
+    <p>Also inspect CNAME flattening, wildcard records and delegated subdomains. Editing one visible record does not prove that every resolver sees the same final address set. Note each TTL before making a change so you know how long stale recursive answers may remain.</p>
+
+    <h2>2. Force HTTP over IPv4 and IPv6</h2>
+    <p>Test the same hostname, path and port through each address family:</p>
+
+    <pre><code>curl -4 --connect-timeout 10 -I http://app.example.com/
+ curl -6 --connect-timeout 10 -I http://app.example.com/
+
+ curl -4 --connect-timeout 10 -I https://app.example.com/
+ curl -6 --connect-timeout 10 -I https://app.example.com/</code></pre>
+
+    <p>Record whether each request connects, which status it returns, where it redirects, and which server or application answers. A redirect from HTTP to HTTPS is not enough by itself; both protocols must route the exact hostname to the intended proxy, and the HTTPS destination must eventually present a suitable certificate.</p>
+
+    <p>If your current network has no IPv6 connectivity, run the IPv6 test from a known dual-stack system or use an external DNS/HTTP probe. Do not mistake a local “network unreachable” error for proof that the server’s IPv6 route is broken.</p>
+
+    <h2>3. Bypass DNS while preserving the hostname</h2>
+    <p>When you know the intended addresses privately, <code>curl --resolve</code> separates DNS selection from HTTP virtual-host routing. Keep the hostname in the URL so Host and TLS SNI remain correct:</p>
+
+    <pre><code># Documentation addresses only
+curl --resolve app.example.com:80:192.0.2.10 \
+  -I http://app.example.com/
+
+curl --resolve 'app.example.com:80:[2001:db8::10]' \
+  -I http://app.example.com/
+
+curl --resolve 'app.example.com:443:[2001:db8::10]' \
+  -I https://app.example.com/</code></pre>
+
+    <p>If the expected IPv6 address is reachable but returns a different site, inspect Coolify’s domain assignment and Traefik router rather than deleting the DNS record immediately. If IPv6 does not reach this host at all, the honest choices are to complete the IPv6 path or stop advertising it.</p>
+
+    <h2>4. Check the Coolify host’s IPv6 path end to end</h2>
+    <p>Run read-only checks on the server. The exact interface, firewall and proxy names vary, so first observe rather than copy a destructive fix:</p>
+
+    <pre><code>ip -6 address show scope global
+ ip -6 route show
+ ss -lnt '( sport = :80 or sport = :443 )'
+
+ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+ docker logs --since 20m COOLIFY_PROXY_CONTAINER</code></pre>
+
+    <p>Confirm that the published AAAA address belongs to this server, the provider routes it, the host has a usable default IPv6 route, inbound TCP 80 and 443 are allowed in provider and host firewalls, and Coolify’s proxy receives requests on that path. A global IPv6 address on an interface does not by itself prove inbound reachability.</p>
+
+    <p>Search proxy logs around one controlled certificate attempt. Preserve the authorization hostname, timestamp and error class, but redact account identifiers, real origin addresses, tokens and private configuration before sharing.</p>
+
+    <h2>5. Choose one of two correct repairs</h2>
+    <h3>Option A: make IPv6 real</h3>
+    <p>Keep the AAAA record only if you intend to operate IPv6. Point it to the current server, complete provider routing and firewall rules, ensure the Coolify proxy handles ports 80/443, and prove that the hostname reaches the same application over both address families. This preserves dual-stack availability.</p>
+
+    <h3>Option B: remove the AAAA record</h3>
+    <p>If the service is intentionally IPv4-only, delete the stale AAAA record from the authoritative DNS provider. This is better than publishing an IPv6 route that cannot serve the name. Wait at least the old record’s TTL, then confirm multiple resolvers no longer return it.</p>
+
+    <p>Do not replace the origin AAAA record with an arbitrary address, disable TLS verification, or globally block IPv6 as a shortcut. Fix the public claim made by DNS or the route that is supposed to satisfy it.</p>
+
+    <h2>Cloudflare proxying changes what public DNS proves</h2>
+    <p>With an orange-clouded record, public A and AAAA answers can be Cloudflare edge addresses rather than your origin. A successful public <code>curl -6</code> then proves the client-to-Cloudflare path, not Cloudflare-to-origin IPv6 and not a direct ACME path.</p>
+
+    <p>Coolify’s official Let’s Encrypt troubleshooting guide recommends checking correct DNS, ports 80/443 and Cloudflare proxy settings. For a controlled HTTP-01 diagnosis, temporarily switching the application record to DNS only can expose the actual origin route—provided that direct exposure fits your architecture and firewall plan. If you use Cloudflare Tunnel, an Origin CA certificate, or DNS-01 deliberately, follow that design instead of mixing validation methods.</p>
+
+    <p>During DNS-only testing, inspect A and AAAA again. A stale record can be invisible while proxied and become active as soon as the cloud is turned off.</p>
+
+    <h2>6. Retry once and verify the certificate itself</h2>
+    <p>After DNS and reachability are correct and old TTLs have elapsed, trigger one controlled Coolify redeploy or proxy certificate retry. Repeated retries against a known-bad route add noise and can encounter certificate-authority rate limits.</p>
+
+    <p>Then verify the certificate over every address family you still publish:</p>
+
+    <pre><code>openssl s_client -4 \
+  -connect app.example.com:443 \
+  -servername app.example.com \
+  -verify_hostname app.example.com &lt;/dev/null
+
+openssl s_client -6 \
+  -connect app.example.com:443 \
+  -servername app.example.com \
+  -verify_hostname app.example.com &lt;/dev/null</code></pre>
+
+    <p>Check for a successful verification result, a valid date range, and a Subject Alternative Name matching the hostname. Finally fetch a unique heading or release marker from the live page over IPv4 and, if retained, IPv6. A generic HTTP 200 can come from the wrong virtual host or an SPA fallback.</p>
+
+    <h2>A compact stale-AAAA checklist</h2>
+    <ol>
+      <li>Query A, AAAA and CNAME through multiple resolvers.</li>
+      <li>Confirm every advertised address intentionally belongs to the current service.</li>
+      <li>Force HTTP and HTTPS separately with <code>curl -4</code> and <code>curl -6</code>.</li>
+      <li>Use <code>--resolve</code> to preserve Host/SNI while testing each intended origin.</li>
+      <li>Confirm IPv6 assignment, routing, firewalls, listeners and Coolify proxy logs.</li>
+      <li>Either complete the IPv6 route or remove the AAAA record.</li>
+      <li>Wait for the old TTL and verify recursive DNS convergence.</li>
+      <li>Retry issuance once, then inspect the certificate by hostname.</li>
+      <li>Verify unique application content over every address family still published.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/troubleshoot/dns-and-domains/lets-encrypt-not-working" rel="noopener noreferrer">Let’s Encrypt troubleshooting guide</a> and <a href="https://coolify.io/docs/knowledge-base/domains" rel="noopener noreferrer">domains guide</a>; Let’s Encrypt’s explanations of <a href="https://letsencrypt.org/docs/ipv6-support/" rel="noopener noreferrer">IPv6 validation behaviour</a> and <a href="https://letsencrypt.org/docs/challenge-types/" rel="noopener noreferrer">HTTP-01 challenges</a>; and Cloudflare’s <a href="https://developers.cloudflare.com/dns/manage-dns-records/reference/dns-record-types/" rel="noopener noreferrer">DNS record-type reference</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related certificate and DNS guides</h2>
+      <ul>
+        <li><a href="/posts/cloudflare-526-coolify-lets-encrypt.html">Fix Cloudflare error 526 on a Coolify app</a><span>Prove the origin certificate and SNI route before returning to Full (strict).</span></li>
+        <li><a href="/posts/cloudflare-dns-coolify-origin-checklist.html">Cloudflare DNS for self-hosted Coolify apps</a><span>Separate proxied web records, direct origins, mail DNS and migration leftovers.</span></li>
+        <li><a href="/posts/caa-records-letsencrypt-cloudflare-coolify.html">CAA records for Let’s Encrypt, Cloudflare and Coolify</a><span>Check whether DNS authorises the certificate authority you expect to issue.</span></li>
+        <li><a href="/posts/coolify-cloudflare-too-many-redirects.html">Coolify + Cloudflare too many redirects</a><span>Trace the Location chain after DNS and certificate issuance are healthy.</span></li>
+        <li><a href="/posts/coolify-502-bad-gateway-wrong-port-localhost.html">Coolify 502 Bad Gateway</a><span>Continue behind Traefik when the hostname works but the application backend does not.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
