@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Rollback After a Failed Deploy: Protect Database State: https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html
+  - State-aware release recovery covering retained application images, image retention, current runtime configuration, database migration compatibility, persistent volumes, queues, health checks, controlled read/write verification, and Git source-of-truth repair.
 |- Coolify Let’s Encrypt Failing? Check a Stale AAAA Record: https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html
   - Focused ACME troubleshooting for split IPv4/IPv6 DNS, covering recursive and authoritative A/AAAA checks, forced curl tests, Host/SNI-preserving origin probes, server routing and firewall evidence, stale-record removal versus complete dual-stack repair, TTL convergence, and certificate verification.
 |- Coolify “No Space Left on Device”? Clean Docker Disk Safely: https://adrianmarikar.com/posts/coolify-no-space-left-on-device-docker-cleanup.html

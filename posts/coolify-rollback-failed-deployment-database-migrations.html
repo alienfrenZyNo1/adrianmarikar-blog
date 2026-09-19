@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Rollback After a Failed Deploy: Protect Database State — Adrian Marikar</title>
+  <meta name="description" content="Roll back a failed Coolify deployment without assuming the database, volumes, or environment roll back too. Check image retention, migration compatibility, health, and live content.">
+  <meta name="keywords" content="Coolify rollback failed deployment, Coolify previous image, database migration rollback, Coolify image retention, deployment recovery">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Rollback After a Failed Deploy: Protect Database State">
+  <meta property="og:description" content="A safe rollback runbook for restoring an older Coolify application image while treating databases, volumes, migrations, and current runtime settings separately.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html">
+  <meta property="article:published_time" content="2026-09-19T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-19T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Rollback After a Failed Deploy">
+  <meta name="twitter:description" content="Restore an older image without mistaking application rollback for database or volume restore.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify Rollback After a Failed Deploy: Protect Database State","description":"Roll back a failed Coolify deployment without assuming the database, volumes, or environment roll back too. Check image retention, migration compatibility, health, and live content.","url":"https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html"},"datePublished":"2026-09-19T10:00:00Z","dateModified":"2026-09-19T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","deployment rollback","database migrations","Docker images","image retention","production recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / release recovery 060</p>
+      <h1>Coolify rollback after a failed deploy: protect database state</h1>
+    </header>
+
+    <p>A Coolify deployment reaches production, a critical user flow breaks, and the previous release worked. Selecting an older image can restore the application code quickly—but it does not put the whole system back in time.</p>
+
+    <p>Coolify’s rollback documentation is explicit: rollback deploys an older application image retained on the server. It does not reverse database migrations, restore persistent storage, or undo changes to external services. The old image also starts with the application’s <em>current</em> runtime configuration. That distinction turns “click rollback” into a compatibility decision.</p>
+
+    <blockquote>A Coolify rollback changes the application image. Treat the database, volumes, environment variables, queues, object storage, caches, and third-party APIs as separate state.</blockquote>
+
+    <h2>First decide whether rollback is the right response</h2>
+    <p>Rollback is a good candidate when the failing behaviour lives in application code or image contents and the previous image remains compatible with current state. Examples include a broken route, a frontend regression, an incorrect dependency, or a process that will not start.</p>
+
+    <p>A forward fix may be safer when the release has already made an irreversible or incompatible state change. Before touching the rollback control, answer these questions:</p>
+    <ul>
+      <li>Did the release run a database migration? Was it additive, destructive, or data-transforming?</li>
+      <li>Did it change a persisted file format, volume layout, cache schema, queue payload, or object-storage key?</li>
+      <li>Did current environment variables, secrets, mounts, domains, ports, or feature flags change?</li>
+      <li>Are workers from both versions processing the same queue?</li>
+      <li>Can the old code read and write the schema that exists now?</li>
+    </ul>
+
+    <p>If you cannot establish compatibility and the service handles important writes, pause or drain those writes before experimenting. Preserving evidence and preventing new inconsistent data is more useful than making the homepage green while background jobs keep corrupting state.</p>
+
+    <h2>1. Capture the failed release before changing it</h2>
+    <p>Record the deployment identifier, expected Git commit, failure time, affected user flow, current application logs, migration output, and the image you intend to restore. Do not put tokens, passwords, private connection strings, or real origin addresses in the incident notes.</p>
+
+    <p>Use the Coolify deployment screen for the exact operation. On a host where you are authorised to inspect Docker, read-only commands can help correlate containers and images:</p>
+
+    <pre><code>docker ps --no-trunc \
+  --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+docker inspect APP_CONTAINER \
+  --format '{{.Config.Image}} {{.Image}} {{json .State.Health}}'
+
+docker logs --since 20m APP_CONTAINER</code></pre>
+
+    <p>Redact output before sharing it: environment values and labels can expose credentials or infrastructure details. The goal is a release fingerprint and failure class, not a public dump of the container configuration.</p>
+
+    <h2>2. Confirm that Coolify still has the previous image</h2>
+    <p>Open the application’s <strong>Configuration → Rollback</strong> view and identify the previous working image. Coolify can only offer images it still retains locally. Its documentation notes that application image-retention settings can be overridden at server level, and an image removed by cleanup no longer appears as a rollback target.</p>
+
+    <p>Do not compensate by guessing a mutable tag such as <code>latest</code>. A tag can point somewhere different from the release you remember. Prefer the exact retained Coolify entry or an immutable image digest from a trusted registry and deployment record.</p>
+
+    <p>If the target is absent, rebuilding an old commit is a new deployment, not the same operation as restoring the original image. Dependencies and base images may have moved. Reproduce and test that build before calling it a rollback.</p>
+
+    <h2>3. Classify the database migration</h2>
+    <p>The hardest rollback failures happen when old code meets a new schema. Classify each migration that ran:</p>
+
+    <ul>
+      <li><strong>Additive:</strong> a nullable column, new table, or new index. Old code often tolerates this, but triggers and constraints still need review.</li>
+      <li><strong>Contracting:</strong> dropping or renaming a column, table, enum value, or index expected by old code. Rolling the image back can immediately fail.</li>
+      <li><strong>Semantic:</strong> values were converted, split, merged, re-encrypted, or assigned new meaning. The old code may run while silently interpreting them incorrectly.</li>
+      <li><strong>Operational:</strong> a large backfill or index build is still running. Starting the old app can create load or conflicting writes.</li>
+    </ul>
+
+    <p>An application rollback should not automatically run a “down” migration. Destructive down migrations can lose data written since the deploy, and many production migrations are not truly reversible. Take a fresh backup or storage snapshot according to the database’s documented method before any state-changing recovery. Then choose deliberately among three paths:</p>
+
+    <ol>
+      <li>Roll back only the image because the new schema is backward compatible.</li>
+      <li>Ship a forward compatibility fix that makes the current release safe.</li>
+      <li>Restore database state through the tested database recovery plan, accepting and accounting for the recovery point—not through the application rollback button.</li>
+    </ol>
+
+    <p>For future releases, the expand-and-contract pattern reduces this risk: add the new shape first, deploy code that can handle both shapes, migrate data, stop old writes, and remove the old shape in a later release.</p>
+
+    <h2>4. Compare current runtime settings with the old image</h2>
+    <p>Coolify states that the selected older image uses the current runtime configuration. Review environment-variable names and build/runtime scope, mounted paths, exposed ports, health-check path, command overrides, domains, and network dependencies before starting it.</p>
+
+    <p>This matters when a release replaced <code>OLD_API_URL</code> with <code>NEW_API_URL</code>, changed the internal port, moved a mounted directory, or altered a required secret. The old binary may be intact but impossible to start with today’s configuration.</p>
+
+    <p>Do not print secret values to compare them. Compare variable names, presence, checksums where appropriate, and configuration revisions in the secret manager or Coolify UI. If a setting must be changed, record it as a separate recovery action with its own rollback value.</p>
+
+    <h2>5. Quiesce stateful work when required</h2>
+    <p>If compatibility is uncertain, put the application into its supported maintenance mode, pause consumers, or temporarily stop the producer of new writes. The exact mechanism belongs to the application—not a blanket firewall rule copied from a tutorial.</p>
+
+    <p>Drain or account for queued work before switching versions. Old workers may not understand payloads emitted by the new release, while redelivery can duplicate side effects such as emails or payments. Inspect idempotency guarantees and dead-letter handling rather than deleting a queue to make an error disappear.</p>
+
+    <h2>6. Deploy the retained image through Coolify</h2>
+    <p>In <strong>Configuration → Rollback</strong>, select the identified working image, start the rollback, then follow the new operation under <strong>Deployments</strong>. Treat its deployment identifier as an opaque value and watch that specific operation reach a terminal status.</p>
+
+    <p>Do not manually replace the Coolify-managed container during a normal rollback. That bypasses the deployment ledger and risks losing environment, network, labels, health configuration, and proxy routing. If the normal path is unavailable during a genuine incident, a manual container recovery requires a separate, carefully recorded procedure and immediate source-of-truth reconciliation.</p>
+
+    <h2>7. Understand what health checks can and cannot prove</h2>
+    <p>For eligible application deployments, Coolify’s rolling-update flow can start the replacement container, wait for its health check, and only then stop the current one. If the replacement fails, Coolify can remove it and keep the healthy version. Its documentation also notes that this application-level rolling-update sequence is not supported for Docker Compose applications.</p>
+
+    <p>A useful readiness check catches startup and dependency failures, but <code>200 OK</code> on <code>/health</code> does not prove login, writes, migrations, queue processing, or external integrations. Keep the endpoint lightweight, use a realistic startup grace period, and do not make it disclose private dependency details.</p>
+
+    <h2>8. Verify the restored release at every state boundary</h2>
+    <p>After Coolify reports success, verify more than the homepage:</p>
+    <ol>
+      <li>Confirm the deployment points to the intended older image or digest.</li>
+      <li>Check startup, health, application, worker, and migration logs for new errors.</li>
+      <li>Fetch a unique release marker or expected heading, not merely an HTTP status.</li>
+      <li>Exercise one read and one controlled write through the critical user flow.</li>
+      <li>Confirm the write appears correctly in the database or persistent store.</li>
+      <li>Verify queue depth and worker success if asynchronous work is involved.</li>
+      <li>Check error rate and latency for long enough to cross the normal traffic path.</li>
+    </ol>
+
+    <pre><code>curl --fail --silent --show-error \
+  'https://app.example.com/health'
+
+curl --fail --silent --show-error \
+  'https://app.example.com/release-check?verify=rollback' \
+  | grep 'EXPECTED_RELEASE_MARKER'</code></pre>
+
+    <p>Use a non-sensitive canary record for the write test and remove it through the application’s normal path. Do not paste production database credentials into ad hoc shell commands or reports.</p>
+
+    <h2>9. Stabilise, then repair the source of truth</h2>
+    <p>An image rollback restores service but does not fix the branch that produced the failed release. Decide whether to revert the bad commit, create a corrective commit, or disable the release behind a tested feature flag. Push that decision to the configured Git branch and run the normal deployment path.</p>
+
+    <p>Otherwise the next webhook or manual deploy can reintroduce the fault. Keep the successful rollback deployment, failed commit, current branch head, migration state, and any temporary configuration changes linked in the incident record.</p>
+
+    <h2>A compact Coolify rollback checklist</h2>
+    <ol>
+      <li>Identify the failed deployment, commit, image, and affected flow.</li>
+      <li>Confirm the previous working image exists in Coolify’s rollback view.</li>
+      <li>Classify database, volume, queue, cache, and external-service changes.</li>
+      <li>Back up state and pause risky writes when compatibility is uncertain.</li>
+      <li>Check the old image against current environment, mounts, ports, and health settings.</li>
+      <li>Start the retained-image rollback through Coolify and follow its deployment record.</li>
+      <li>Verify image identity, logs, health, unique content, a read, and a controlled write.</li>
+      <li>Resume workers and traffic only after their data contracts are proven.</li>
+      <li>Repair Git and document temporary configuration or migration decisions.</li>
+      <li>Review image retention and practise database restore separately.</li>
+    </ol>
+
+    <p>Authoritative references: Coolify’s official guides to <a href="https://coolify.io/docs/applications/deployments/rollbacks" rel="noopener noreferrer">rollbacks</a>, <a href="https://coolify.io/docs/applications/deployments/rolling-updates" rel="noopener noreferrer">rolling updates</a>, and <a href="https://coolify.io/docs/applications/configuration/health-checks" rel="noopener noreferrer">health checks</a>; and Docker’s explanation of <a href="https://docs.docker.com/dhi/core-concepts/digests/" rel="noopener noreferrer">immutable image digests</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related deployment recovery guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push</a><span>Prove the branch, deployment, image, route and cache before deciding to roll back.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress</a><span>Separate a slow build from a stalled worker or exhausted host before cancelling it.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Protect persistent state and test readiness before a database-backed release.</span></li>
+        <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating</a><span>Distinguish current runtime values from settings baked into an image.</span></li>
+        <li><a href="/posts/coolify-no-space-left-on-device-docker-cleanup.html">Coolify Docker disk cleanup</a><span>Reclaim space narrowly without deleting rollback images or persistent volumes blindly.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
