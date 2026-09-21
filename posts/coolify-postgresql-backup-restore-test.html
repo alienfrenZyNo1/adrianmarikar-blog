@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test a Coolify PostgreSQL Backup Before You Need It — Adrian Marikar</title>
+  <meta name="description" content="Test a Coolify PostgreSQL backup by restoring it into an isolated disposable database, checking pg_restore compatibility, data, constraints, and application reads.">
+  <meta name="keywords" content="Coolify PostgreSQL backup restore test, Coolify database backup, pg_restore Coolify, test PostgreSQL backup, Coolify S3 backup">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Test a Coolify PostgreSQL Backup Before You Need It">
+  <meta property="og:description" content="A practical restore drill for proving that a Coolify PostgreSQL backup is recoverable without overwriting production.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html">
+  <meta property="article:published_time" content="2026-09-21T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-21T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Test a Coolify PostgreSQL Backup Before You Need It">
+  <meta name="twitter:description" content="Restore into an isolated target, inspect the archive, and prove the data and application can recover.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Test a Coolify PostgreSQL Backup Before You Need It","description":"Test a Coolify PostgreSQL backup by restoring it into an isolated disposable database, checking pg_restore compatibility, data, constraints, and application reads.","url":"https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html"},"datePublished":"2026-09-21T10:00:00Z","dateModified":"2026-09-21T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","database backup","restore test","pg_restore","S3-compatible storage","disaster recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / restore drill 061</p>
+      <h1>Test a Coolify PostgreSQL backup before you need it</h1>
+    </header>
+
+    <p>Your Coolify database backup has a green execution, a recent timestamp, and a file in S3-compatible storage. That proves a backup job produced and copied an object. It does not prove that the archive can rebuild a usable database before your recovery deadline.</p>
+
+    <p>Coolify’s current backup documentation makes the same distinction: a successful backup only proves that a file was created. Its recommended proof is to restore a copy into a disposable database and verify that the application can read it. This guide turns that advice into a repeatable PostgreSQL restore drill without touching production.</p>
+
+    <blockquote>The safe test target is a separate, disposable database with no production traffic. Never practise by importing over the live database.</blockquote>
+
+    <h2>What a useful restore test must prove</h2>
+    <p>A file’s existence, size, and checksum are useful integrity evidence, but recoverability crosses more boundaries. A useful drill should establish that:</p>
+    <ul>
+      <li>the intended backup completed, rather than being skipped while the database was stopped;</li>
+      <li>the archive can be retrieved from its actual recovery location;</li>
+      <li>the PostgreSQL tools can read its format and version;</li>
+      <li>schema, data, sequences, constraints, indexes, extensions, and ownership restore as expected;</li>
+      <li>the application can connect privately and perform representative reads;</li>
+      <li>the measured recovery time fits the service’s recovery objective;</li>
+      <li>the disposable target and copied data are removed safely afterward.</li>
+    </ul>
+
+    <h2>1. Choose one specific recovery point</h2>
+    <p>Open the Coolify database resource, then its backup schedule and execution history. Select one completed execution and record its timestamp, database name, source server, storage location, file size, and retention class. Use neutral internal notes; do not copy credentials, signed URLs, access keys, or real infrastructure addresses into the drill record.</p>
+
+    <p>Coolify runs a scheduled backup only while the database is running. A missing execution is different from a failed execution, and both are different from a successful archive. Check the exact run rather than inferring success from the schedule being enabled.</p>
+
+    <p>If off-server recovery matters, test the S3-compatible copy—not only the local file beside the database. Local and S3 retention are separate in Coolify, so confirm both policies are long enough for the recovery points you promise.</p>
+
+    <h2>2. Build an isolated restore target</h2>
+    <p>Create a disposable PostgreSQL resource through Coolify on an isolated environment or authorised test server. Match the production major version where possible. A newer <code>pg_restore</code> can often read an older archive, but crossing server versions can expose extension, collation, role, or application compatibility problems; test the combination you would actually use in an incident.</p>
+
+    <p>The target should have:</p>
+    <ul>
+      <li>no public database port;</li>
+      <li>no production hostname, webhook, worker, scheduler, or outbound mail integration;</li>
+      <li>fresh credentials stored in Coolify rather than pasted into commands or tickets;</li>
+      <li>enough free space for the archive, restored database, indexes, and temporary work;</li>
+      <li>a clear expiry time and owner for deletion.</li>
+    </ul>
+
+    <p>If the application must be used for verification, point a separate test instance at the restored database. Disable side effects such as email, payments, webhooks, queue consumers, and scheduled jobs. A copied production database can contain personal or commercially sensitive data, so apply the same access controls and deletion discipline as production.</p>
+
+    <h2>3. Inspect the PostgreSQL archive before importing</h2>
+    <p>Coolify documents that its scheduled PostgreSQL backup workflow uses <code>pg_dump</code> custom format for selected databases. PostgreSQL’s own documentation says non-plain-text archives are restored with <code>pg_restore</code>. Listing the archive is a safe early check that catches truncation, wrong formats, and incompatible client tools before the destructive stage:</p>
+
+    <pre><code>pg_restore --list /restore/sample-postgresql.dump \
+      &gt; /tmp/sample-postgresql.contents
+
+wc -l /tmp/sample-postgresql.contents
+sed -n '1,20p' /tmp/sample-postgresql.contents</code></pre>
+
+    <p>Run this only in the authorised restore environment. Use a placeholder or non-sensitive local path in shared documentation. The list should contain recognisable schema objects and table data, but listing is not itself a restore test.</p>
+
+    <p>If <code>pg_restore</code> reports an unsupported archive version, inspect the versions explicitly:</p>
+
+    <pre><code>pg_restore --version
+postgres --version</code></pre>
+
+    <p>Do not “fix” the archive by renaming its extension or feeding a custom-format dump to <code>psql</code>. Use a compatible PostgreSQL client image or target, then keep that version requirement in the runbook.</p>
+
+    <h2>4. Restore through Coolify’s Import Backup workflow</h2>
+    <p>On the disposable target, open <strong>Configuration → Import Backup</strong>. Coolify supports PostgreSQL imports into a running database and uses <code>pg_restore</code> for its default selected-database workflow. Choose the tested server file, upload, or configured S3-compatible source, review the generated import command, confirm the target again, and follow the complete restore output.</p>
+
+    <p>Do not copy a command from another engine, select “all databases” for a single-database archive, or add broad flags merely to suppress errors. In particular, ownership and role failures need an explicit decision: create the required non-login roles in the isolated target when the application depends on them, or use a deliberately reviewed no-owner restore for a single application database. Record any deviation from the default because it is part of the recovery procedure.</p>
+
+    <p>A restore can emit warnings and still leave a partly populated database. Save the terminal outcome and inspect the first error, not just the last line or the existence of a few tables.</p>
+
+    <h2>5. Verify structure and data independently</h2>
+    <p>Connect through a private, authorised route and compare non-sensitive invariants with production or a pre-recorded manifest. Good checks include:</p>
+    <ul>
+      <li>expected schemas, tables, views, functions, and extensions exist;</li>
+      <li>critical tables have plausible row counts for the recovery timestamp;</li>
+      <li>primary keys, foreign keys, unique constraints, and important indexes exist;</li>
+      <li>sequences are ahead of the maximum existing identifier;</li>
+      <li>the newest business record is close to the backup’s recovery point;</li>
+      <li>database encoding, collation, timezone assumptions, and required roles are valid.</li>
+    </ul>
+
+    <pre><code>SELECT current_database(), current_setting('server_version');
+
+SELECT schemaname, tablename
+FROM pg_catalog.pg_tables
+WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY schemaname, tablename;
+
+SELECT extname, extversion
+FROM pg_extension
+ORDER BY extname;</code></pre>
+
+    <p>Avoid exporting real rows into logs. Prefer counts, timestamps, booleans, and expected object names. Where row counts are sensitive, compare them inside the database session and retain only pass/fail evidence.</p>
+
+    <h2>6. Verify through the application contract</h2>
+    <p>Database inspection proves only the database layer. Start the isolated application against the restored target with side effects disabled, then exercise representative read paths:</p>
+    <ol>
+      <li>load a known account or content record from before the recovery point;</li>
+      <li>open a page that depends on a join, index, extension, or materialised view;</li>
+      <li>confirm migrations report the expected state without applying new production changes;</li>
+      <li>check application logs for permission, collation, missing-relation, or decoding errors;</li>
+      <li>perform a disposable write only if the test environment is designed for it, then verify and remove it.</li>
+    </ol>
+
+    <p>Do not let this test application send mail, charge a payment method, invoke production webhooks, or consume production queues. Recovery confidence should not create a second incident.</p>
+
+    <h2>7. Measure the recovery, then clean up</h2>
+    <p>Record the retrieval time, restore time, verification time, archive size, restored size, PostgreSQL versions, failed steps, and manual decisions. These measurements turn a vague recovery-time objective into evidence. A two-minute toy restore says little about a production-sized archive whose indexes take an hour to rebuild.</p>
+
+    <p>After sign-off, stop the test application, remove the disposable database through the normal Coolify resource workflow, and verify that temporary local copies are gone. Retain the runbook and non-sensitive evidence, not an unmanaged extra copy of production data.</p>
+
+    <h2>Common reasons a green backup still fails the drill</h2>
+    <ul>
+      <li><strong>Wrong source:</strong> the schedule targeted a different database or an empty default database.</li>
+      <li><strong>Service variable mismatch:</strong> the running database container does not expose the resolved <code>POSTGRES_PASSWORD</code>, <code>POSTGRES_USER</code>, or <code>POSTGRES_DB</code> values Coolify’s service backup expects.</li>
+      <li><strong>Local-only recovery:</strong> the local archive works, but S3 credentials, endpoint, bucket policy, retention, or object availability fail during retrieval.</li>
+      <li><strong>Tool mismatch:</strong> the available <code>pg_restore</code> cannot read the archive version.</li>
+      <li><strong>Missing roles or extensions:</strong> objects restore incompletely or the application cannot use them.</li>
+      <li><strong>Insufficient space:</strong> the compressed backup fits, but restored tables, indexes, write-ahead logs, and temporary files do not.</li>
+      <li><strong>No application proof:</strong> tables exist, but permissions, sequences, or schema assumptions break real queries.</li>
+    </ul>
+
+    <h2>A compact quarterly restore-drill checklist</h2>
+    <ol>
+      <li>Select one exact local or S3 recovery point and confirm its execution.</li>
+      <li>Create a private, disposable PostgreSQL target with enough space.</li>
+      <li>Retrieve the archive through the path needed during a real outage.</li>
+      <li>Run <code>pg_restore --list</code> and confirm client/server compatibility.</li>
+      <li>Import through Coolify and read the complete result.</li>
+      <li>Check schema objects, counts, constraints, sequences, extensions, and recency.</li>
+      <li>Run isolated application reads with every external side effect disabled.</li>
+      <li>Measure retrieval, restore, and verification times.</li>
+      <li>Update the runbook with every required role, flag, and version.</li>
+      <li>Delete the disposable resources and temporary copies.</li>
+    </ol>
+
+    <p>Once this drill is repeatable, schedule it often enough to catch version, schema, size, credential, and storage changes. A backup policy describes intent. A clean restore into isolation provides recovery evidence.</p>
+
+    <p>Authoritative references: Coolify’s official guides to <a href="https://coolify.io/docs/databases/backups" rel="noopener noreferrer">database backups</a>, <a href="https://coolify.io/docs/databases/restore" rel="noopener noreferrer">restoring a database</a>, and <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL resources</a>; and PostgreSQL’s documentation for <a href="https://www.postgresql.org/docs/current/app-pgdump.html" rel="noopener noreferrer"><code>pg_dump</code></a> and <a href="https://www.postgresql.org/docs/current/app-pgrestore.html" rel="noopener noreferrer"><code>pg_restore</code></a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related state and recovery guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback after a failed deployment</a><span>Keep application-image rollback separate from database and volume recovery.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Protect persistent storage and prove database readiness before release.</span></li>
+        <li><a href="/posts/coolify-no-space-left-on-device-docker-cleanup.html">Coolify Docker disk cleanup</a><span>Recover capacity without deleting database volumes or the only useful backup.</span></li>
+        <li><a href="/posts/practical-vps-hardening-checklist.html">A practical VPS hardening checklist</a><span>Build access control, patching, monitoring, and tested backups into the host baseline.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

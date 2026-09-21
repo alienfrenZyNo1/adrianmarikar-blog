@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Test a Coolify PostgreSQL Backup Before You Need It: https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html
+  - Practical restore drill covering exact recovery-point selection, isolated disposable targets, custom-format pg_restore inspection, Coolify Import Backup, schema and data invariants, application-level reads, recovery timing, S3-path proof, and secure cleanup.
 |- Coolify Rollback After a Failed Deploy: Protect Database State: https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html
   - State-aware release recovery covering retained application images, image retention, current runtime configuration, database migration compatibility, persistent volumes, queues, health checks, controlled read/write verification, and Git source-of-truth repair.
 |- Coolify Let’s Encrypt Failing? Check a Stale AAAA Record: https://adrianmarikar.com/posts/coolify-lets-encrypt-stale-aaaa-ipv6.html
