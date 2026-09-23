@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify App Cannot Connect to PostgreSQL? Stop Using localhost — Adrian Marikar</title>
+  <meta name="description" content="Fix PostgreSQL connection refused in a Coolify app by checking localhost, the Internal URL, Docker DNS and networks, port 5432, database readiness, credentials and TLS.">
+  <meta name="keywords" content="Coolify PostgreSQL connection refused, Coolify database localhost, Coolify Internal URL, Docker PostgreSQL connection, database connection refused port 5432">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify App Cannot Connect to PostgreSQL? Stop Using localhost">
+  <meta property="og:description" content="Trace a failed Coolify application-to-PostgreSQL connection through the address, internal network, readiness, authentication and TLS layers.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html">
+  <meta property="article:published_time" content="2026-09-23T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-23T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify App Cannot Connect to PostgreSQL? Stop Using localhost">
+  <meta name="twitter:description" content="Use Coolify’s Internal URL, prove Docker DNS and network reachability, then separate readiness, credentials and TLS errors.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify App Cannot Connect to PostgreSQL? Stop Using localhost","description":"Fix PostgreSQL connection refused in a Coolify app by checking localhost, the Internal URL, Docker DNS and networks, port 5432, database readiness, credentials and TLS.","url":"https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html"},"datePublished":"2026-09-23T10:00:00Z","dateModified":"2026-09-23T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","connection refused","Docker networking","Internal URL","database troubleshooting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / database networking 062</p>
+      <h1>Coolify app cannot connect to PostgreSQL? Stop using localhost</h1>
+    </header>
+
+    <p>A web application can build successfully in Coolify and then crash with <code>ECONNREFUSED 127.0.0.1:5432</code>, <code>connection refused</code>, or <code>could not translate host name</code>. The first error already gives away the most common cause: inside the application container, <code>localhost</code> means that application container—not the separate PostgreSQL container.</p>
+
+    <p>The reliable fix is not to publish PostgreSQL to the internet. It is to give the app Coolify’s database <strong>Internal URL</strong>, make sure both resources share the intended destination network, and then test each layer without printing the password.</p>
+
+    <blockquote>Use an internal database hostname from the application container. Reserve <code>localhost</code> for a database process running in that same container, which is not the normal Coolify layout.</blockquote>
+
+    <h2>Read the exact error before changing settings</h2>
+    <table>
+      <thead><tr><th>Error shape</th><th>What it proves</th></tr></thead>
+      <tbody>
+        <tr><td><code>ECONNREFUSED 127.0.0.1:5432</code> or <code>::1:5432</code></td><td>The app tried its own loopback interface; the host is almost certainly wrong.</td></tr>
+        <tr><td><code>could not translate host name</code> / <code>ENOTFOUND</code></td><td>The configured database hostname did not resolve through container DNS.</td></tr>
+        <tr><td>Connection timeout</td><td>A route, network, firewall, wrong address, or unresponsive endpoint needs investigation.</td></tr>
+        <tr><td><code>password authentication failed</code></td><td>The app reached PostgreSQL; focus on credentials and the selected user.</td></tr>
+        <tr><td><code>database ... does not exist</code></td><td>The server answered, but the database name is wrong or was never created.</td></tr>
+        <tr><td><code>no pg_hba.conf entry</code></td><td>PostgreSQL received the request but its host/authentication policy rejected it.</td></tr>
+        <tr><td>TLS or certificate error</td><td>TCP reachability exists; check the client’s SSL mode and the endpoint it is using.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Those are different boundaries. Rotating a password cannot fix DNS. Opening port <code>5432</code> cannot fix an app pointed at its own loopback. Disabling certificate verification cannot make a stopped database ready.</p>
+
+    <h2>1. Use Coolify’s Internal URL for same-destination traffic</h2>
+    <p>Open the PostgreSQL resource in Coolify and copy its Internal URL from the database configuration. Coolify’s database documentation explicitly recommends that URL when an application runs on the same Coolify destination network. Add it to the application as the variable your framework actually reads, commonly <code>DATABASE_URL</code>.</p>
+
+    <pre><code># Shape only — use the value generated by Coolify
+DATABASE_URL=postgresql://APP_USER:ENCODED_PASSWORD@INTERNAL_DB_HOST:5432/APP_DB</code></pre>
+
+    <p>Do not copy a real URL into a ticket, commit, shell history, screenshot, or public log: it contains credentials. Set it in Coolify’s environment-variable UI, save it, and redeploy or restart according to how the application consumes the variable. If a frontend build can see <code>DATABASE_URL</code>, correct that build configuration immediately; database credentials belong only in server-side runtime code.</p>
+
+    <p>The External URL is for an authorised client that genuinely connects from outside the destination network. It may require a published port, firewall controls, TLS, and a different threat model. Using it from a colocated app adds unnecessary exposure and hairpin routing. Prefer the private path.</p>
+
+    <h2>2. Confirm the app reads the variable you changed</h2>
+    <p>A correct Coolify value has no effect if the process reads <code>DB_HOST</code>, a framework-specific variable, an env file baked into the image, or a different deployment environment. Inspect source and startup configuration, then confirm only whether the expected variable exists inside the replacement container:</p>
+
+    <pre><code># Prints only presence, never the value
+if docker exec APP_CONTAINER sh -lc 'test -n "$DATABASE_URL"'; then
+  printf '%s\n' 'DATABASE_URL is present'
+else
+  printf '%s\n' 'DATABASE_URL is missing'
+fi</code></pre>
+
+    <p>Do not run <code>env</code>, <code>docker inspect</code>, or debug endpoints into a shared log without redaction. They can expose the complete URL. If the setting was changed after the current container started, replace or restart that container; an existing process does not acquire a new environment automatically. For build-time versus runtime confusion, use the focused <a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment-variable guide</a>.</p>
+
+    <h2>3. Prove Docker DNS resolves the internal hostname</h2>
+    <p>Docker networks provide service discovery by name. Compose documents that services on the same network can reach one another by service name even when a container is recreated with a different IP. Test the hostname from the application container or a short-lived diagnostic container on the same network:</p>
+
+    <pre><code>docker exec APP_CONTAINER getent hosts INTERNAL_DB_HOST
+
+# If the runtime image deliberately includes a DNS tool:
+docker exec APP_CONTAINER nslookup INTERNAL_DB_HOST</code></pre>
+
+    <p>Use the hostname portion of the Internal URL, not the full URL. A successful result should return a private container address. Do not replace the name with that address in configuration: container addresses can change on redeploy, while the network alias is designed to remain useful.</p>
+
+    <p>If resolution fails, verify that the app and database use the same Coolify server and destination, and inspect their attached Docker network names privately. Separate Coolify projects or environments do not automatically guarantee isolation or connectivity; the effective network attachments decide the path.</p>
+
+    <pre><code>docker inspect APP_CONTAINER --format '{{json .NetworkSettings.Networks}}'
+docker inspect DATABASE_CONTAINER --format '{{json .NetworkSettings.Networks}}'
+
+# Redact names and addresses before sharing the output.</code></pre>
+
+    <h2>4. Test TCP port 5432 without exposing it</h2>
+    <p>After DNS succeeds, test the PostgreSQL socket from the application’s network. Use tools already present in an authorised diagnostic environment:</p>
+
+    <pre><code>nc -vz INTERNAL_DB_HOST 5432
+
+# Better when PostgreSQL client tools are available:
+pg_isready --host=INTERNAL_DB_HOST --port=5432 --timeout=5</code></pre>
+
+    <p><code>pg_isready</code> distinguishes an accepting server from one that is rejecting connections or giving no response. It does not prove that the application’s credentials, database, migrations, and queries work. A refused connection usually means the name resolves but no listener is accepting at that address and port, or the database is still starting. A timeout points more strongly at the path or endpoint.</p>
+
+    <p>Do not add a public <code>ports: - "5432:5432"</code> mapping as a diagnostic shortcut. Containers on the same Docker network use the database’s container port directly. Host publishing creates a separate, potentially internet-facing path and does not repair the internal network.</p>
+
+    <h2>5. Check database state and readiness</h2>
+    <p>Inspect the Coolify database resource and its recent logs. PostgreSQL should be running, not restarting, restoring, upgrading, or failing because its volume is full. If the app starts faster than PostgreSQL, use retry logic with bounded backoff and a real database healthcheck rather than assuming container start order means readiness.</p>
+
+    <pre><code># Run privately with the actual managed container name
+docker ps --filter name=DATABASE_CONTAINER \
+  --format 'table {{.Names}}\t{{.Status}}'
+
+docker logs --since 10m DATABASE_CONTAINER</code></pre>
+
+    <p>A healthcheck such as <code>pg_isready</code> improves startup orchestration, but the application should still tolerate a brief dependency restart. For a Compose deployment, see the related guide to <a href="/posts/coolify-docker-compose-volumes-healthchecks.html">volumes, PostgreSQL readiness, and health-aware startup</a>.</p>
+
+    <h2>6. Separate credentials from connectivity</h2>
+    <p>Once PostgreSQL returns an authentication error, the network is working. Compare the username and initial database in Coolify with the app’s intended values. Coolify warns that if those values are changed directly inside the running database, the matching General settings must also be updated so generated connection URLs and database automation stay accurate.</p>
+
+    <p>Passwords containing reserved URL characters must be percent-encoded when embedded in a URI. A password can be valid in PostgreSQL and still break a connection URL if characters such as <code>@</code>, <code>:</code>, <code>/</code>, <code>?</code>, <code>#</code>, or <code>%</code> are interpreted as URI syntax. Prefer the exact URL Coolify generates, or let a trusted URL library encode components. Do not hand-log the transformed value to “check” it.</p>
+
+    <p>Test with the application’s real driver or migration command so URI parsing matches production. If using <code>psql</code> interactively, avoid putting the password on the command line where process listings and shell history may retain it.</p>
+
+    <h2>7. Treat TLS errors as a separate final layer</h2>
+    <p>Some frameworks default to requiring SSL in production; others disable it unless requested. The appropriate mode depends on whether the connection stays on the trusted internal Coolify network or crosses an external boundary with a valid server certificate. Do not solve a certificate-name error with a permanent “accept any certificate” option.</p>
+
+    <p>First confirm which endpoint the app is using. Then configure the database client’s documented SSL mode deliberately. If encrypted remote access is required, issue a certificate for the name clients use and validate its chain and hostname. If the app uses Coolify’s private internal endpoint, do not accidentally force assumptions copied from a managed public database.</p>
+
+    <h2>Redeploy once, then prove an application query</h2>
+    <ol>
+      <li>Save the correct internal connection setting in the intended Coolify application environment.</li>
+      <li>Trigger one deployment or restart and follow it to a terminal state.</li>
+      <li>Confirm the new container has the variable without printing it.</li>
+      <li>Confirm internal DNS and port <code>5432</code> from the app network.</li>
+      <li>Read the app and database logs for the same attempt.</li>
+      <li>Run the framework’s migration-status or read-only database check.</li>
+      <li>Load one public application route that depends on PostgreSQL and assert unique expected content.</li>
+      <li>If safe in that environment, perform one controlled write and read it back.</li>
+    </ol>
+
+    <p>A green Coolify deployment and an HTTP <code>200</code> on a static health endpoint do not prove database access. Choose a route or API response that cannot succeed without the expected schema and data. Keep rollback and backups in mind before allowing migrations; the <a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback guide</a> explains why reverting an image does not reverse database state.</p>
+
+    <h2>Compact troubleshooting order</h2>
+    <ol>
+      <li>Capture the exact error, target hostname and target port without credentials.</li>
+      <li>Replace application-container <code>localhost</code> with Coolify’s Internal URL.</li>
+      <li>Confirm the process reads the changed runtime variable.</li>
+      <li>Resolve the internal hostname from the application network.</li>
+      <li>Test port <code>5432</code> and database readiness privately.</li>
+      <li>Verify shared destination/network attachments.</li>
+      <li>Only after connectivity succeeds, repair user, password, database, URI encoding, or <code>pg_hba.conf</code> policy.</li>
+      <li>Configure TLS for the actual internal or external boundary.</li>
+      <li>Redeploy once and prove a real database-backed application path.</li>
+    </ol>
+
+    <p>The central distinction is simple: an app connecting to <code>127.0.0.1:5432</code> is looking inside itself, while a normal Coolify PostgreSQL resource is another container. Point the app at the managed internal hostname, prove the shared network, and let each error tell you which layer to inspect next.</p>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/databases" rel="noopener noreferrer">database overview</a> explains when to use Internal and External URLs, and its <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL guide</a> covers generated connection details and configuration consistency. Docker’s <a href="https://docs.docker.com/compose/how-tos/networking/" rel="noopener noreferrer">Compose networking documentation</a> explains service-name discovery on shared networks. PostgreSQL’s <a href="https://www.postgresql.org/docs/current/libpq-connect.html" rel="noopener noreferrer">connection-string reference</a> and <a href="https://www.postgresql.org/docs/current/client-authentication-problems.html" rel="noopener noreferrer">authentication diagnostics</a> distinguish connection parameters from server-side rejection.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify database guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating</a><span>Separate runtime injection from values frozen into a build or overridden elsewhere.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Compose volumes and healthchecks</a><span>Model PostgreSQL storage, readiness, dependency startup, backups, and restore checks.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove the database can be recovered into an isolated target before an incident.</span></li>
+        <li><a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback after a failed deploy</a><span>Keep application rollback separate from migration and persistent-state recovery.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify App Cannot Connect to PostgreSQL? Stop Using localhost: https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html
+  - Layered database-connection troubleshooting covering container-local localhost, Coolify Internal URLs, runtime variable presence, Docker DNS and shared networks, private port 5432 checks, PostgreSQL readiness, credentials, URI encoding, authentication policy, TLS, and database-backed application verification.
 |- Test a Coolify PostgreSQL Backup Before You Need It: https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html
   - Practical restore drill covering exact recovery-point selection, isolated disposable targets, custom-format pg_restore inspection, Coolify Import Backup, schema and data invariants, application-level reads, recovery timing, S3-path proof, and secure cleanup.
 |- Coolify Rollback After a Failed Deploy: Protect Database State: https://adrianmarikar.com/posts/coolify-rollback-failed-deployment-database-migrations.html

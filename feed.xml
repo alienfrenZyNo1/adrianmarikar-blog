@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify App Cannot Connect to PostgreSQL? Stop Using localhost</title>
+      <link>https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html</guid>
+      <pubDate>Wed, 23 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to fixing Coolify PostgreSQL connection errors by replacing container-local localhost with the Internal URL, then checking Docker DNS, networks, readiness, authentication, URI encoding, and TLS.</description>
+    </item>
+    <item>
       <title>Test a Coolify PostgreSQL Backup Before You Need It</title>
       <link>https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html</guid>
