@@ -139,7 +139,7 @@ docker logs --since 10m DATABASE_CONTAINER</code></pre>
     <h2>6. Separate credentials from connectivity</h2>
     <p>Once PostgreSQL returns an authentication error, the network is working. Compare the username and initial database in Coolify with the app’s intended values. Coolify warns that if those values are changed directly inside the running database, the matching General settings must also be updated so generated connection URLs and database automation stay accurate.</p>
 
-    <p>Passwords containing reserved URL characters must be percent-encoded when embedded in a URI. A password can be valid in PostgreSQL and still break a connection URL if characters such as <code>@</code>, <code>:</code>, <code>/</code>, <code>?</code>, <code>#</code>, or <code>%</code> are interpreted as URI syntax. Prefer the exact URL Coolify generates, or let a trusted URL library encode components. Do not hand-log the transformed value to “check” it.</p>
+    <p>Passwords containing reserved URL characters must be percent-encoded when embedded in a URI. A password can be valid in PostgreSQL and still break a connection URL if characters such as <code>@</code>, <code>:</code>, <code>/</code>, <code>?</code>, <code>#</code>, or <code>%</code> are interpreted as URI syntax. Prefer the exact URL Coolify generates, or let a trusted URL library encode components. Do not hand-log the transformed value to “check” it. If the failure began after a credential edit, follow the focused guide to <a href="/posts/coolify-postgresql-password-authentication-failed.html">reconciling a Coolify PostgreSQL password change</a>.</p>
 
     <p>Test with the application’s real driver or migration command so URI parsing matches production. If using <code>psql</code> interactively, avoid putting the password on the command line where process listings and shell history may retain it.</p>
 
@@ -183,6 +183,7 @@ docker logs --since 10m DATABASE_CONTAINER</code></pre>
       <p class="eyebrow">// keep reading</p>
       <h2>Related Coolify database guides</h2>
       <ul>
+        <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Reconcile the database role, Coolify metadata, application runtime, and backup consumers after a password change.</span></li>
         <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating</a><span>Separate runtime injection from values frozen into a build or overridden elsewhere.</span></li>
         <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Compose volumes and healthchecks</a><span>Model PostgreSQL storage, readiness, dependency startup, backups, and restore checks.</span></li>
         <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove the database can be recovered into an isolated target before an incident.</span></li>

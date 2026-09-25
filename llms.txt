@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL Password Authentication Failed After a Password Change: https://adrianmarikar.com/posts/coolify-postgresql-password-authentication-failed.html
+  - Credential-drift recovery covering the persistent PostgreSQL role, Coolify General settings and generated Internal URL, application runtime values, existing-volume initialization semantics, URL encoding, consumer recreation, least-privilege staged rotation, database-backed verification, and fresh backup proof.
 |- Coolify App Cannot Connect to PostgreSQL? Stop Using localhost: https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html
   - Layered database-connection troubleshooting covering container-local localhost, Coolify Internal URLs, runtime variable presence, Docker DNS and shared networks, private port 5432 checks, PostgreSQL readiness, credentials, URI encoding, authentication policy, TLS, and database-backed application verification.
 |- Test a Coolify PostgreSQL Backup Before You Need It: https://adrianmarikar.com/posts/coolify-postgresql-backup-restore-test.html
