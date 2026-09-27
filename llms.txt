@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL Too Many Connections? Fix It Safely: https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html
+  - Connection-capacity recovery covering reserved administrative headroom, pg_stat_activity attribution, active versus idle-in-transaction sessions, targeted cancellation and termination, aggregate web/worker pool budgets, PgBouncer trade-offs, restart-only max_connections changes, session timeouts, and database-backed verification.
 |- Coolify PostgreSQL Password Authentication Failed After a Password Change: https://adrianmarikar.com/posts/coolify-postgresql-password-authentication-failed.html
   - Credential-drift recovery covering the persistent PostgreSQL role, Coolify General settings and generated Internal URL, application runtime values, existing-volume initialization semantics, URL encoding, consumer recreation, least-privilege staged rotation, database-backed verification, and fresh backup proof.
 |- Coolify App Cannot Connect to PostgreSQL? Stop Using localhost: https://adrianmarikar.com/posts/coolify-postgresql-connection-refused-localhost.html

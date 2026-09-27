@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify PostgreSQL Too Many Connections? Fix It Safely</title>
+      <link>https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html</guid>
+      <pubDate>Sun, 27 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to diagnosing PostgreSQL connection exhaustion in Coolify with pg_stat_activity, targeted recovery, deployment-wide pool budgets, PgBouncer trade-offs, and database-backed verification.</description>
+    </item>
+    <item>
       <title>Coolify PostgreSQL Password Authentication Failed After a Password Change</title>
       <link>https://adrianmarikar.com/posts/coolify-postgresql-password-authentication-failed.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-postgresql-password-authentication-failed.html</guid>

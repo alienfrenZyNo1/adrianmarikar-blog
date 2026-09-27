@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL Too Many Connections? Fix It Safely — Adrian Marikar</title>
+  <meta name="description" content="Fix PostgreSQL too many connections in Coolify by measuring pg_stat_activity, recovering capacity safely, right-sizing app pools, and verifying real database work.">
+  <meta name="keywords" content="Coolify PostgreSQL too many connections, remaining connection slots are reserved, Postgres max_connections, pg_stat_activity, Coolify connection pool, PgBouncer">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL Too Many Connections? Fix It Safely">
+  <meta property="og:description" content="Measure who owns the sessions, recover the narrowest safe capacity, and stop application pools from exhausting PostgreSQL again.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html">
+  <meta property="article:published_time" content="2026-09-27T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-27T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL Too Many Connections? Fix It Safely">
+  <meta name="twitter:description" content="Diagnose remaining connection slots are reserved without deleting data, killing every session, or blindly raising max_connections.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL Too Many Connections? Fix It Safely","description":"Fix PostgreSQL too many connections in Coolify by measuring pg_stat_activity, recovering capacity safely, right-sizing app pools, and verifying real database work.","url":"https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html"},"datePublished":"2026-09-27T10:00:00Z","dateModified":"2026-09-27T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","too many connections","pg_stat_activity","connection pools","PgBouncer"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / connection capacity 064</p>
+      <h1>Coolify PostgreSQL too many connections? Fix it safely</h1>
+    </header>
+
+    <p>A Coolify application can suddenly return database errors while PostgreSQL logs <code>FATAL: sorry, too many clients already</code> or <code>remaining connection slots are reserved</code>. Restarting the database may briefly clear the symptom, but it also interrupts every client and hides the process that consumed the slots.</p>
+
+    <p>The useful question is not simply “How do I increase <code>max_connections</code>?” It is “Which application, process type, deployment, or transaction owns the sessions, and why are they not being reused?” Measure that first. Then recover only the capacity you need, correct the application pool budget, and verify database-backed work.</p>
+
+    <blockquote>Do not delete the PostgreSQL volume, expose port 5432 publicly, or terminate every backend as a first response. A connection-capacity incident is not a storage-reset problem.</blockquote>
+
+    <h2>What the two common errors mean</h2>
+    <table>
+      <thead><tr><th>Error</th><th>Meaning</th><th>First focus</th></tr></thead>
+      <tbody>
+        <tr><td><code>too many clients already</code></td><td>The server has no connection slot available to this client.</td><td>Session ownership and pool totals.</td></tr>
+        <tr><td><code>remaining connection slots are reserved</code></td><td>Ordinary clients filled the non-reserved allowance.</td><td>Use an authorised administrative route; preserve reserved capacity.</td></tr>
+        <tr><td><code>connection refused</code></td><td>No server accepted the TCP connection at that address and port.</td><td>Host, port, network, readiness, and listen address.</td></tr>
+        <tr><td><code>password authentication failed</code></td><td>PostgreSQL was reached but rejected the credential.</td><td>Role, password, and connection URL.</td></tr>
+      </tbody>
+    </table>
+
+    <p>If the error is refusal or authentication rather than exhaustion, use the separate guides for <a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify PostgreSQL connectivity</a> and <a href="/posts/coolify-postgresql-password-authentication-failed.html">password drift</a>. Opening a public port or rotating a password cannot create a free backend slot.</p>
+
+    <h2>1. Preserve one administrative path</h2>
+    <p>PostgreSQL keeps a small number of slots away from ordinary roles so an administrator can still investigate. Do not point application traffic at a superuser to bypass the limit. That defeats the safety margin and gives the application unnecessary privileges.</p>
+
+    <p>Use Coolify’s database terminal or an authorised <code>psql</code> session from the private application network. If no administrative session can connect, stop or scale down the single known noisy application process before restarting the database. That is narrower than rebooting every client. Keep the database on its Coolify private network and use the generated Internal URL rather than publishing PostgreSQL to the internet.</p>
+
+    <h2>2. Capture the limit and current usage</h2>
+    <p>Once connected, record the capacity settings and the number of visible sessions. Current PostgreSQL versions can have ordinary, reserved, and superuser-reserved capacity; the exact settings available depend on the running major version.</p>
+
+    <pre><code>SHOW max_connections;
+SHOW superuser_reserved_connections;
+
+SELECT count(*) AS visible_sessions
+FROM pg_stat_activity;</code></pre>
+
+    <p>Do not assume the row count seen by a restricted role is the complete operational picture. Use an authorised monitoring or administrative role. Also leave deliberate headroom for migrations, backups, console access, health operations, and a real incident. A design that uses every ordinary slot during normal traffic is already over capacity.</p>
+
+    <h2>3. Find who owns the sessions</h2>
+    <p>Start with aggregate evidence, not a dump of complete queries. Group by database, role, application name, and state:</p>
+
+    <pre><code>SELECT
+  datname,
+  usename,
+  application_name,
+  state,
+  count(*) AS sessions
+FROM pg_stat_activity
+WHERE pid &lt;&gt; pg_backend_pid()
+GROUP BY datname, usename, application_name, state
+ORDER BY sessions DESC, datname, usename;</code></pre>
+
+    <p>Then inspect age and wait state for the suspicious group without copying sensitive SQL text into a public ticket:</p>
+
+    <pre><code>SELECT
+  pid,
+  datname,
+  usename,
+  application_name,
+  state,
+  wait_event_type,
+  wait_event,
+  backend_start,
+  xact_start,
+  state_change
+FROM pg_stat_activity
+WHERE pid &lt;&gt; pg_backend_pid()
+ORDER BY xact_start NULLS LAST, backend_start;</code></pre>
+
+    <p>Match <code>application_name</code>, role, database, timestamps, and Coolify resources. If the application does not set an application name, add one to each connection configuration—for example separate names for web, worker, scheduler, and migration processes. Attribution becomes much easier during the next incident.</p>
+
+    <h2>Idle is not the same as idle in transaction</h2>
+    <ul>
+      <li><strong><code>active</code>:</strong> the backend is executing a query. A large active set may reflect real load, slow SQL, lock waits, or excessive concurrency.</li>
+      <li><strong><code>idle</code>:</strong> the client keeps a connection open while waiting for its next command. This is normal for a bounded pool, but hundreds of idle sessions can reveal oversized pools or excessive process replicas.</li>
+      <li><strong><code>idle in transaction</code>:</strong> the client opened a transaction and stopped issuing commands. It still consumes a slot and can retain locks or an old snapshot. Find the code path and transaction boundary.</li>
+    </ul>
+
+    <p>A count of idle sessions alone does not prove a leak. Ten application containers with a pool maximum of 20 can legitimately retain about 200 sessions even when request traffic is quiet. The aggregate deployment budget matters.</p>
+
+    <h2>4. Recover only the capacity you need</h2>
+    <p>The safest immediate action is usually to stop or reduce the offending client, allowing it to close its own sessions. For a bad deployment, roll back or scale down its web and worker replicas. If one runaway query is the issue, cancel that query before terminating its whole session.</p>
+
+    <p>When a backend must be disconnected, target verified process IDs and exclude your own session. <code>pg_cancel_backend</code> requests cancellation of the current query; <code>pg_terminate_backend</code> ends the session. Both require suitable privileges.</p>
+
+    <pre><code>-- Review the selected rows first. Never paste an unreviewed mass-kill query.
+SELECT pg_cancel_backend(PID_TO_CANCEL);
+SELECT pg_terminate_backend(PID_TO_TERMINATE);</code></pre>
+
+    <p>Terminating a session rolls back its open transaction and makes the client reconnect. That can duplicate work if a job retries without idempotency, and it can create a reconnect storm if the application pool is still misconfigured. Do not terminate autovacuum, replication, backup, or unfamiliar internal sessions merely to make the graph drop.</p>
+
+    <h2>5. Calculate one connection budget for the whole deployment</h2>
+    <p>Application pool settings are normally per process, not per Coolify application. Calculate the worst case across every process that can connect:</p>
+
+    <pre><code>web replicas × web pool maximum
++ worker replicas × worker pool maximum
++ schedulers and listeners
++ migration and release jobs
++ monitoring and backup clients
++ administrative headroom
+≤ usable PostgreSQL capacity</code></pre>
+
+    <p>For example, changing a web pool from 10 to 30 does not add 20 sessions overall if four replicas exist; it can add 80. Development defaults copied into multiple web, worker, and scheduler containers are a common source of surprise.</p>
+
+    <p>Set the pool minimum low enough that quiet processes do not pre-open unnecessary sessions. Set the maximum from measured query concurrency and database capacity rather than web concurrency alone. Configure acquisition timeouts so requests fail in a controlled way instead of waiting forever. Confirm connections are returned in every success, error, cancellation, and timeout path.</p>
+
+    <p>After changing Coolify runtime variables, recreate the relevant application and worker containers. A saved variable does not resize a pool already running in memory. The <a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment-variable guide</a> covers build-time values, runtime values, and hidden overrides.</p>
+
+    <h2>6. Treat poolers and max_connections as design changes</h2>
+    <p>PgBouncer can let many client-side sessions share fewer PostgreSQL backends, especially for short transactions. It is not a repair for leaked transactions or slow queries. Transaction pooling also changes session semantics: code relying on session-level state, temporary tables, advisory locks, or some prepared-statement behaviours needs compatibility testing.</p>
+
+    <p>Do not blindly raise <code>max_connections</code>. PostgreSQL allocates per-backend resources, while concurrent queries can multiply memory use through settings such as <code>work_mem</code>. The parameter is server-start only, so changing it requires a planned restart. First right-size application pools and remove leaks; then raise the limit only after checking memory, CPU, workload, operational headroom, and rollback.</p>
+
+    <p>Coolify can apply resource limits to the database container, but a higher PostgreSQL limit does not create more container memory. Container limits, PostgreSQL configuration, and aggregate application pools must agree.</p>
+
+    <h2>7. Use timeouts as guardrails, not substitutes for correct code</h2>
+    <p><code>idle_in_transaction_session_timeout</code> can end sessions that remain idle while holding an open transaction. It protects against one damaging failure mode, but the client must still handle disconnection and retry safely. <code>statement_timeout</code> limits query runtime, not session count. Generic idle-session timeouts can fight a legitimate pool and cause reconnect churn.</p>
+
+    <p>Introduce timeouts from observed transaction and query durations, preferably per role or application where possible. Test long migrations, maintenance, imports, backups, and workers before making a broad database-wide change.</p>
+
+    <h2>8. Verify the fix through the real application</h2>
+    <ol>
+      <li>Confirm the deployment or worker change reached a terminal successful state.</li>
+      <li>Run a database-backed read through the application—not only a static health endpoint.</li>
+      <li>Perform one controlled write and read-back if the environment permits it.</li>
+      <li>Watch <code>pg_stat_activity</code> through normal traffic and one application restart.</li>
+      <li>Confirm session counts settle below the planned budget rather than climbing continuously.</li>
+      <li>Check for old <code>idle in transaction</code> sessions, lock waits, and reconnect loops.</li>
+      <li>Run a scheduled job and verify worker progress.</li>
+      <li>Confirm a fresh backup completes; do not consume the reserved operating margin with the backup job.</li>
+    </ol>
+
+    <p>An HTTP <code>200</code> from a route that never queries PostgreSQL proves only that the web process answered. A reliable check exercises the data path that failed and then confirms connection behaviour remains bounded.</p>
+
+    <h2>Compact incident order</h2>
+    <ol>
+      <li>Match the application error to the PostgreSQL connection-limit error.</li>
+      <li>Preserve an authorised administrative path and do not grant the app superuser access.</li>
+      <li>Record limits and group <code>pg_stat_activity</code> by owner, process name, database, and state.</li>
+      <li>Distinguish active, idle, and idle-in-transaction sessions.</li>
+      <li>Stop or reduce the offending client before terminating selected backends.</li>
+      <li>Calculate pool maximums across every replica, worker, scheduler, and migration job.</li>
+      <li>Recreate affected Coolify resources so new runtime limits take effect.</li>
+      <li>Consider PgBouncer, timeouts, or a higher server limit only after workload testing.</li>
+      <li>Verify real reads, writes, jobs, backups, and a stable session count.</li>
+    </ol>
+
+    <p>The durable fix is usually outside the database restart button. PostgreSQL enforces one finite server budget while Coolify may run several independent processes, each with its own pool. Make those numbers explicit, retain operational headroom, and use session evidence to find leaks or oversized pools. Then a traffic spike or routine redeploy is far less likely to consume the last ordinary slot.</p>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL guide</a> describes its standalone container, private Internal URL, persistent storage, health checks, and resource controls. PostgreSQL documents <a href="https://www.postgresql.org/docs/current/runtime-config-connection.html" rel="noopener noreferrer">connection settings and reserved slots</a>, the fields in <a href="https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ACTIVITY-VIEW" rel="noopener noreferrer"><code>pg_stat_activity</code></a>, <a href="https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-SIGNAL" rel="noopener noreferrer">query cancellation and session termination</a>, and <a href="https://www.postgresql.org/docs/current/runtime-config-client.html" rel="noopener noreferrer">client-session timeouts</a>. The <a href="https://www.pgbouncer.org/features.html" rel="noopener noreferrer">PgBouncer feature matrix</a> explains pooling modes and their compatibility trade-offs.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify database guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Separate container-local loopback from DNS, network, readiness, authentication, and TLS faults.</span></li>
+        <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Reconcile the database role, generated Internal URL, application runtime, and backup credentials.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove a real recovery point in an isolated disposable database.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Compose volumes and healthchecks</a><span>Design persistence, readiness, backups, and startup dependencies before deployment.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
