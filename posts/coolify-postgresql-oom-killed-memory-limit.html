@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure — Adrian Marikar</title>
+  <meta name="description" content="Diagnose a Coolify PostgreSQL container that is OOMKilled or keeps restarting by proving the memory boundary, measuring PostgreSQL demand, and tuning safely.">
+  <meta name="keywords" content="Coolify PostgreSQL OOMKilled, Coolify database keeps restarting, PostgreSQL out of memory, Docker memory limit Postgres, PostgreSQL work_mem, PostgreSQL shared_buffers">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure">
+  <meta property="og:description" content="Prove whether Docker or the host killed PostgreSQL, find the memory multiplier, recover safely, and verify real database work.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html">
+  <meta property="article:published_time" content="2026-09-29T10:00:00Z">
+  <meta property="article:modified_time" content="2026-09-29T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure">
+  <meta name="twitter:description" content="A safe runbook for PostgreSQL restarts caused by container limits, host exhaustion, query concurrency, or oversized memory settings.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure","description":"Diagnose a Coolify PostgreSQL container that is OOMKilled or keeps restarting by proving the memory boundary, measuring PostgreSQL demand, and tuning safely.","url":"https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html"},"datePublished":"2026-09-29T10:00:00Z","dateModified":"2026-09-29T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","OOMKilled","Docker memory limit","work_mem","shared_buffers"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.09 / database memory 065</p>
+      <h1>Coolify PostgreSQL OOMKilled or restarting? Fix memory pressure</h1>
+    </header>
+
+    <p>A PostgreSQL database in Coolify may appear healthy, disappear, recover, and then repeat the cycle under traffic, a report, an index build, or a backup. Application logs show broken connections. Coolify shows restarts. PostgreSQL may log an interrupted startup without ever writing “out of memory” itself.</p>
+
+    <p>Do not begin by raising every memory setting or removing the container limit. First prove which boundary failed: the PostgreSQL container’s hard limit, the whole VPS, a health-check timeout, or an ordinary database crash. Then identify the workload and setting that multiplied memory demand.</p>
+
+    <blockquote>Preserve the database volume. An OOM restart is a capacity and workload incident, not a reason to delete storage, recreate PostgreSQL from scratch, or expose port 5432 publicly.</blockquote>
+
+    <h2>What OOMKilled actually tells you</h2>
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely meaning</th><th>Next check</th></tr></thead>
+      <tbody>
+        <tr><td>Container state says <code>OOMKilled=true</code></td><td>The container crossed a cgroup memory boundary and Docker recorded the kill.</td><td>Coolify resource limit, container limit, workload at the kill time.</td></tr>
+        <tr><td>Kernel log names a <code>postgres</code> process</td><td>The host exhausted usable memory and swap, then the Linux OOM killer selected PostgreSQL.</td><td>Whole-host consumers, overcommit, swap, and concurrent workloads.</td></tr>
+        <tr><td>Exit code or restart without OOM evidence</td><td>PostgreSQL may have crashed, been stopped, failed a probe, or been recreated.</td><td>Database logs, Docker events, health history, deployment activity.</td></tr>
+        <tr><td>Healthy container but slow or failed queries</td><td>Memory pressure may be causing swap or heavy temporary-file I/O rather than a kill.</td><td>Metrics, query plans, temporary files, host I/O, and latency.</td></tr>
+      </tbody>
+    </table>
+
+    <p>A restart count proves only that the container restarted. An unhealthy status proves only that the configured probe failed. Neither proves an OOM event. Keep the diagnosis tied to timestamps and evidence.</p>
+
+    <h2>1. Record the incident before restarting again</h2>
+    <p>In Coolify, open the PostgreSQL resource and capture its status, recent logs, metrics, current image, health state, and configured resource limits. Note the exact time of the application failure and database restart. Avoid changing several controls at once.</p>
+
+    <p>If you administer the host, inspect the Coolify-managed container using its actual name or ID:</p>
+
+    <pre><code>docker inspect DATABASE_CONTAINER \
+  --format 'oom={{.State.OOMKilled}} exit={{.State.ExitCode}} restarts={{.RestartCount}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}'
+
+docker inspect DATABASE_CONTAINER \
+  --format 'memory={{.HostConfig.Memory}} reservation={{.HostConfig.MemoryReservation}} swap={{.HostConfig.MemorySwap}}'
+
+docker logs --since 30m DATABASE_CONTAINER</code></pre>
+
+    <p>Then check the host’s kernel journal for the same time window. Access to kernel logs normally requires administrative privileges:</p>
+
+    <pre><code>journalctl -k --since '30 minutes ago' \
+  | grep -Ei 'out of memory|oom-kill|killed process'
+
+docker events --since '30m' \
+  --filter container=DATABASE_CONTAINER</code></pre>
+
+    <p>Do not publish raw logs without review. They can contain database names, role names, queries, paths, or application details. Record only the evidence needed to classify the incident.</p>
+
+    <h2>2. Separate container OOM from host OOM</h2>
+    <p>Coolify can set a maximum memory limit on the database container. Reaching that hard limit can kill PostgreSQL even while the VPS still has free memory. Conversely, a database with no explicit container limit can contribute to host-wide exhaustion and be selected by the kernel OOM killer.</p>
+
+    <ul>
+      <li><strong>Container-bound incident:</strong> Docker reports <code>OOMKilled=true</code>, the database limit is near the observed peak, and the host retained headroom.</li>
+      <li><strong>Host-bound incident:</strong> kernel logs show global memory exhaustion, several services were under pressure, and PostgreSQL may or may not have had a Coolify limit.</li>
+      <li><strong>Not yet proven:</strong> the database restarted but neither Docker state nor kernel logs confirm OOM. Investigate the PostgreSQL exit and health check instead of assuming.</li>
+    </ul>
+
+    <p>Use Coolify Metrics and a short live sample to understand the normal range, but remember that a sample taken after restart misses the peak that caused the kill:</p>
+
+    <pre><code>docker stats --no-stream DATABASE_CONTAINER
+free -h
+cat /proc/meminfo | grep -E 'MemAvailable|SwapTotal|SwapFree'</code></pre>
+
+    <p>Host memory must cover more than PostgreSQL. Coolify, Docker, Traefik, application containers, builds, backups, monitoring, the kernel, and filesystem cache all share the machine. A database limit that fits on paper can still leave the VPS without safe operating headroom.</p>
+
+    <h2>3. Read PostgreSQL’s effective memory settings</h2>
+    <p>Connect through Coolify’s private database terminal or from an authorised application on the same destination network. Use the effective values, not an old configuration file or a planned environment variable:</p>
+
+    <pre><code>SELECT name, setting, unit, source, pending_restart
+FROM pg_settings
+WHERE name IN (
+  'shared_buffers',
+  'work_mem',
+  'hash_mem_multiplier',
+  'maintenance_work_mem',
+  'autovacuum_work_mem',
+  'max_connections',
+  'max_parallel_workers_per_gather',
+  'max_parallel_maintenance_workers'
+)
+ORDER BY name;</code></pre>
+
+    <p>These settings do not add up as one simple fixed total:</p>
+
+    <ul>
+      <li><strong><code>shared_buffers</code></strong> is a server-wide shared allocation established at startup.</li>
+      <li><strong><code>work_mem</code></strong> is a base limit for each sort or hash operation, not one allowance for the whole server or even one allowance per query.</li>
+      <li><strong><code>hash_mem_multiplier</code></strong> can let hash operations exceed the base <code>work_mem</code> amount.</li>
+      <li><strong>Parallel query workers</strong> are separate processes, and relevant resource limits can apply to each worker as well as the leader.</li>
+      <li><strong><code>maintenance_work_mem</code></strong> is used by maintenance work such as index creation and some vacuum operations.</li>
+      <li><strong>Autovacuum workers, connections, extensions, caches, query state, and the operating system</strong> consume additional memory.</li>
+    </ul>
+
+    <p>This is why setting <code>work_mem</code> to a large value because one report spills to disk can destabilise unrelated traffic. Several active sessions can each execute several memory-using plan nodes, and parallel workers can multiply the demand again.</p>
+
+    <h2>4. Match the spike to database activity</h2>
+    <p>Inspect session ownership, state, query start time, wait type, and parallel relationships. Avoid copying full private query text into public incident reports:</p>
+
+    <pre><code>SELECT
+  pid,
+  leader_pid,
+  datname,
+  usename,
+  application_name,
+  state,
+  wait_event_type,
+  wait_event,
+  backend_start,
+  xact_start,
+  query_start
+FROM pg_stat_activity
+WHERE pid &lt;&gt; pg_backend_pid()
+ORDER BY query_start NULLS LAST, backend_start;</code></pre>
+
+    <p>Look for a report, import, index build, migration, backup, autovacuum wave, worker fan-out, or new deployment that began just before the memory climb. Also compare connection counts with the deployment-wide pool budget. Too many concurrent backends can turn otherwise modest per-query settings into host pressure; the separate <a href="/posts/coolify-postgresql-too-many-connections.html">Coolify PostgreSQL connection-capacity guide</a> shows how to attribute and bound those sessions.</p>
+
+    <p>For one currently connected backend, <code>pg_backend_memory_contexts</code> exposes the memory contexts of that session. An authorised administrator can also request that another backend log its memory contexts with <code>pg_log_backend_memory_contexts(pid)</code>. Use this sparingly: it can generate many log lines and is evidence for a specific investigation, not a permanent high-frequency monitor.</p>
+
+    <h2>5. Recover with the narrowest safe change</h2>
+    <p>If the database is down, preserve the volume and configuration, stop the workload that triggered the spike, and start PostgreSQL once. Do not create a restart loop by immediately releasing the same report queue or migration.</p>
+
+    <p>Choose the repair that matches the evidence:</p>
+
+    <ul>
+      <li><strong>A single expensive query:</strong> cancel it if still active, inspect its plan in a safe environment, add or correct indexes, reduce the result set, or schedule it away from peak load.</li>
+      <li><strong>Oversized global <code>work_mem</code>:</strong> lower the global value and grant a higher session- or role-specific value only to tested analytical work that needs it.</li>
+      <li><strong>Excessive concurrency:</strong> reduce web and worker pool totals, cap job parallelism, and keep administrative and backup headroom.</li>
+      <li><strong>Parallel-query multiplication:</strong> test a lower <code>max_parallel_workers_per_gather</code> for the affected role or workload rather than disabling parallelism blindly across the cluster.</li>
+      <li><strong>Maintenance collision:</strong> avoid overlapping large index builds, restores, backups, and peak application load; review maintenance memory and worker counts.</li>
+      <li><strong>Container limit below measured need:</strong> raise it only if the host has durable headroom for the database plus every neighbouring service.</li>
+      <li><strong>VPS genuinely too small:</strong> move the database or workload to a host with adequate memory instead of hiding sustained pressure with repeated restarts.</li>
+    </ul>
+
+    <p>Some PostgreSQL settings reload; others require restart. Check <code>pg_settings.context</code> and <code>pending_restart</code>, make one controlled change, and let Coolify recreate or restart the resource only when required.</p>
+
+    <h2>Do not “fix” OOM by disabling the OOM killer</h2>
+    <p>Docker supports controls related to OOM behaviour, but protecting an unbounded database process can move the failure to Docker, Coolify, SSH, or another critical host process. PostgreSQL documentation also discusses Linux overcommit and OOM score adjustment, but these are host-design decisions—not first-response toggles for an undersized shared VPS.</p>
+
+    <p>Likewise, swap can provide a short buffer but is not substitute RAM for a busy database. Heavy swapping can turn a sharp failure into severe latency, health-check failures, and timeouts. Measure it and size the system for the workload.</p>
+
+    <h2>6. Set Coolify limits from measured headroom</h2>
+    <p>In the PostgreSQL resource, open <strong>Configuration → Resource Limits</strong>. Coolify supports a soft memory reservation, maximum memory limit, swap limit, swappiness, and CPU controls. A value of zero means no configured limit for the relevant limit fields.</p>
+
+    <p>A useful hard limit must satisfy two constraints:</p>
+
+    <pre><code>database limit &gt; tested peak database demand + operational burst margin
+
+database limit + other services + builds/backups + host reserve
+&lt; safely usable host memory</code></pre>
+
+    <p>Do not select a number from a generic tuning chart. Measure the actual application mix, including startup recovery, migrations, backups, autovacuum, reporting, and a representative concurrency peak. Save the Coolify limit, restart or redeploy the database as required, and confirm the running container received the intended values.</p>
+
+    <h2>7. Verify more than a green health badge</h2>
+    <ol>
+      <li>Confirm the database container starts once and its restart count remains stable.</li>
+      <li>Confirm Docker no longer reports an OOM kill and the kernel records no new OOM event.</li>
+      <li>Wait for PostgreSQL crash recovery, if any, to complete before judging readiness.</li>
+      <li>Run a database-backed application read and one controlled write with read-back.</li>
+      <li>Run the worker or report path that previously triggered the incident at bounded concurrency.</li>
+      <li>Watch Coolify Metrics and host memory through the full operation, not only its first seconds.</li>
+      <li>Confirm connection counts remain within the planned pool budget.</li>
+      <li>Run a fresh scheduled backup and verify completion.</li>
+      <li>Check that application latency, temporary-file I/O, and swap activity remain acceptable.</li>
+    </ol>
+
+    <p>A passing PostgreSQL health check proves that its configured probe succeeded. It does not prove that a representative query fits the memory budget, a backup can complete, or the application can read and write safely.</p>
+
+    <h2>Compact incident order</h2>
+    <ol>
+      <li>Record the failure time, container state, restart count, logs, metrics, and Coolify limits.</li>
+      <li>Prove container OOM, host OOM, or a different exit cause.</li>
+      <li>Preserve the persistent volume and stop the triggering workload before recovery.</li>
+      <li>Read effective PostgreSQL memory, connection, maintenance, and parallel-worker settings.</li>
+      <li>Match the spike to queries, jobs, migrations, maintenance, backups, or a deployment.</li>
+      <li>Reduce the narrow multiplier: query cost, concurrency, pool size, parallelism, or an oversized setting.</li>
+      <li>Raise the Coolify limit or host capacity only from measured demand and real headroom.</li>
+      <li>Restart once when required, then verify reads, writes, jobs, backups, memory, and restart stability.</li>
+    </ol>
+
+    <p>The durable fix is not “give PostgreSQL all the RAM.” It is to make the memory boundary and workload multipliers explicit. Coolify controls the container boundary; PostgreSQL controls shared and per-operation memory; the application controls concurrency; and every service still shares one host. When those budgets agree, an analytical query or routine backup is far less likely to become a database outage.</p>
+
+    <p>Authoritative references: Coolify documents <a href="https://coolify.io/docs/databases/configuration/resource-limits" rel="noopener noreferrer">database resource limits</a>, <a href="https://coolify.io/docs/databases/configuration/health-checks" rel="noopener noreferrer">database health checks</a>, and its <a href="https://coolify.io/docs/databases/" rel="noopener noreferrer">standalone database model</a>. Docker explains <a href="https://docs.docker.com/engine/containers/resource_constraints/" rel="noopener noreferrer">container memory constraints and OOM risk</a>. PostgreSQL documents <a href="https://www.postgresql.org/docs/current/runtime-config-resource.html" rel="noopener noreferrer">shared, query, maintenance, and parallel-worker memory</a>, <a href="https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-MEMORY-OVERCOMMIT" rel="noopener noreferrer">Linux memory overcommit and OOM behaviour</a>, <a href="https://www.postgresql.org/docs/current/monitoring-stats.html#MONITORING-PG-STAT-ACTIVITY-VIEW" rel="noopener noreferrer"><code>pg_stat_activity</code></a>, and <a href="https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-SIGNAL" rel="noopener noreferrer">backend memory-context logging</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify database guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-postgresql-too-many-connections.html">Coolify PostgreSQL too many connections</a><span>Attribute sessions and calculate one connection budget across every application process.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove that a real recovery point can be restored before an infrastructure incident demands it.</span></li>
+        <li><a href="/posts/coolify-no-space-left-on-device-docker-cleanup.html">Coolify no space left on device</a><span>Separate exhausted storage and inodes from memory pressure before changing the wrong resource.</span></li>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Compose volumes and healthchecks</a><span>Design persistence, readiness, backups, and startup dependencies for stateful applications.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

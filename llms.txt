@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure: https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html
+  - Memory-pressure incident guide covering Docker and kernel OOM evidence, container versus host limits, PostgreSQL shared and per-operation memory, query and worker multipliers, bounded recovery, Coolify resource sizing, and database-backed verification.
 |- Coolify PostgreSQL Too Many Connections? Fix It Safely: https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html
   - Connection-capacity recovery covering reserved administrative headroom, pg_stat_activity attribution, active versus idle-in-transaction sessions, targeted cancellation and termination, aggregate web/worker pool budgets, PgBouncer trade-offs, restart-only max_connections changes, session timeouts, and database-backed verification.
 |- Coolify PostgreSQL Password Authentication Failed After a Password Change: https://adrianmarikar.com/posts/coolify-postgresql-password-authentication-failed.html

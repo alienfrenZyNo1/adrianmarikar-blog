@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure</title>
+      <link>https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html</guid>
+      <pubDate>Tue, 29 Sep 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to proving container or host OOM events, finding PostgreSQL memory multipliers, recovering safely, tuning Coolify limits, and verifying real database work.</description>
+    </item>
+    <item>
       <title>Coolify PostgreSQL Too Many Connections? Fix It Safely</title>
       <link>https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html</guid>

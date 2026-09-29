@@ -162,7 +162,7 @@ SELECT pg_terminate_backend(PID_TO_TERMINATE);</code></pre>
 
     <p>Do not blindly raise <code>max_connections</code>. PostgreSQL allocates per-backend resources, while concurrent queries can multiply memory use through settings such as <code>work_mem</code>. The parameter is server-start only, so changing it requires a planned restart. First right-size application pools and remove leaks; then raise the limit only after checking memory, CPU, workload, operational headroom, and rollback.</p>
 
-    <p>Coolify can apply resource limits to the database container, but a higher PostgreSQL limit does not create more container memory. Container limits, PostgreSQL configuration, and aggregate application pools must agree.</p>
+    <p>Coolify can apply resource limits to the database container, but a higher PostgreSQL limit does not create more container memory. Container limits, PostgreSQL configuration, and aggregate application pools must agree. If the database is restarting under load, use the separate <a href="/posts/coolify-postgresql-oom-killed-memory-limit.html">Coolify PostgreSQL OOMKilled guide</a> to distinguish a container limit from host-wide exhaustion and find the memory multiplier.</p>
 
     <h2>7. Use timeouts as guardrails, not substitutes for correct code</h2>
     <p><code>idle_in_transaction_session_timeout</code> can end sessions that remain idle while holding an open transaction. It protects against one damaging failure mode, but the client must still handle disconnection and retry safely. <code>statement_timeout</code> limits query runtime, not session count. Generic idle-session timeouts can fight a legitimate pool and cause reconnect churn.</p>
