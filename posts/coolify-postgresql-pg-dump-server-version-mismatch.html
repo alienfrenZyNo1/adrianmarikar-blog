@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL pg_dump Server Version Mismatch — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify PostgreSQL backup failing with pg_dump server version mismatch by identifying the actual client and server versions and aligning the backup tool safely.">
+  <meta name="keywords" content="Coolify pg_dump server version mismatch, PostgreSQL backup version mismatch, Coolify PostgreSQL backup failed, pg_dump newer server, PostgreSQL client version">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL pg_dump Server Version Mismatch">
+  <meta property="og:description" content="Find which pg_dump binary Coolify used, compare it with the real server major version, repair the tool boundary, and prove a fresh restore.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">
+  <meta property="article:published_time" content="2026-10-01T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-01T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL pg_dump Server Version Mismatch">
+  <meta name="twitter:description" content="A safe runbook for failed Coolify backups caused by an older pg_dump client talking to a newer PostgreSQL server.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL pg_dump Server Version Mismatch","description":"Fix a Coolify PostgreSQL backup failing with pg_dump server version mismatch by identifying the actual client and server versions and aligning the backup tool safely.","url":"https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html"},"datePublished":"2026-10-01T10:00:00Z","dateModified":"2026-10-01T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","pg_dump","server version mismatch","database backup"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / backup tooling 066</p>
+      <h1>Coolify PostgreSQL <code>pg_dump</code> server version mismatch</h1>
+    </header>
+
+    <p>A scheduled Coolify PostgreSQL backup can fail immediately with an error similar to <code>server version mismatch</code> and <code>aborting because of server version mismatch</code>. The database can remain healthy, applications can keep reading and writing, and yesterday’s backup can still exist. The failed run means the backup client refused to create today’s archive.</p>
+
+    <p>The usual cause is precise: the <code>pg_dump</code> executable used by the backup job is from an older PostgreSQL major release than the server it is trying to dump. Renaming the output, retrying the same job, or restarting PostgreSQL does not repair that tool boundary.</p>
+
+    <blockquote>Do not downgrade the live database, delete its volume, or treat an old archive as a new recovery point. Preserve the last known-good backup, identify both versions, then align the dump client and prove a fresh restore.</blockquote>
+
+    <h2>Why PostgreSQL stops the dump</h2>
+    <p>PostgreSQL documents an intentionally asymmetric compatibility rule. A newer <code>pg_dump</code> can dump supported older servers. An older <code>pg_dump</code> will not dump a newer server major version; it refuses rather than risk producing an invalid archive. Dump output is also not guaranteed to load into an older server major version.</p>
+
+    <table>
+      <thead><tr><th>Client and server</th><th>Expected result</th><th>Safe direction</th></tr></thead>
+      <tbody>
+        <tr><td><code>pg_dump 15</code> → PostgreSQL 17</td><td>Refused as a newer server</td><td>Use a PostgreSQL 17 or newer supported client</td></tr>
+        <tr><td><code>pg_dump 17</code> → PostgreSQL 15</td><td>Normally supported</td><td>Still restore-test the produced archive</td></tr>
+        <tr><td>PostgreSQL 17 dump → PostgreSQL 15 target</td><td>Not a supported downgrade promise</td><td>Restore to the same or a newer tested major version</td></tr>
+      </tbody>
+    </table>
+
+    <p>The major number matters for this diagnosis. Patch releases still matter for security and bug fixes, but a client at <code>16.x</code> talking to a server at <code>17.x</code> is the mismatch that triggers this refusal.</p>
+
+    <h2>1. Capture the exact failed execution</h2>
+    <p>Open the PostgreSQL resource in Coolify, select <strong>Backups</strong>, then open the failed execution. Record the execution time, selected database, backup scope, destination, terminal status, and the two version lines from the error. Keep credentials, connection strings, signed object URLs, internal hostnames, and real addresses out of tickets or screenshots.</p>
+
+    <p>Do not infer versions from a resource label such as “Postgres latest.” Tags can move, a service definition can override an image, and the backup process may use a client outside the database container. The useful evidence is the actual running server version and the actual executable used by the failed job.</p>
+
+    <h2>2. Ask the server for its real version</h2>
+    <p>Use Coolify’s database terminal or another authorised private connection. The numeric setting is easier to compare programmatically than a decorated version string:</p>
+
+    <pre><code>SHOW server_version;
+SHOW server_version_num;
+
+SELECT current_setting('server_version'),
+       current_setting('server_version_num');</code></pre>
+
+    <p>A value such as <code>170006</code> belongs to major version 17. Record the complete value for the incident, but compare the correct major-version component. Do not expose PostgreSQL publicly merely to run this query.</p>
+
+    <h2>3. Identify the <code>pg_dump</code> that actually failed</h2>
+    <p>The execution log may print the client version or command environment. If you have authorised host access, inspect the relevant backup context rather than whichever <code>pg_dump</code> happens to be first in your interactive shell:</p>
+
+    <pre><code>pg_dump --version
+
+# When testing a known PostgreSQL client image:
+docker run --rm postgres:SERVER_MAJOR-alpine pg_dump --version</code></pre>
+
+    <p>Replace <code>SERVER_MAJOR</code> with the verified major release, not an unpinned <code>latest</code> tag. Never place the password directly on the command line. Use Coolify’s managed backup configuration or an ephemeral secret mechanism appropriate to the controlled environment.</p>
+
+    <p>If your shell reports the same major as the server but Coolify still reports an older one, you have measured the wrong client. Follow the failed execution’s container, image, or command path until the version output describes the binary Coolify invoked.</p>
+
+    <h2>4. Check how the database was upgraded</h2>
+    <p>A mismatch often appears just after a database image change. Separate three different events:</p>
+    <ul>
+      <li><strong>Client-only drift:</strong> the database server stayed on its existing major, but the backup helper or host client is older.</li>
+      <li><strong>Completed major upgrade:</strong> data was migrated using a supported method, the server is healthy on the new major, but backup tooling was not advanced with it.</li>
+      <li><strong>Unsafe image-tag edit:</strong> the container tag was changed across PostgreSQL majors without a valid data migration. A running container or a version-mismatch message does not prove the data upgrade is correct.</li>
+    </ul>
+
+    <p>Do not solve the third case by focusing only on <code>pg_dump</code>. Preserve the volume and logs, stop risky writes if data integrity is uncertain, and follow a PostgreSQL major-upgrade or restore procedure appropriate to the source and target versions.</p>
+
+    <h2>5. Align the backup client without changing production data</h2>
+    <p>For a normal Coolify standalone PostgreSQL resource, first confirm the resource image and Coolify version are supported and current. Save the backup schedule after correcting its database settings, then run one manual execution. If the failure belongs to a service-defined PostgreSQL component, make sure the service exposes the database variables Coolify’s backup workflow reads and that its effective image supplies or is paired with a compatible client.</p>
+
+    <p>For a controlled manual fallback, run <code>pg_dump</code> from a client image whose major version is equal to or newer than the verified server major. Keep it on the same private Docker network, write the archive to an authorised protected path, and avoid printing secrets:</p>
+
+    <pre><code>docker run --rm \
+  --network PRIVATE_DATABASE_NETWORK \
+  -e PGPASSWORD \
+  -v /protected/backup-output:/backup \
+  postgres:SERVER_MAJOR-alpine \
+  pg_dump --format=custom --no-acl --no-owner \
+  --host DATABASE_SERVICE --username DATABASE_USER \
+  --file /backup/database.dump DATABASE_NAME</code></pre>
+
+    <p>Every capitalised value above is a placeholder. Supplying <code>PGPASSWORD</code> securely is environment-specific; do not paste it into shell history, source control, job logs, or public documentation. A manual archive is an incident fallback, not a substitute for repairing Coolify’s scheduled path.</p>
+
+    <h2>6. Match the archive format to the restore tool</h2>
+    <p>Coolify uses a custom-format <code>pg_dump</code> archive for selected PostgreSQL databases. Custom archives are read by <code>pg_restore</code>, not piped into <code>psql</code>. When <strong>Backup All Databases</strong> is enabled, Coolify uses <code>pg_dumpall</code> and gzip instead, so confirm the scope before choosing a restore command.</p>
+
+    <pre><code>pg_restore --version
+pg_restore --list /protected/backup-output/database.dump</code></pre>
+
+    <p>An “unsupported version in file header” message is a different client/archive compatibility symptom: the available <code>pg_restore</code> is too old to understand the archive. Use a compatible newer restore client. Changing the filename extension does not change the archive format.</p>
+
+    <h2>7. Prove the replacement backup</h2>
+    <ol>
+      <li>Trigger one Coolify backup manually and wait for its terminal result.</li>
+      <li>Confirm the archive is new, non-empty, and associated with the intended database and execution.</li>
+      <li>Confirm the expected local or S3-compatible copy exists under the configured retention policy.</li>
+      <li>List the custom archive with a compatible <code>pg_restore</code>.</li>
+      <li>Restore it into a private, disposable PostgreSQL target—never over production.</li>
+      <li>Check expected schemas, extensions, constraints, representative counts, sequence positions, and record recency.</li>
+      <li>Point an isolated application instance at the restored target with mail, payments, webhooks, workers, and scheduled side effects disabled.</li>
+      <li>Verify representative database-backed reads and one disposable write/read-back where appropriate.</li>
+      <li>Delete temporary database copies after retaining non-sensitive pass/fail evidence.</li>
+    </ol>
+
+    <p>A green retry only proves that the new backup command exited successfully. The separate <a href="/posts/coolify-postgresql-backup-restore-test.html">Coolify PostgreSQL restore-drill guide</a> covers the stronger evidence needed before relying on the archive.</p>
+
+    <h2>Common wrong fixes</h2>
+    <ul>
+      <li><strong>Restarting PostgreSQL:</strong> a restart does not upgrade the dump executable.</li>
+      <li><strong>Using the host’s default client blindly:</strong> it may not be the binary used by Coolify and may introduce another mismatch.</li>
+      <li><strong>Installing an arbitrary “latest” client:</strong> unpinned tooling makes the next incident harder to reproduce.</li>
+      <li><strong>Downgrading the server image:</strong> PostgreSQL data directories are not safely downgraded by changing an image tag.</li>
+      <li><strong>Deleting the persistent volume:</strong> backup tooling failure is not evidence that the database files should be discarded.</li>
+      <li><strong>Feeding a custom archive to <code>psql</code>:</strong> use <code>pg_restore</code> for Coolify’s selected-database custom format.</li>
+      <li><strong>Calling an old archive “today’s backup”:</strong> preserve it, but report the new recovery-point gap honestly.</li>
+      <li><strong>Stopping at file creation:</strong> only an isolated restore proves useful recoverability.</li>
+    </ul>
+
+    <h2>Compact incident order</h2>
+    <ol>
+      <li>Preserve the last known-good archive and the failed execution log.</li>
+      <li>Read <code>server_version_num</code> from the actual database.</li>
+      <li>Read <code>pg_dump --version</code> inside the actual failed backup context.</li>
+      <li>Confirm whether a recent server upgrade or image-tag change caused the drift.</li>
+      <li>Align Coolify’s backup client with the server major without modifying the data volume.</li>
+      <li>Run one fresh backup and inspect its terminal execution.</li>
+      <li>Retrieve, list, restore, and application-test the new archive in isolation.</li>
+      <li>Record the client/server pairing in the upgrade and recovery runbooks.</li>
+    </ol>
+
+    <p>The durable fix is not merely “install a newer <code>pg_dump</code>.” It is to make PostgreSQL server upgrades, backup-client versions, archive formats, restore clients, and restore drills one controlled compatibility chain. When the database major changes, backup and recovery tooling must move—and be tested—with it.</p>
+
+    <p>Authoritative references: PostgreSQL documents the <a href="https://www.postgresql.org/docs/current/app-pgdump.html" rel="noopener noreferrer"><code>pg_dump</code> version rules and archive formats</a> and the <a href="https://www.postgresql.org/docs/current/app-pgrestore.html" rel="noopener noreferrer"><code>pg_restore</code> workflow</a>. Coolify documents its <a href="https://coolify.io/docs/databases/backups" rel="noopener noreferrer">database backup scope, variables, retention, and S3 flow</a>, its <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL backup formats</a>, and its <a href="https://coolify.io/docs/databases/restore" rel="noopener noreferrer">database restore workflow</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify database guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Restore one real recovery point into isolation and prove database and application behaviour.</span></li>
+        <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Separate a client-version failure from credential drift across the database and application.</span></li>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Trace container-local loopback, Docker DNS, networks, readiness, authentication, and TLS.</span></li>
+        <li><a href="/posts/coolify-postgresql-oom-killed-memory-limit.html">Coolify PostgreSQL OOMKilled or restarting</a><span>Prove container or host memory pressure before changing database resource limits.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

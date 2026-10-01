@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL pg_dump Server Version Mismatch: https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html
+  - Backup-tool compatibility guide covering the actual pg_dump execution context, server_version_num, PostgreSQL major-version rules, upgrade drift, pinned client images, custom versus all-database formats, safe manual fallback, and isolated restore proof.
 |- Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure: https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html
   - Memory-pressure incident guide covering Docker and kernel OOM evidence, container versus host limits, PostgreSQL shared and per-operation memory, query and worker multipliers, bounded recovery, Coolify resource sizing, and database-backed verification.
 |- Coolify PostgreSQL Too Many Connections? Fix It Safely: https://adrianmarikar.com/posts/coolify-postgresql-too-many-connections.html

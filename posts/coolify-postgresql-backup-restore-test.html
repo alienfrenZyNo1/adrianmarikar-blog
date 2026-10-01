@@ -109,6 +109,8 @@ postgres --version</code></pre>
 
     <p>Do not “fix” the archive by renaming its extension or feeding a custom-format dump to <code>psql</code>. Use a compatible PostgreSQL client image or target, then keep that version requirement in the runbook.</p>
 
+    <p>If the backup fails before creating an archive with <code>server version mismatch</code>, use the <a href="/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">Coolify <code>pg_dump</code> version-mismatch guide</a> to identify the client Coolify actually invoked, align it with the database major version, and create a new recovery point before continuing this drill.</p>
+
     <h2>4. Restore through Coolify’s Import Backup workflow</h2>
     <p>On the disposable target, open <strong>Configuration → Import Backup</strong>. Coolify supports PostgreSQL imports into a running database and uses <code>pg_restore</code> for its default selected-database workflow. Choose the tested server file, upload, or configured S3-compatible source, review the generated import command, confirm the target again, and follow the complete restore output.</p>
 
@@ -190,6 +192,7 @@ ORDER BY extname;</code></pre>
       <p class="eyebrow">// keep reading</p>
       <h2>Related state and recovery guides</h2>
       <ul>
+        <li><a href="/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">Coolify PostgreSQL pg_dump server version mismatch</a><span>Repair an older backup client talking to a newer database server, then prove the replacement archive.</span></li>
         <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Repair localhost, Internal URL, Docker DNS, network, readiness, authentication, and TLS errors in order.</span></li>
         <li><a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback after a failed deployment</a><span>Keep application-image rollback separate from database and volume recovery.</span></li>
         <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Docker Compose volumes and healthchecks</a><span>Protect persistent storage and prove database readiness before release.</span></li>
