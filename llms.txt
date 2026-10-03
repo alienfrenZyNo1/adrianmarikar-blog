@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL Permission Denied on the Data Directory: https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html
+  - Least-privilege storage recovery covering effective mounts, numeric container identities, ownership and parent traversal, read-only flags, image-version data paths, ACL and mandatory-access-control policy, scoped repair, and proof that the original cluster survived.
 |- Coolify PostgreSQL pg_dump Server Version Mismatch: https://adrianmarikar.com/posts/coolify-postgresql-pg-dump-server-version-mismatch.html
   - Backup-tool compatibility guide covering the actual pg_dump execution context, server_version_num, PostgreSQL major-version rules, upgrade drift, pinned client images, custom versus all-database formats, safe manual fallback, and isolated restore proof.
 |- Coolify PostgreSQL OOMKilled or Restarting? Fix Memory Pressure: https://adrianmarikar.com/posts/coolify-postgresql-oom-killed-memory-limit.html

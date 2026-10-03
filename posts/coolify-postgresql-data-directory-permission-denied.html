@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL Permission Denied on the Data Directory — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify PostgreSQL data-directory permission denied restart loop by proving the active mount, container UID, ownership, mode, mount flags, and correct PostgreSQL data path.">
+  <meta name="keywords" content="Coolify PostgreSQL permission denied, PostgreSQL data directory permissions Docker, Coolify database restart loop, postgres bind mount ownership, PGDATA permission denied">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL Permission Denied on the Data Directory">
+  <meta property="og:description" content="Trace the effective PostgreSQL mount and numeric identity, repair only the required ownership or policy, and prove the original database survived.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html">
+  <meta property="article:published_time" content="2026-10-03T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-03T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL Permission Denied on the Data Directory">
+  <meta name="twitter:description" content="A least-privilege runbook for PostgreSQL restart loops caused by bind-mount ownership, mode, read-only flags, labels, or the wrong data path.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL Permission Denied on the Data Directory","description":"Fix a Coolify PostgreSQL data-directory permission denied restart loop by proving the active mount, container UID, ownership, mode, mount flags, and correct PostgreSQL data path.","url":"https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html"},"datePublished":"2026-10-03T10:00:00Z","dateModified":"2026-10-03T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","permission denied","PGDATA","Docker bind mount","persistent storage"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / database storage 067</p>
+      <h1>Coolify PostgreSQL permission denied on the data directory</h1>
+    </header>
+
+    <p>A PostgreSQL resource in Coolify can enter a restart loop after a storage edit, server move, restore, image change, or Compose redeploy. Its log may say <code>Permission denied</code>, <code>could not open file</code>, <code>could not change permissions of directory</code>, or <code>data directory has wrong ownership</code>. The database port never becomes ready because PostgreSQL cannot safely use the directory holding its cluster.</p>
+
+    <p>The tempting fix is <code>chmod -R 777</code>. Do not do that. It hides the boundary you need to understand, grants unrelated users write access to database files, and may still fail when the real cause is a read-only mount, the wrong destination, NFS policy, SELinux, or an image running under a different numeric identity.</p>
+
+    <blockquote>Preserve the storage first. Prove the effective mount, the PostgreSQL process identity, and the failing path. Then change the narrowest ownership, mode, mount flag, or security policy that is actually wrong.</blockquote>
+
+    <h2>Start with the exact error and the event that preceded it</h2>
+    <p>Open the PostgreSQL resource logs in Coolify and capture the first storage error from one startup attempt. Later messages such as a failed health check or refused application connection are consequences. Note whether the failure began after any of these events:</p>
+    <ul>
+      <li>a named volume was replaced with a bind-mounted host directory;</li>
+      <li>the resource moved to another Coolify server or destination;</li>
+      <li>files were restored or copied as <code>root</code>;</li>
+      <li>the PostgreSQL image, major version, <code>user:</code>, or <code>PGDATA</code> changed;</li>
+      <li>a mount became read-only or its source path changed;</li>
+      <li>host security policy, user namespaces, or a network filesystem was introduced.</li>
+    </ul>
+
+    <p>Keep the real host path, container name, database name, internal hostname, and addresses out of public tickets. The generic placeholders below are deliberate.</p>
+
+    <h2>1. Stop repeated starts without deleting storage</h2>
+    <p>If the container is rapidly restarting, stop the database from the Coolify resource page while you inspect it. Do not delete the resource, its persistent-storage entry, or any Docker volume. Do not initialise an empty replacement directory over the incident. A permission fault usually means the existing files are inaccessible, not absent.</p>
+
+    <p>Before changing metadata, take a filesystem-level snapshot or copy if your storage and incident procedure allow it. PostgreSQL must be stopped for a plain file copy to be treated as a consistent cold copy. A crash-state copy can still be valuable forensic and recovery evidence, but it is not a substitute for a tested logical or physical backup.</p>
+
+    <h2>2. Prove what is mounted where</h2>
+    <p>Coolify normally gives a standalone PostgreSQL resource a Docker-managed persistent volume. A Compose service or manually changed resource may instead use a bind mount. Inspect the stopped container’s effective mounts rather than relying on the label shown in a Compose file or an old screenshot:</p>
+
+    <pre><code>docker inspect DATABASE_CONTAINER \
+  --format '{{range .Mounts}}{{printf "%s\t%s\t%s\t%v\n" .Type .Source .Destination .Mode}}{{end}}'
+
+# Also inspect the configured runtime user and image
+docker inspect DATABASE_CONTAINER \
+  --format 'user={{.Config.User}} image={{.Config.Image}}'</code></pre>
+
+    <p>Record the mount type, source, destination, and mode privately. A destination typo matters: a bind mount obscures whatever the image contained at that destination. Mounting the wrong empty directory can therefore look like missing data, while mounting the intended directory read-only can produce a direct write failure.</p>
+
+    <p>Check the PostgreSQL image generation before assuming the destination. Coolify documents <code>/var/lib/postgresql/data</code> for PostgreSQL 17 and earlier, but <code>/var/lib/postgresql</code> for PostgreSQL 18 and later. The official image also changed its default <code>PGDATA</code> layout in version 18. Copying a pre-18 mount target into an 18 deployment without a supported upgrade plan is both a path problem and a major-version migration risk.</p>
+
+    <h2>3. Identify the numeric identity that needs access</h2>
+    <p>Linux storage permissions use numeric user and group IDs. The name <code>postgres</code> inside a container does not make a host directory owned by an unrelated host account named <code>postgres</code> compatible. Coolify’s bind-mount documentation is explicit that Docker does not translate ownership between the host and container.</p>
+
+    <p>Use the exact image and configuration from the stopped resource. If the image supports a harmless identity query without starting PostgreSQL, inspect it in a disposable container:</p>
+
+    <pre><code>docker run --rm --entrypoint sh POSTGRES_IMAGE \
+  -lc 'id postgres; getent passwd postgres || true'</code></pre>
+
+    <p>If Compose sets <code>user:</code>, or Coolify’s effective container configuration has a non-empty user, that override may be the identity which must traverse and write the mount. Do not assume a universal UID such as <code>999</code>; image variants and explicit overrides differ. Also distinguish the entrypoint’s initial identity from the long-running PostgreSQL process. Some images start an entrypoint with elevated privileges so it can prepare the directory and then drop privileges; forcing a user can remove that preparation step.</p>
+
+    <h2>4. Inspect ownership and every parent directory</h2>
+    <p>For a bind mount, inspect the source on the deployment server using numeric IDs. The database user needs execute permission to traverse each parent, and the required access on the data directory itself:</p>
+
+    <pre><code>namei -l /srv/example/postgres-data
+stat -c 'mode=%a owner=%u group=%g path=%n' \
+  /srv/example/postgres-data
+
+# Inspect only; do not paste database filenames publicly
+find /srv/example/postgres-data -xdev -maxdepth 2 \
+  -printf '%m %U %G %p\n'</code></pre>
+
+    <p>Replace the path with the verified mount source. Do not run a broad recursive ownership command yet. First answer: is only the top directory wrong, are restored files owned by a different numeric user, is one parent untraversable, or is the whole copied tree inconsistent?</p>
+
+    <p>For a named volume, get its real mountpoint from Docker rather than guessing under <code>/var/lib/docker</code>:</p>
+
+    <pre><code>docker volume inspect DATABASE_VOLUME \
+  --format '{{.Mountpoint}}'</code></pre>
+
+    <p>Treat that path as sensitive operational detail. Avoid manually editing Docker’s storage tree unless the resource is stopped, the volume is unquestionably identified, and a recovery copy exists.</p>
+
+    <h2>5. Rule out a read-only or unsuitable filesystem</h2>
+    <p>Correct owners cannot override a read-only mount. Check the mount mode from <code>docker inspect</code>, the Compose definition, and the host filesystem:</p>
+
+    <pre><code>findmnt -T /srv/example/postgres-data \
+  -o TARGET,SOURCE,FSTYPE,OPTIONS
+
+df -h /srv/example/postgres-data
+df -i /srv/example/postgres-data</code></pre>
+
+    <p>A full filesystem normally reports <code>No space left on device</code>, but it is worth checking bytes and inodes before editing ownership. If capacity is the fault, use the separate <a href="/posts/coolify-no-space-left-on-device-docker-cleanup.html">Coolify Docker disk recovery guide</a> and protect database volumes from broad prune commands.</p>
+
+    <p>Network filesystems need extra caution. Root squashing, server-side ACLs, UID mapping, locking semantics, and durability behaviour can make a host-side <code>chown</code> ineffective or unsuitable for a live PostgreSQL data directory. Do not weaken an export globally to make an error disappear. Verify that the chosen storage is supported for PostgreSQL and fix identity and policy at the storage boundary.</p>
+
+    <h2>6. Check SELinux, AppArmor, ACLs, and user namespaces</h2>
+    <p>Traditional mode bits can look correct while another access-control layer rejects the operation. Check only the mechanisms active on the deployment server:</p>
+
+    <pre><code>getfacl -p /srv/example/postgres-data
+ls -Zd /srv/example/postgres-data
+
+# Look for recent mandatory-access-control denials privately
+journalctl --since '15 minutes ago' | grep -Ei 'denied|apparmor|avc'</code></pre>
+
+    <p>On an SELinux host, use a label appropriate to the container runtime and the intended sharing model; do not casually apply recursive relabel options to broad system paths. Docker warns that bind-mount label options change the host path itself and can be dangerous on system directories. With rootless Docker or user-namespace remapping, the visible container UID may map to a different host UID, so establish the mapping before changing owners.</p>
+
+    <h2>7. Repair the narrowest proven cause</h2>
+    <p>The repair depends on the evidence:</p>
+
+    <table>
+      <thead><tr><th>Proven cause</th><th>Narrow repair</th></tr></thead>
+      <tbody>
+        <tr><td>Wrong owner after a stopped restore or copy</td><td>Change ownership only on the verified database tree to the verified numeric runtime identity.</td></tr>
+        <tr><td>Parent directory blocks traversal</td><td>Grant the required identity traversal without making the parent world-writable.</td></tr>
+        <tr><td>Mount is accidentally read-only</td><td>Correct the Coolify or Compose storage definition and recreate the container.</td></tr>
+        <tr><td>Wrong destination or <code>PGDATA</code></td><td>Restore the image-version-appropriate mount and data path; do not initialise over old files.</td></tr>
+        <tr><td>SELinux/AppArmor/ACL denial</td><td>Apply a scoped policy or label supported by the host and container runtime.</td></tr>
+        <tr><td>NFS or user-namespace mapping mismatch</td><td>Correct the storage-side or namespace mapping; do not compensate with <code>777</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <p>A generic ownership command is intentionally not provided here because the correct IDs must come from the running image and its effective configuration. The safe shape, after stopping PostgreSQL and taking a recovery copy, is:</p>
+
+    <pre><code># Shape only — replace every placeholder from verified evidence
+chown -R VERIFIED_UID:VERIFIED_GID VERIFIED_DATABASE_SOURCE
+
+# Apply only the restrictive directory/file modes required by
+# the image and PostgreSQL; never use chmod -R 777.</code></pre>
+
+    <p>For a new production deployment that does not need a predictable host path, consider returning to a Docker-managed named volume. Coolify recommends volume mounts as the default when no specific server directory is required because they reduce the chance of unsafe paths and incorrect server permissions. Moving existing data still requires a controlled stopped copy, preserved ownership, correct destination, and restore verification.</p>
+
+    <h2>8. Start once and prove that the original cluster is live</h2>
+    <ol>
+      <li>Start the PostgreSQL resource once in Coolify and follow the current logs.</li>
+      <li>Wait for a terminal healthy state; make sure the restart count is stable.</li>
+      <li>Confirm the log identifies the expected existing cluster rather than running first-time initialisation.</li>
+      <li>Connect through the private Internal URL without printing credentials.</li>
+      <li>Check the expected databases, schemas, extensions, and representative row counts.</li>
+      <li>Check record recency so an old or empty cluster cannot pass by name alone.</li>
+      <li>Load one application route that requires a real database read.</li>
+      <li>If safe, perform one disposable write, read it back, and remove it.</li>
+      <li>Run a fresh backup, restore it into isolation, and verify the restored data.</li>
+    </ol>
+
+    <p>An accepting port and a green <code>pg_isready</code> check prove availability, not identity or completeness. If the application still cannot connect after PostgreSQL is healthy, move to the <a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify PostgreSQL connection guide</a>. If the backup fails after recovery, verify the client/server tool boundary with the <a href="/posts/coolify-postgresql-pg-dump-server-version-mismatch.html"><code>pg_dump</code> version-mismatch guide</a>.</p>
+
+    <h2>Common wrong fixes</h2>
+    <ul>
+      <li><strong><code>chmod -R 777</code>:</strong> creates unnecessary write access and does not fix read-only mounts or policy denials.</li>
+      <li><strong>Assuming UID 999:</strong> numeric identities vary by image and overrides; inspect the effective deployment.</li>
+      <li><strong>Deleting the volume:</strong> converts an access problem into data loss.</li>
+      <li><strong>Letting PostgreSQL initialise an empty path:</strong> a healthy new cluster is not recovery of the old one.</li>
+      <li><strong>Changing the image major to “see if it starts”:</strong> PostgreSQL data directories require a supported major-version upgrade, not tag roulette.</li>
+      <li><strong>Changing only the host directory name:</strong> the container destination and <code>PGDATA</code> still decide where PostgreSQL reads and writes.</li>
+      <li><strong>Running recursive changes while the database writes:</strong> stop it and preserve recovery evidence first.</li>
+      <li><strong>Trusting health alone:</strong> prove expected, recent data and a database-backed application path.</li>
+    </ul>
+
+    <h2>Compact incident order</h2>
+    <ol>
+      <li>Capture the first permission error and recent change.</li>
+      <li>Stop the restart loop without deleting storage.</li>
+      <li>Preserve a snapshot or controlled copy.</li>
+      <li>Inspect the effective mount type, source, destination, mode, image, user, and <code>PGDATA</code>.</li>
+      <li>Resolve the image’s numeric runtime identity.</li>
+      <li>Inspect numeric ownership, parent traversal, filesystem flags, capacity, ACLs, and active security policy.</li>
+      <li>Repair only the proven mismatch.</li>
+      <li>Start once and verify the expected existing cluster and application data.</li>
+      <li>Create and restore-test a fresh backup.</li>
+      <li>Record the storage destination and identity requirements in the deployment runbook.</li>
+    </ol>
+
+    <p>The durable lesson is that a PostgreSQL container is replaceable but its storage contract is not. In Coolify, that contract includes the exact source, destination, image generation, <code>PGDATA</code>, numeric identity, mount mode, and host security policy. Make those facts explicit and a permission incident becomes a bounded storage repair instead of a dangerous guessing exercise.</p>
+
+    <p>Authoritative references: Coolify documents <a href="https://coolify.io/docs/core/persistent-storage/storage-mounts/bind-mounts" rel="noopener noreferrer">bind mounts, numeric ownership, and safer volume defaults</a> and its <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL data paths for versions before and after 18</a>. Docker explains <a href="https://docs.docker.com/engine/storage/bind-mounts/" rel="noopener noreferrer">bind-mount behaviour, read-only options, obscured image data, and SELinux cautions</a>. The official PostgreSQL image documents its <a href="https://hub.docker.com/_/postgres" rel="noopener noreferrer"><code>PGDATA</code> and volume-path changes</a>, while PostgreSQL recommends a <a href="https://www.postgresql.org/docs/current/postgres-user.html" rel="noopener noreferrer">dedicated operating-system account that owns only database-managed data</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify database guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-docker-compose-volumes-healthchecks.html">Coolify Compose volumes and healthchecks</a><span>Design persistent paths, readiness checks, startup ordering, backups, and restore proof before deployment.</span></li>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Continue with internal DNS, networks, port 5432, readiness, credentials, and TLS after storage is healthy.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Restore a real recovery point in isolation and prove schema, data, constraints, and application reads.</span></li>
+        <li><a href="/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">Coolify PostgreSQL <code>pg_dump</code> version mismatch</a><span>Align the backup client with the recovered server and prove the replacement archive.</span></li>
+        <li><a href="/posts/coolify-no-space-left-on-device-docker-cleanup.html">Coolify no space left on device</a><span>Measure bytes and inodes, protect volumes, and reclaim only attributable Docker storage.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
