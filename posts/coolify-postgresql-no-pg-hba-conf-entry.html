@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely — Adrian Marikar</title>
+  <meta name="description" content="Fix PostgreSQL no pg_hba.conf entry errors in Coolify by identifying the real client, database, user and SSL mode, then adding the narrowest persistent authentication rule.">
+  <meta name="keywords" content="Coolify PostgreSQL no pg_hba.conf entry, no pg_hba.conf entry SSL off, PostgreSQL Docker pg_hba.conf, Coolify database authentication, PostgreSQL hostssl">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely">
+  <meta property="og:description" content="Use the error as evidence: prove the client address, user, database and TLS state before changing one persistent PostgreSQL authentication rule.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html">
+  <meta property="article:published_time" content="2026-10-05T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-05T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely">
+  <meta name="twitter:description" content="A least-privilege runbook for PostgreSQL host-authentication and SSL-mode mismatches in Coolify.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely","description":"Fix PostgreSQL no pg_hba.conf entry errors in Coolify by identifying the real client, database, user and SSL mode, then adding the narrowest persistent authentication rule.","url":"https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html"},"datePublished":"2026-10-05T10:00:00Z","dateModified":"2026-10-05T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","pg_hba.conf","host authentication","SSL mode","Docker networking"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / database authentication 068</p>
+      <h1>Coolify PostgreSQL “no pg_hba.conf entry”: fix the actual mismatch</h1>
+    </header>
+
+    <p>A Coolify application reaches PostgreSQL, but the database rejects it with an error shaped like this:</p>
+
+    <pre><code>FATAL: no pg_hba.conf entry for host "CLIENT_ADDRESS",
+user "APP_ROLE", database "APP_DATABASE", SSL off</code></pre>
+
+    <p>This is not a generic “database is down” message. PostgreSQL’s own documentation says it means the client reached the server, but no host-based authentication rule matched that connection. The error already gives four useful facts: client address, requested role, requested database and, when shown, whether the attempt used TLS.</p>
+
+    <p>The dangerous response is to append <code>host all all 0.0.0.0/0 trust</code> or publish port <code>5432</code>. That removes authentication instead of repairing it. The safe response is to identify why the expected rule did not match, make the smallest persistent change, reload PostgreSQL, and prove both the intended connection and a negative case.</p>
+
+    <blockquote><code>pg_hba.conf</code> is an ordered access policy, not a firewall substitute and not a password file. First matching rule wins; if no rule matches, PostgreSQL denies the connection.</blockquote>
+
+    <h2>What the error proves—and what it does not</h2>
+    <table>
+      <thead><tr><th>Observation</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>no pg_hba.conf entry</code></td><td>DNS, routing and TCP reached a PostgreSQL server; its host-authentication policy found no matching rule.</td></tr>
+        <tr><td><code>SSL off</code></td><td>This attempt was unencrypted. A policy containing only <code>hostssl</code> rules cannot match it.</td></tr>
+        <tr><td><code>SSL encryption</code> in the message</td><td>The attempt used TLS, but its address, database, user or rule type still did not match.</td></tr>
+        <tr><td><code>password authentication failed</code></td><td>A rule did match and selected password authentication; use the separate credential-drift workflow.</td></tr>
+        <tr><td><code>connection refused</code> or timeout</td><td>The request has not reached this authentication layer yet.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Do not change Cloudflare DNS, application passwords or PostgreSQL storage permissions for a true HBA mismatch. If the error is actually loopback, name resolution, refusal or timeout, start with the <a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify PostgreSQL connection guide</a>.</p>
+
+    <h2>1. Capture the exact tuple without leaking credentials</h2>
+    <p>Read the application error and PostgreSQL log from the same attempt. Record privately:</p>
+    <ul>
+      <li>the client address PostgreSQL reports;</li>
+      <li>the exact database and role names;</li>
+      <li>whether the message says <code>SSL off</code> or an encrypted connection;</li>
+      <li>the database resource and deployment which produced the log;</li>
+      <li>whether the application used Coolify’s Internal URL or a public endpoint.</li>
+    </ul>
+
+    <p>Do not paste the connection URL: it normally contains a password. Do not assume the address in the error is a stable container identity either. Containers can be recreated with a new address, so authorization should normally describe the intended private network range or deployment boundary rather than one ephemeral address.</p>
+
+    <h2>2. Confirm the app is using the intended Coolify path</h2>
+    <p>Coolify recommends its Internal URL for applications on the same destination network and warns against exposing <code>5432</code> unless an external client genuinely requires it. Confirm the current application container received the intended runtime variable, without printing its value. Then resolve and test the database hostname from that container or an equivalent disposable container on the same network.</p>
+
+    <pre><code># Use the hostname and network discovered from Coolify;
+# never paste a credential-bearing URL into a public log.
+getent hosts DATABASE_INTERNAL_HOST
+nc -vz DATABASE_INTERNAL_HOST 5432</code></pre>
+
+    <p>A successful port test followed by the HBA error confirms you are at the policy layer. If the application is accidentally using a public address from inside Coolify, fix the endpoint before broadening HBA. The public path may present a different client address, require TLS, and unnecessarily expose the service.</p>
+
+    <h2>3. Find the active HBA file, not a guessed path</h2>
+    <p><code>pg_hba.conf</code> traditionally lives in the data directory, but PostgreSQL permits <code>hba_file</code> to point elsewhere. Query the running server as an existing administrative role over a trusted local path:</p>
+
+    <pre><code>SHOW hba_file;
+SHOW config_file;
+SHOW ssl;
+SHOW listen_addresses;</code></pre>
+
+    <p>Keep the returned paths private. In a container, inspect the effective mount before editing anything. A change made only in a running container’s writable layer can disappear at recreation; a change made to the wrong data directory does nothing. For Coolify-managed resources, prefer supported database configuration and persistent mounts over an ad-hoc <code>docker exec</code> edit.</p>
+
+    <h2>4. Inspect parsed rules and their order</h2>
+    <p>When available, PostgreSQL’s <code>pg_hba_file_rules</code> view exposes parsed rules and syntax errors without printing passwords:</p>
+
+    <pre><code>SELECT rule_number, type, database, user_name,
+       address, netmask, auth_method, error
+FROM pg_hba_file_rules
+ORDER BY rule_number;</code></pre>
+
+    <p>Rules are considered in order. PostgreSQL uses the first record whose connection type, client address, database and role match. There is no fallback to a later rule when authentication under the chosen rule fails. Check all four matching dimensions:</p>
+    <ul>
+      <li><strong>Type:</strong> <code>host</code> matches TCP with or without TLS; <code>hostssl</code> matches only TLS; <code>hostnossl</code> matches only non-TLS.</li>
+      <li><strong>Database:</strong> the requested database must match the rule’s database field.</li>
+      <li><strong>User:</strong> the requested PostgreSQL role must match the user field.</li>
+      <li><strong>Address:</strong> the reported client address must fall inside the rule’s IPv4 or IPv6 range. An IPv4 rule does not match IPv6, or vice versa.</li>
+    </ul>
+
+    <p>If the view reports an <code>error</code>, repair the syntax before widening any scope. Also inspect include directives: the active policy may be assembled from multiple files, and included records are inserted at the directive’s position.</p>
+
+    <h2>5. Resolve “SSL off” deliberately</h2>
+    <p><code>SSL off</code> often means the server has a <code>hostssl</code> rule while the application is making a non-TLS connection. Decide which side is wrong based on the actual trust boundary; do not merely suppress the suffix.</p>
+
+    <ul>
+      <li>If TLS is required, enable it on the Coolify PostgreSQL resource, copy the updated connection URL, configure the application’s documented SSL mode, and mount/trust the Coolify CA when using <code>verify-ca</code> or <code>verify-full</code>.</li>
+      <li>If a private-only Coolify network is intentionally allowed to connect without TLS, use a narrowly scoped <code>host</code> or <code>hostnossl</code> rule for that network, database and role—only after confirming that policy is acceptable.</li>
+      <li>If the client uses a public endpoint, do not downgrade it to non-TLS to make the error disappear. Repair certificate trust and hostname verification.</li>
+    </ul>
+
+    <p>Coolify documents <code>require</code>, <code>verify-ca</code> and <code>verify-full</code> for encrypted PostgreSQL clients. <code>require</code> encrypts but does not validate the server identity; <code>verify-full</code> also checks the CA and hostname. Choose explicitly rather than inheriting a framework default you have not inspected.</p>
+
+    <h2>6. Add the narrowest persistent rule</h2>
+    <p>A least-privilege rule names the required database, role, private client range and password method. This is a shape, not a value to paste unchanged:</p>
+
+    <pre><code># TYPE     DATABASE       USER        ADDRESS             METHOD
+hostssl    APP_DATABASE   APP_ROLE    PRIVATE_CIDR        scram-sha-256</code></pre>
+
+    <p>Derive <code>PRIVATE_CIDR</code> from the effective Docker/Coolify network, not from an example on the internet and not from a single container address. If only one controlled external client is allowed, use its stable routed address with the smallest appropriate prefix and keep network-level filtering in place as well.</p>
+
+    <p>Avoid these shortcuts:</p>
+    <ul>
+      <li><code>trust</code>, which lets matching clients authenticate without a password;</li>
+      <li><code>0.0.0.0/0</code> or <code>::/0</code> when only a private range is required;</li>
+      <li><code>all</code> for both database and user when one application role is known;</li>
+      <li>deprecated MD5 password storage as the default for a new rule;</li>
+      <li>hard-coding one disposable container address;</li>
+      <li>editing generated container files without making the source persistent.</li>
+    </ul>
+
+    <p>Do not confuse <code>listen_addresses</code> with HBA. PostgreSQL must listen on an appropriate interface before HBA can evaluate remote TCP, but setting <code>listen_addresses='*'</code> does not authorize a client and can increase exposure. Keep the database private unless there is a documented external-access requirement.</p>
+
+    <h2>7. Validate, reload, and confirm the active rule</h2>
+    <p>After changing the persistent source, re-check <code>pg_hba_file_rules</code> for syntax errors. PostgreSQL normally rereads HBA after a reload, so a full database restart is not usually required for this file alone:</p>
+
+    <pre><code>SELECT pg_reload_conf();
+
+SELECT rule_number, type, database, user_name,
+       address, auth_method, error
+FROM pg_hba_file_rules
+ORDER BY rule_number;</code></pre>
+
+    <p>If another configuration change such as enabling Coolify database SSL requires a stop and restart, follow Coolify’s documented sequence and take the normal backup precautions. Do not repeatedly recreate the resource just to test HBA; that adds unrelated network and container changes to a focused authentication incident.</p>
+
+    <h2>8. Prove the fix from the application boundary</h2>
+    <ol>
+      <li>Redeploy or restart only the consumers that need updated connection settings.</li>
+      <li>Confirm the new application container uses the intended internal hostname and SSL mode without printing credentials.</li>
+      <li>Run the application’s real connection or migration-status command.</li>
+      <li>Load a route that requires an expected database row, not only a static health page.</li>
+      <li>If safe, perform one disposable write, read it back, and remove it.</li>
+      <li>Review PostgreSQL logs and confirm the HBA rejection has stopped.</li>
+      <li>Test a deliberately unauthorized role, database or network boundary and confirm it is still denied.</li>
+      <li>Verify scheduled backups still connect after the policy change.</li>
+    </ol>
+
+    <p>A successful <code>psql</code> test from inside the database container is not enough: local socket rules differ from the application’s TCP rule. Likewise, a green Coolify health check does not prove the application role can reach its database over the intended route.</p>
+
+    <h2>Compact troubleshooting order</h2>
+    <ol>
+      <li>Capture the exact client address, database, role and TLS state from one attempt.</li>
+      <li>Confirm the application uses the intended Coolify Internal URL or justified public path.</li>
+      <li>Find the active <code>hba_file</code> and its persistent source.</li>
+      <li>Inspect parsed rules, include order and syntax errors.</li>
+      <li>Match type, database, role, address family and CIDR in order.</li>
+      <li>Resolve <code>SSL off</code> according to the real trust boundary.</li>
+      <li>Add one narrow <code>scram-sha-256</code> rule rather than a global bypass.</li>
+      <li>Reload and verify the parsed rule set.</li>
+      <li>Prove a database-backed app path, backups and a negative authorization case.</li>
+    </ol>
+
+    <p>The useful feature of this error is its precision. PostgreSQL has already told you that the connection reached the server and exactly which identity, database, address and encryption state failed to match. Preserve that evidence, repair the smallest policy boundary, and keep both the database port and the rule scope private.</p>
+
+    <p>Authoritative references: PostgreSQL explains the <a href="https://www.postgresql.org/docs/current/client-authentication-problems.html" rel="noopener noreferrer">meaning of authentication errors</a> and documents <a href="https://www.postgresql.org/docs/current/auth-pg-hba-conf.html" rel="noopener noreferrer"><code>pg_hba.conf</code> matching, ordering, record types and methods</a>. Coolify’s official <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL guide</a> recommends private Internal URLs and documents managed connection settings, while its <a href="https://coolify.io/docs/databases/ssl" rel="noopener noreferrer">database SSL guide</a> covers certificate generation, client modes and CA trust.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify PostgreSQL guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Separate loopback, DNS, network, readiness, HBA, credentials and TLS failures in the right order.</span></li>
+        <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Use this when an HBA rule matches but the application credential no longer matches the database role.</span></li>
+        <li><a href="/posts/coolify-postgresql-too-many-connections.html">Coolify PostgreSQL too many connections</a><span>Recover reserved capacity and budget application pools after authentication succeeds.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Verify backup access and restore proof after changing database connection policy.</span></li>
+        <li><a href="/posts/coolify-postgresql-data-directory-permission-denied.html">Coolify PostgreSQL data-directory permission denied</a><span>Diagnose a storage-layer startup failure without confusing it with host authentication.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
