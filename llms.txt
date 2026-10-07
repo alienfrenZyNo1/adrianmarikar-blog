@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL “Relation Does Not Exist” After Deploy: https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html
+  - Migration-safe troubleshooting covering the live database and role identity, effective schema search path, relation discovery, quoted-name case, migration files and ledger, deployment ordering, least-privilege repair, and database-backed release verification.
 |- Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely: https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html
   - Host-authentication troubleshooting covering the reported client address, database, role and TLS state; active HBA file discovery; ordered rule parsing; host, hostssl and hostnossl matching; private network scope; SCRAM authentication; persistent Coolify configuration; reload validation; and positive plus negative verification.
 |- Coolify PostgreSQL Permission Denied on the Data Directory: https://adrianmarikar.com/posts/coolify-postgresql-data-directory-permission-denied.html

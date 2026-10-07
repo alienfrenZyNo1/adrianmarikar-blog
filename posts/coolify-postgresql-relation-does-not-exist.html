@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL “Relation Does Not Exist” After Deploy — Adrian Marikar</title>
+  <meta name="description" content="Fix PostgreSQL relation does not exist errors after a Coolify deploy by proving the database, schema, search path, migration state, role privileges, and release order.">
+  <meta name="keywords" content="Coolify PostgreSQL relation does not exist, PostgreSQL table does not exist after deploy, Coolify database migration failed, PostgreSQL search_path, wrong database URL">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL “Relation Does Not Exist” After Deploy">
+  <meta property="og:description" content="Prove whether the app reached the wrong database, missed a migration, or cannot resolve the intended schema before changing production data.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html">
+  <meta property="article:published_time" content="2026-10-07T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-07T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL “Relation Does Not Exist” After Deploy">
+  <meta name="twitter:description" content="A migration-safe runbook for wrong-database, wrong-schema, search-path, and release-order failures.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL “Relation Does Not Exist” After Deploy","description":"Fix PostgreSQL relation does not exist errors after a Coolify deploy by proving the database, schema, search path, migration state, role privileges, and release order.","url":"https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html"},"datePublished":"2026-10-07T10:00:00Z","dateModified":"2026-10-07T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","relation does not exist","database migrations","search_path","release verification"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home">
+    <span class="brand-mark">AM</span>
+    <span>Adrian Marikar</span>
+  </a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / database migrations 069</p>
+      <h1>Coolify PostgreSQL “relation does not exist” after deploy</h1>
+    </header>
+
+    <p>A new Coolify deployment starts successfully, its health check turns green, and then a database-backed route fails:</p>
+
+    <pre><code>ERROR: relation "orders" does not exist
+LINE 1: SELECT ... FROM "orders" ...</code></pre>
+
+    <p>PostgreSQL uses <em>relation</em> for tables and several table-like objects, including views, materialized views, sequences, and indexes. The message does not automatically mean the table was deleted. It means the current session could not resolve the referenced name in the database and schema context used by that query.</p>
+
+    <p>After a deploy, the usual causes are a wrong database URL, a migration that never completed, a schema or <code>search_path</code> mismatch, quoted-name case drift, or application code released before its database change was safe. Recreating PostgreSQL or restoring a backup before identifying which case applies can turn a release fault into data loss.</p>
+
+    <blockquote>Do not create an empty replacement table just to clear the error. First prove the session identity, locate any existing relation, and compare the application release with the recorded migration state.</blockquote>
+
+    <h2>What this error proves</h2>
+    <table>
+      <thead><tr><th>Observation</th><th>What it tells you</th></tr></thead>
+      <tbody>
+        <tr><td><code>relation "orders" does not exist</code></td><td>The query reached PostgreSQL and name resolution failed in that session.</td></tr>
+        <tr><td><code>permission denied for table orders</code></td><td>The relation resolved, but the role lacks an object privilege; that is a different repair.</td></tr>
+        <tr><td><code>database "..." does not exist</code></td><td>The connection request named a missing database before the query ran.</td></tr>
+        <tr><td><code>connection refused</code> or timeout</td><td>The request has not reached PostgreSQL query processing.</td></tr>
+        <tr><td>Homepage or <code>/health</code> returns 200</td><td>The web process may be healthy; it does not prove migrations or database-backed routes.</td></tr>
+      </tbody>
+    </table>
+
+    <p>If the failure is at connection or authentication level, use the <a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify PostgreSQL connection checklist</a> or the <a href="/posts/coolify-postgresql-password-authentication-failed.html">password-authentication guide</a> first. Continue here only when a query reaches a database.</p>
+
+    <h2>1. Freeze the evidence from one failing release</h2>
+    <p>Record the deployment identifier, expected Git commit, first failure time, exact unqualified or qualified relation name, application process that issued it, and migration command or job associated with the release. Keep credentials and the full database URL out of incident notes.</p>
+
+    <p>Correlate the application error with PostgreSQL logs by time and, where available, application name or backend PID. Do not assume the web process and migration process have the same environment. A release can run migrations against one database and serve traffic against another when build, runtime, worker, and one-off command variables have drifted.</p>
+
+    <h2>2. Ask the failing session where it is</h2>
+    <p>Run diagnostics through the same application role and connection settings as the failing process. An administrative shell inside the PostgreSQL container may connect as a different role, database, or socket path and produce a misleading success.</p>
+
+    <pre><code>SELECT current_database() AS database_name,
+       current_user AS role_name,
+       current_schema() AS current_schema,
+       current_schemas(true) AS effective_search_path;
+
+SHOW search_path;</code></pre>
+
+    <p>Compare only the non-secret results with the intended Coolify resource. Coolify’s official PostgreSQL documentation says its Internal URL includes the container hostname, internal port, role, password, and selected database. For an application on the same destination network, that managed private URL is the baseline. A copied URL with the wrong final path component can authenticate successfully to the same PostgreSQL server while selecting a different database.</p>
+
+    <p>Check the running web container, every worker, and the migration job separately. Confirm the expected environment variable is present and sourced at runtime without printing its value. If the framework accepts separate host, database, role, and password settings, verify their precedence too; an old <code>DB_NAME</code> can override a correct URL.</p>
+
+    <h2>3. Locate the relation without guessing</h2>
+    <p><code>to_regclass</code> performs a relation lookup and returns <code>NULL</code> instead of throwing an error when the name is not visible. Test both the application’s unqualified name and the intended qualified name:</p>
+
+    <pre><code>SELECT to_regclass('orders') AS visible_unqualified,
+       to_regclass('app.orders') AS visible_qualified;</code></pre>
+
+    <p>Then inspect accessible matching objects in the current database:</p>
+
+    <pre><code>SELECT table_catalog, table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE lower(table_name) = lower('orders')
+ORDER BY table_schema, table_name;</code></pre>
+
+    <p>PostgreSQL documents that <code>information_schema.tables</code> contains tables and views in the current database that the current user can access. Therefore an empty result can mean the relation is absent <em>or</em> the role has no privilege through which it is visible. If an authorised administrator sees it but the app role does not, inspect schema and object privileges rather than creating another table.</p>
+
+    <p>Interpret the results carefully:</p>
+    <ul>
+      <li><strong>Both lookups are null and no matching object exists:</strong> the migration may not have run, may have targeted another database, or may have rolled back.</li>
+      <li><strong><code>app.orders</code> exists but <code>orders</code> is null:</strong> the session’s <code>search_path</code> does not include <code>app</code>.</li>
+      <li><strong>The object exists as <code>"Orders"</code>:</strong> quoted mixed-case naming is significant; unquoted <code>orders</code> is folded to lower case.</li>
+      <li><strong>A view is missing while its base tables exist:</strong> treat the view or materialized-view migration as its own object.</li>
+      <li><strong>The sequence named in the error is missing:</strong> inspect the column default and sequence migration rather than creating a table.</li>
+    </ul>
+
+    <h2>4. Prove the migration state</h2>
+    <p>Use the application framework’s read-only migration-status command with the production runtime environment. Examples differ by framework, so use the command documented for the project rather than copying an unrelated tool:</p>
+
+    <pre><code># Run the project's read-only status command in the release context.
+FRAMEWORK_MIGRATION_STATUS_COMMAND
+
+# Compare with the deployed commit and expected migration files.
+git show --stat EXPECTED_COMMIT -- path/to/migrations</code></pre>
+
+    <p>Check four facts:</p>
+    <ol>
+      <li>The deployed image contains the expected migration file.</li>
+      <li>The migration process connected to the same database as the failing application.</li>
+      <li>The framework’s migration ledger records the expected migration as applied.</li>
+      <li>The intended relation and its required columns, constraints, indexes, or view definition actually exist.</li>
+    </ol>
+
+    <p>A ledger row alone is not proof that the schema is complete. A migration may have been marked, manually edited, partially applied outside a transaction, or followed by a failed concurrent index operation. Conversely, do not rerun an apparently missing migration until you understand whether it is idempotent and what it does to existing data.</p>
+
+    <h2>5. Read the deployment logs for release-order failures</h2>
+    <p>Find the exact migration invocation and terminal result in the Coolify deployment logs. Common patterns include:</p>
+    <ul>
+      <li>the Docker image never copied the migration directory;</li>
+      <li>the deploy command starts the server but never runs migrations;</li>
+      <li>a migration ran during image build, where the production database was intentionally unavailable;</li>
+      <li>the migration command failed but shell chaining still returned success;</li>
+      <li>two replicas attempted the same non-idempotent migration concurrently;</li>
+      <li>the web release became routable before a required migration completed;</li>
+      <li>a migration used a different variable or environment scope from the app.</li>
+    </ul>
+
+    <p>Build time is the wrong place for a production database migration. A Docker build should be reproducible without mutating a live database. Run migrations as an explicit release step or controlled one-off process with a clear failure status, then make the compatible application release eligible for traffic.</p>
+
+    <h2>6. Repair the right failure class</h2>
+
+    <h3>Wrong database</h3>
+    <p>Correct the application’s Coolify runtime setting to the intended Internal URL or database components. Recreate the affected web and worker containers so long-lived processes receive it. Do not rename databases or copy production tables into the accidental target. Also update any scheduled backup configuration if the authoritative database identity changed.</p>
+
+    <h3>Migration did not run</h3>
+    <p>Take or verify a current backup before a state-changing migration. Read the migration, estimate locks and runtime, decide whether writes must be paused, and execute it once through the project’s normal migration mechanism. Capture its exit status. Avoid marking a migration as applied merely to silence the framework.</p>
+
+    <h3>Wrong schema or search path</h3>
+    <p>PostgreSQL resolves an unqualified name by searching schemas in order. It reports an error if no matching object appears in that path, even when the relation exists elsewhere in the same database. Prefer explicit schema qualification where the application supports it, or set a narrowly defined persistent <code>search_path</code> for the application role or database:</p>
+
+    <pre><code>-- Example shape: substitute the verified role and trusted schemas.
+ALTER ROLE APP_ROLE IN DATABASE APP_DATABASE
+  SET search_path = app, pg_catalog;</code></pre>
+
+    <p>Do not add arbitrary writable schemas. PostgreSQL warns that putting a schema in <code>search_path</code> effectively trusts users who can create objects there. Confirm ownership, revoke unnecessary <code>CREATE</code> rights, reconnect the application so the role setting takes effect, and retest.</p>
+
+    <h3>Quoted case mismatch</h3>
+    <p>PostgreSQL folds unquoted identifiers to lower case. A migration that creates <code>"Orders"</code> requires that exact quoted spelling, while most frameworks expect <code>orders</code>. Choose one deliberate naming convention and repair it through a reviewed migration. Do not scatter ad-hoc quoting changes through queries.</p>
+
+    <h3>Privilege visibility</h3>
+    <p>If the relation exists under the intended schema but the app role cannot see or use it, inspect <code>USAGE</code> on the schema and the specific privileges required on the table, view, or sequence. Grant only the application operations needed. Do not make the app a superuser or transfer ownership of the entire database as a shortcut.</p>
+
+    <h2>7. Make the release compatible before routing traffic</h2>
+    <p>The safest general pattern is expand and contract:</p>
+    <ol>
+      <li>Add new tables, columns, or compatible views first.</li>
+      <li>Deploy code that works with both the old and new shape when a rolling window exists.</li>
+      <li>Backfill in bounded, observable batches if required.</li>
+      <li>Switch reads and writes after the new shape is proven.</li>
+      <li>Remove the old shape in a later release after rollback windows close.</li>
+    </ol>
+
+    <p>If the new code requires a new relation immediately, the migration must complete successfully before that code receives traffic. If the migration is destructive or has already changed data semantics, blindly rolling back the app image may be unsafe. The <a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback and database-state guide</a> explains why images and persistent state need separate recovery decisions.</p>
+
+    <h2>8. Verify through the real application boundary</h2>
+    <p>After the narrow repair:</p>
+    <ol>
+      <li>Confirm the current deployment uses the intended Git commit and image.</li>
+      <li>Run the migration-status command and verify the expected relation with a qualified lookup.</li>
+      <li>Confirm the web process and workers report the intended database, role, and schema context without exposing credentials.</li>
+      <li>Load the exact route that previously failed and assert unique expected content.</li>
+      <li>Perform one controlled application-level write, read it back, and remove it through the normal application path if safe.</li>
+      <li>Check application, worker, and PostgreSQL logs for repeated relation, privilege, or migration errors.</li>
+      <li>Verify scheduled backups still target the authoritative database.</li>
+    </ol>
+
+    <p>A green container, an HTTP 200 from a static route, or a successful administrator query does not complete this test. The same application identity and code path that failed must now resolve and use the relation correctly.</p>
+
+    <h2>Compact troubleshooting order</h2>
+    <ol>
+      <li>Capture the exact relation name, deployment, commit, process, and failed query context.</li>
+      <li>From the app identity, query <code>current_database()</code>, <code>current_user</code>, and the effective schemas.</li>
+      <li>Use <code>to_regclass</code> and <code>information_schema.tables</code> to locate the object.</li>
+      <li>Compare the image’s migration files with the framework’s migration ledger.</li>
+      <li>Read the exact migration command and result in deployment logs.</li>
+      <li>Classify wrong database, missing migration, wrong schema, case drift, or privilege failure.</li>
+      <li>Back up, then make one narrow persistent repair.</li>
+      <li>Verify a database-backed read, controlled write, workers, logs, and backups.</li>
+      <li>Adopt a release order that prevents the same compatibility gap.</li>
+    </ol>
+
+    <p>The important distinction is between an absent object and an invisible object. By proving the current database, role, search path, migration ledger, and actual catalog state in that order, you can repair the release without inventing a second schema or destroying the first one.</p>
+
+    <p>Authoritative references: Coolify’s official <a href="https://coolify.io/docs/databases/postgresql" rel="noopener noreferrer">PostgreSQL guide</a> documents the generated Internal URL, selected initial database, private networking, and managed connection settings. PostgreSQL documents <a href="https://www.postgresql.org/docs/current/ddl-schemas.html" rel="noopener noreferrer">schemas and search-path name resolution</a>, <a href="https://www.postgresql.org/docs/current/functions-info.html" rel="noopener noreferrer">session identity and schema functions</a>, and the accessible objects exposed by <a href="https://www.postgresql.org/docs/current/infoschema-tables.html" rel="noopener noreferrer"><code>information_schema.tables</code></a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify PostgreSQL guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback after a failed deploy</a><span>Separate application-image rollback from persistent database and migration state.</span></li>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Fix endpoint, Docker DNS, network, readiness, credentials, URI, and TLS failures before query diagnosis.</span></li>
+        <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Reconcile database roles and runtime credentials when the session cannot authenticate.</span></li>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove a usable recovery point before a state-changing migration or repair.</span></li>
+        <li><a href="/posts/coolify-postgresql-no-pg-hba-conf-entry.html">Coolify PostgreSQL no pg_hba.conf entry</a><span>Repair host-authentication policy when the query has not reached name resolution.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

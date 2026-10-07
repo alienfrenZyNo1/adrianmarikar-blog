@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify PostgreSQL “Relation Does Not Exist” After Deploy</title>
+      <link>https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html</guid>
+      <pubDate>Wed, 07 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A migration-safe guide to diagnosing PostgreSQL relation-not-found errors in Coolify across the selected database, role, schema, search path, migration ledger, privileges, and release order.</description>
+    </item>
+    <item>
       <title>Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely</title>
       <link>https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html</guid>
