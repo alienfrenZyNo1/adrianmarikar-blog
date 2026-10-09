@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify PostgreSQL “Database Files Are Incompatible with Server”</title>
+      <link>https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html</guid>
+      <pubDate>Fri, 09 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A volume-safe guide to recovering from a PostgreSQL major-image mismatch in Coolify, then upgrading through a controlled dump/restore, pg_upgrade, or replication path.</description>
+    </item>
+    <item>
       <title>Coolify PostgreSQL “Relation Does Not Exist” After Deploy</title>
       <link>https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html</guid>

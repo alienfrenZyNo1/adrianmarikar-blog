@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify PostgreSQL “Database Files Are Incompatible with Server” — Adrian Marikar</title>
+  <meta name="description" content="Recover a Coolify PostgreSQL database after an image major-version change causes database files are incompatible with server, without deleting or reinitialising the volume.">
+  <meta name="keywords" content="Coolify PostgreSQL database files are incompatible with server, PostgreSQL data directory incompatible, Coolify PostgreSQL major upgrade, PG_VERSION, pg_upgrade Docker">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify PostgreSQL “Database Files Are Incompatible with Server”">
+  <meta property="og:description" content="Identify the data-directory and image majors, restore service with the matching server, then migrate through a controlled dump/restore or pg_upgrade path.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html">
+  <meta property="article:published_time" content="2026-10-09T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-09T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify PostgreSQL “Database Files Are Incompatible with Server”">
+  <meta name="twitter:description" content="A volume-safe recovery and major-upgrade runbook for PostgreSQL on Coolify.">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Coolify PostgreSQL “Database Files Are Incompatible with Server”","description":"Recover a Coolify PostgreSQL database after an image major-version change causes database files are incompatible with server, without deleting or reinitialising the volume.","url":"https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html"},"datePublished":"2026-10-09T10:00:00Z","dateModified":"2026-10-09T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","PostgreSQL","database files are incompatible with server","major-version upgrade","persistent volume","pg_upgrade"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / major upgrades 070</p>
+      <h1>Coolify PostgreSQL “database files are incompatible with server”</h1>
+    </header>
+
+    <p>A PostgreSQL resource in Coolify can enter a restart loop immediately after its Docker image changes across major versions. The useful log lines usually look like this:</p>
+
+    <pre><code>FATAL: database files are incompatible with server
+DETAIL: The data directory was initialized by PostgreSQL version OLD_MAJOR,
+which is not compatible with this version NEW_MAJOR.</code></pre>
+
+    <p>This is not an authentication problem and it does not prove that the data disappeared. PostgreSQL found an existing cluster, read its on-disk version, and refused to start a server whose major version cannot use that cluster directly. That refusal is a protection boundary.</p>
+
+    <blockquote>Do not delete the Coolify volume, run <code>initdb</code> over it, empty the data directory, or keep changing image tags. Preserve the volume, prove both major versions, and choose recovery before migration.</blockquote>
+
+    <h2>What the error means</h2>
+    <p>PostgreSQL guarantees that minor releases within one major version retain compatible internal storage. A patch update within major 16, for example, does not require a data-format migration. A move from major 16 to 17 is different: PostgreSQL requires a logical dump and restore, <code>pg_upgrade</code>, or a supported replication-based migration.</p>
+
+    <table>
+      <thead><tr><th>Observed change</th><th>Meaning</th><th>Correct response</th></tr></thead>
+      <tbody>
+        <tr><td><code>16.x</code> image to newer <code>16.x</code></td><td>Same data major</td><td>Investigate a different startup cause if it fails</td></tr>
+        <tr><td><code>16.x</code> image to <code>17.x</code></td><td>Major upgrade</td><td>Migrate the cluster; do not mount it directly into 17</td></tr>
+        <tr><td>Floating <code>postgres:latest</code> moved majors</td><td>Uncontrolled image drift</td><td>Pin the prior major for recovery, then plan the upgrade</td></tr>
+        <tr><td>Empty new cluster starts successfully</td><td>A different or empty volume may be mounted</td><td>Stop and identify the original volume before accepting writes</td></tr>
+      </tbody>
+    </table>
+
+    <p>The error commonly follows an edit from <code>postgres:16</code> to <code>postgres:17</code>, a service template update, or a floating tag that now resolves to a new major. It can also appear after the right image is attached to the wrong volume. Treat the configured image, running image, mount, and data-directory marker as four separate facts.</p>
+
+    <h2>1. Stop restarts and preserve evidence</h2>
+    <p>Pause the application, workers, schedulers, and any process that writes to this database. Stop the failing database resource through Coolify if repeated restarts are obscuring logs. Record the resource identifier, previous successful deployment time, configured image tag, current image identifier, exact PostgreSQL error, and attached persistent storage—without publishing credentials, connection URLs, host addresses, or private paths.</p>
+
+    <p>Before changing anything:</p>
+    <ul>
+      <li>take a storage snapshot if your authorised storage layer supports a crash-consistent copy;</li>
+      <li>preserve the original volume and do not rename it ambiguously;</li>
+      <li>preserve the last known-good logical backup outside that volume;</li>
+      <li>confirm enough free space for a second cluster, dump files, indexes, and temporary upgrade work;</li>
+      <li>note the last known image tag or digest from Coolify history and deployment logs.</li>
+    </ul>
+
+    <p>A filesystem copy made while PostgreSQL was writing is not automatically a valid backup. If the old server can still be started safely, create a fresh logical backup after recovery. Coolify’s own backup guidance also says that a created file is not enough: restore a copy into a disposable target before relying on it.</p>
+
+    <h2>2. Prove the data-directory major without starting it</h2>
+    <p>A PostgreSQL cluster stores its major version in a plain-text <code>PG_VERSION</code> file at the effective <code>PGDATA</code> root. Inspect it read-only from an authorised maintenance context. First use container or Coolify configuration to identify the actual mount and <code>PGDATA</code>; do not assume a path copied from another PostgreSQL release.</p>
+
+    <pre><code># Generic shape only: substitute the verified stopped volume and path.
+docker run --rm --read-only \
+  -v DATABASE_VOLUME:/cluster:ro \
+  alpine:PINNED_VERSION \
+  sh -c 'cat /cluster/PG_VERSION'</code></pre>
+
+    <p>If the marker is not at that path, stop rather than searching with a process that can modify files. PostgreSQL 17 and below commonly use <code>/var/lib/postgresql/data</code> in the official image. PostgreSQL 18 and later changed the default to a version-specific directory below <code>/var/lib/postgresql</code>. A mount-path change can therefore create a second empty cluster beside the first or make the expected marker appear missing.</p>
+
+    <p>Record only the resulting major number. Do not edit <code>PG_VERSION</code>. Changing that text cannot convert catalogs or data files and may remove the guard that is preventing damage.</p>
+
+    <h2>3. Prove the server image major</h2>
+    <p>Compare the effective image configured in Coolify with the image used by the failing container and the server binary inside that exact image:</p>
+
+    <pre><code>docker run --rm postgres:PINNED_MAJOR postgres --version</code></pre>
+
+    <p>Use a known major tag or immutable digest during incident work, not <code>latest</code>. Also check whether the resource came from a Compose service whose image value or variable overrides what the surrounding Coolify page suggests. The diagnosis is complete only when the data marker says one major and the effective server binary says another.</p>
+
+    <h2>4. Restore service on the old major first</h2>
+    <p>If this was an accidental image change and the new server refused before modifying the cluster, the narrow recovery is usually to configure the PostgreSQL resource with the matching old major image and its original effective <code>PGDATA</code> mount. Prefer the previously proven tag or digest. Do not create a new volume, change ownership broadly, or run initialisation scripts.</p>
+
+    <ol>
+      <li>Keep applications and workers stopped.</li>
+      <li>Set the database image back to the cluster’s verified major.</li>
+      <li>Confirm the original volume targets the path expected by that image.</li>
+      <li>Start only PostgreSQL and wait for a normal ready-for-connections log.</li>
+      <li>Query the server version and database identity through a private authorised connection.</li>
+      <li>Run consistency-oriented application checks before resuming writes.</li>
+      <li>Create a new logical backup and restore-test it in isolation.</li>
+    </ol>
+
+    <pre><code>SHOW server_version;
+SHOW server_version_num;
+SELECT current_database(), current_user;</code></pre>
+
+    <p>If the old major does not start, do not escalate to random tag changes. Recheck mount identity, <code>PGDATA</code>, ownership, disk capacity, and the first startup error. The separate <a href="/posts/coolify-postgresql-data-directory-permission-denied.html">Coolify PostgreSQL data-directory permission guide</a> covers ownership failures without broad permission changes.</p>
+
+    <h2>5. Choose a real major-upgrade method</h2>
+    <p>Once the old cluster is healthy and backed up, choose an upgrade path based on database size, extensions, allowable downtime, and operational experience.</p>
+
+    <h3>Logical dump and restore</h3>
+    <p>For many small and medium Coolify databases, a parallel new PostgreSQL resource plus logical dump and restore is the clearest path. It leaves the source cluster intact during rehearsal, makes rollback boundaries understandable, and lets you validate the destination before changing the application connection.</p>
+
+    <ol>
+      <li>Create a separate private PostgreSQL resource on the target major with a separate volume.</li>
+      <li>Install and verify target-compatible extensions.</li>
+      <li>Use the newer major’s <code>pg_dump</code> or <code>pg_dumpall</code> against the old server.</li>
+      <li>Restore into the new cluster and read every error, especially role, owner, extension, collation, and privilege failures.</li>
+      <li>Run schema, count, constraint, sequence, and application-level checks.</li>
+      <li>Practise the final write freeze and measure its duration.</li>
+      <li>During cutover, stop writers, take the final dump, restore it, verify recency, then switch the Coolify runtime connection and recreate consumers.</li>
+    </ol>
+
+    <p>Coolify’s selected-database backups use custom-format <code>pg_dump</code> archives and its Import Backup workflow uses <code>pg_restore</code>. “Backup all databases” uses a different <code>pg_dumpall</code> flow. Match the archive to the restore tool and inspect version compatibility before the outage window.</p>
+
+    <h3><code>pg_upgrade</code></h3>
+    <p><code>pg_upgrade</code> is faster for large clusters, but it is not equivalent to changing an image tag. It requires both old and new server binaries, old and newly initialised data directories, compatible build settings, matching extension binaries, stopped servers, and a deliberate copy, clone, link, or other transfer mode.</p>
+
+    <p>Run the new version’s <code>pg_upgrade --check</code> first in a tested environment that reproduces the actual mounts and extensions. PostgreSQL warns that link mode makes rollback unsafe after the new cluster starts because old and new clusters share files. Copy mode needs more time and space but keeps the old cluster unmodified. Do not improvise <code>pg_upgrade</code> inside the only Coolify volume during an outage.</p>
+
+    <h3>Logical replication</h3>
+    <p>For larger databases that need a shorter write freeze, logical replication can keep a new-major subscriber near current before cutover. It adds operational work: table eligibility, initial copy, sequences, schema changes, replication slots, extension compatibility, lag monitoring, and cutover ordering all need explicit handling. Use it only when the lower downtime justifies that complexity.</p>
+
+    <h2>6. Account for the PostgreSQL 18 image layout change</h2>
+    <p>The Docker Official Image changed its default <code>PGDATA</code> and declared volume for PostgreSQL 18 and later. Major 18 defaults to <code>/var/lib/postgresql/18/docker</code> below a volume mounted at <code>/var/lib/postgresql</code>. PostgreSQL 17 and earlier normally expect the persistent mount at <code>/var/lib/postgresql/data</code>.</p>
+
+    <p>This layout is designed to make future major upgrades easier, but it makes a 17-to-18 container edit especially unsuitable as a migration. Before building an upgrade procedure, document:</p>
+    <ul>
+      <li>the source image and effective <code>PGDATA</code>;</li>
+      <li>the source volume and mount target;</li>
+      <li>the target image’s default layout;</li>
+      <li>whether an explicit <code>PGDATA</code> overrides either default;</li>
+      <li>where old and new clusters will coexist during rehearsal.</li>
+    </ul>
+
+    <p>Do not move database files merely to make the new entrypoint stop complaining. Directory placement and data-format migration are different problems.</p>
+
+    <h2>7. Verify the destination before cutover</h2>
+    <p>A successful server start proves only that PostgreSQL can open the target cluster. Before directing production traffic to it, verify:</p>
+    <ul>
+      <li>the expected target major, database names, roles, schemas, and extensions;</li>
+      <li>representative table counts, latest-record timestamps, constraints, indexes, and sequence positions;</li>
+      <li>application migrations against the intended database and schema;</li>
+      <li>real read paths, one controlled write/read-back, workers, and scheduled jobs in an isolated test;</li>
+      <li>encoding, collation, timezone assumptions, and extension behaviour;</li>
+      <li>a new Coolify backup from the target and a disposable restore of that backup;</li>
+      <li>the documented rollback point before old resources or volumes are removed.</li>
+    </ul>
+
+    <p>At final cutover, freeze every writer—not just the web container. Queue consumers, scheduled jobs, admin scripts, and integrations can create a split dataset after the final dump. Change the application’s runtime connection through Coolify, recreate all long-running consumers, and assert unique database-backed content rather than accepting a generic HTTP 200.</p>
+
+    <h2>Wrong fixes that turn recovery into loss</h2>
+    <ul>
+      <li><strong>Editing <code>PG_VERSION</code>:</strong> it changes a marker, not the on-disk format.</li>
+      <li><strong>Deleting the volume:</strong> it removes the cluster PostgreSQL was protecting.</li>
+      <li><strong>Running <code>initdb</code> on the old path:</strong> it can overwrite the evidence and data needed for recovery.</li>
+      <li><strong>Using <code>latest</code> again:</strong> the next pull can repeat the uncontrolled major jump.</li>
+      <li><strong>Mounting a new empty volume and declaring success:</strong> a healthy empty database is not the original database.</li>
+      <li><strong>Copying raw files into a new-major cluster:</strong> filesystem copy is not a PostgreSQL major upgrade.</li>
+      <li><strong>Restoring over the only source:</strong> build and verify a separate destination first.</li>
+      <li><strong>Deleting the old cluster immediately after cutover:</strong> retain it offline until verification and rollback windows close.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Stop writers and preserve the exact first error.</li>
+      <li>Snapshot or protect the original volume and last known-good backup.</li>
+      <li>Read the source cluster’s <code>PG_VERSION</code> without modifying it.</li>
+      <li>Identify the effective server image, binary major, mount, and <code>PGDATA</code>.</li>
+      <li>Recover the original cluster with its matching pinned major.</li>
+      <li>Create and restore-test a fresh logical backup.</li>
+      <li>Rehearse dump/restore, <code>pg_upgrade</code>, or replication into a separate target.</li>
+      <li>Freeze all writers, perform the final migration, and switch every consumer once.</li>
+      <li>Verify data, application behaviour, logs, and target-major backups.</li>
+      <li>Retain the stopped source until the rollback window closes.</li>
+    </ol>
+
+    <p>The key distinction is recovery versus upgrade. Returning the matching old server to the untouched old cluster restores service; it does not complete an upgrade. A major upgrade creates or transforms a target cluster through a PostgreSQL-supported method and proves that the application and recovery process still work afterward.</p>
+
+    <p>Authoritative references: PostgreSQL documents <a href="https://www.postgresql.org/docs/current/upgrading.html" rel="noopener noreferrer">major-version upgrade methods and minor-version storage compatibility</a> and the requirements and rollback implications of <a href="https://www.postgresql.org/docs/current/pgupgrade.html" rel="noopener noreferrer"><code>pg_upgrade</code></a>. The Docker Official Image documents its <a href="https://hub.docker.com/_/postgres" rel="noopener noreferrer"><code>PGDATA</code> and volume layouts</a>, including the PostgreSQL 18 change. Coolify documents <a href="https://coolify.io/docs/databases/backups" rel="noopener noreferrer">PostgreSQL backup formats and restore testing</a> and its <a href="https://coolify.io/docs/databases/restore" rel="noopener noreferrer">controlled database restore workflow</a>.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify PostgreSQL guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Prove a real recovery point in an isolated target before changing a production cluster.</span></li>
+        <li><a href="/posts/coolify-postgresql-pg-dump-server-version-mismatch.html">Coolify PostgreSQL pg_dump version mismatch</a><span>Align backup clients with the server major and prove the replacement archive.</span></li>
+        <li><a href="/posts/coolify-postgresql-data-directory-permission-denied.html">Coolify PostgreSQL data-directory permission denied</a><span>Separate incompatible formats from mount, ownership, mode, and host-policy failures.</span></li>
+        <li><a href="/posts/coolify-rollback-failed-deployment-database-migrations.html">Coolify rollback after a failed deploy</a><span>Keep application-image rollback separate from database and volume state.</span></li>
+        <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Verify the private endpoint, Docker network, readiness, credentials, URI, and TLS after cutover.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

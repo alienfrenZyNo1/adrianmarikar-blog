@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify PostgreSQL “Database Files Are Incompatible with Server”: https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html
+  - Volume-safe recovery and major-upgrade guide covering PG_VERSION evidence, effective image and PGDATA identity, old-major service restoration, pinned tags, PostgreSQL 18 mount-layout changes, dump/restore, pg_upgrade, logical replication, write-freeze cutover, destination verification, and rollback retention.
 |- Coolify PostgreSQL “Relation Does Not Exist” After Deploy: https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html
   - Migration-safe troubleshooting covering the live database and role identity, effective schema search path, relation discovery, quoted-name case, migration files and ledger, deployment ordering, least-privilege repair, and database-backed release verification.
 |- Coolify PostgreSQL “No pg_hba.conf Entry” — Fix It Safely: https://adrianmarikar.com/posts/coolify-postgresql-no-pg-hba-conf-entry.html

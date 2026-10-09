@@ -23,23 +23,26 @@
 </head>
 <body>
 <header class="site-header">
-  <a class="brand" href="/" aria-label="Adrian Marikar home">
-    <span class="brand-mark">AM</span>
-    <span>Adrian Marikar</span>
-  </a>
-  <details class="nav-menu" open>
-    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
-    <nav id="primary-navigation" aria-label="Primary navigation">
-      <a href="/#writing">Writing</a>
-      <a href="/categories/ai-agents.html">AI agents</a>
-      <a href="/categories/newbizfeed.html">NewBizFeed</a>
-      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-      <a href="/#about">About</a>
-      <a href="mailto:hello@adrianmarikar.com">Contact</a>
-    </nav>
-  </details>
-</header>
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
 
 <main>
   <article class="article">
@@ -178,6 +181,7 @@ pg_restore --list /protected/backup-output/database.dump</code></pre>
       <p class="eyebrow">// keep reading</p>
       <h2>Related Coolify database guides</h2>
       <ul>
+        <li><a href="/posts/coolify-postgresql-database-files-incompatible-server.html">Coolify PostgreSQL database files are incompatible with server</a><span>Recover an old-major cluster after an unsafe image change, then perform a supported major upgrade.</span></li>
         <li><a href="/posts/coolify-postgresql-backup-restore-test.html">Test a Coolify PostgreSQL backup</a><span>Restore one real recovery point into isolation and prove database and application behaviour.</span></li>
         <li><a href="/posts/coolify-postgresql-password-authentication-failed.html">Coolify PostgreSQL password authentication failed</a><span>Separate a client-version failure from credential drift across the database and application.</span></li>
         <li><a href="/posts/coolify-postgresql-connection-refused-localhost.html">Coolify app cannot connect to PostgreSQL</a><span>Trace container-local loopback, Docker DNS, networks, readiness, authentication, and TLS.</span></li>
