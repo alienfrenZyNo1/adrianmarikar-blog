@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver “Sender Address Rejected: Not Owned by User” — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver sender address rejected: not owned by user by matching SMTP login, envelope sender, aliases, and SPOOF_PROTECTION without weakening every account.">
+  <meta name="keywords" content="Docker Mailserver sender address rejected not owned by user, reject_sender_login_mismatch, SPOOF_PROTECTION, smtpd_sender_login_maps, Postfix sender login mismatch">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver “Sender Address Rejected: Not Owned by User”">
+  <meta property="og:description" content="Trace the authenticated login, envelope From address, header From address, alias ownership, and effective Postfix sender-login policy before changing spoof protection.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html">
+  <meta property="article:published_time" content="2026-10-11T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-11T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver “Sender Address Rejected: Not Owned by User”">
+  <meta name="twitter:description" content="A least-privilege fix for Postfix sender-login mismatch errors in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver ‘Sender Address Rejected: Not Owned by User’","description":"Fix Docker Mailserver sender address rejected: not owned by user by matching SMTP login, envelope sender, aliases, and SPOOF_PROTECTION without weakening every account.","url":"https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html"},"datePublished":"2026-10-11T10:00:00Z","dateModified":"2026-10-11T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","sender address rejected","not owned by user","SPOOF_PROTECTION","Postfix","SMTP AUTH","sender login mismatch"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / sender identity 071</p>
+      <h1>Docker Mailserver “sender address rejected: not owned by user”</h1>
+    </header>
+
+    <p>Your mail client authenticates successfully, but Postfix refuses the message with <code>553 5.7.1 Sender address rejected: not owned by user</code>, <code>reject_sender_login_mismatch</code>, or a similar sender-login mismatch. That is not another bad-password error. Docker Mailserver is enforcing a relationship between the authenticated account and the address used to submit the message.</p>
+
+    <p>The common case is simple: the client logs in as <code>person@example.com</code> but sends with an envelope sender such as <code>billing@example.com</code>. With <code>SPOOF_PROTECTION=1</code>, Docker Mailserver allows an account to send as its own address or an authorised alias; it does not give every authenticated account permission to impersonate every hosted address.</p>
+
+    <blockquote>Keep spoof protection. Fix the identity mapping or the client’s sender selection instead of disabling the check for every mailbox.</blockquote>
+
+    <h2>What the rejection proves</h2>
+    <p>This error appears after several earlier boundaries have already worked:</p>
+    <ul>
+      <li>the client reached an SMTP service;</li>
+      <li>TLS and SMTP AUTH completed far enough to identify a login;</li>
+      <li>Postfix evaluated the message’s envelope sender;</li>
+      <li>the effective sender-login map did not authorise that login for that sender.</li>
+    </ul>
+    <p>If the log instead shows <code>SASL authentication failed</code>, use the <a href="/posts/docker-mailserver-sasl-authentication-failed.html">SMTP authentication guide</a>. If Postfix accepts the sender but refuses an external recipient with relay denial, use the <a href="/posts/docker-mailserver-relay-access-denied.html">relay access guide</a>. Those failures belong to different policy stages.</p>
+
+    <h2>1. Capture one transaction and its three identities</h2>
+    <p>Start a short log view, submit one harmless message, then stop:</p>
+    <pre><code>docker compose logs --since 5m --follow mailserver</code></pre>
+    <p>Correlate the timestamp privately and record these values without publishing the complete log:</p>
+    <ol>
+      <li><strong>SASL login:</strong> the account that authenticated, often shown as <code>sasl_username</code>;</li>
+      <li><strong>envelope sender:</strong> the address supplied with SMTP <code>MAIL FROM</code> and evaluated by sender restrictions;</li>
+      <li><strong>header From:</strong> the author address readers see in the message.</li>
+    </ol>
+    <p>The envelope and header addresses often match, but they are separate fields. Postfix’s sender-login restriction evaluates the SMTP envelope sender. Changing only a display name does nothing; changing the visible From address may or may not change the envelope sender, depending on the client.</p>
+
+    <h2>2. Check the client’s outgoing identity</h2>
+    <p>Mail applications can store several identities against one SMTP account. A user may choose “Billing” in the compose window while the outgoing server still authenticates as their personal mailbox. Web applications can also set a configurable <code>From</code> address while using a different SMTP username.</p>
+    <p>Inspect the narrowest relevant settings:</p>
+    <ul>
+      <li>outgoing server login is the complete intended mailbox address;</li>
+      <li>the selected sender address has no typo, stale domain, or unexpected plus tag;</li>
+      <li>the app is not overriding the envelope sender separately from the header From;</li>
+      <li>a reply-to address is not being confused with a sending identity;</li>
+      <li>the client is not reusing another saved SMTP account.</li>
+    </ul>
+    <p>If the user does not need to send as the second address, select the authenticated mailbox as From and use <code>Reply-To</code> only when there is a genuine reply-routing need.</p>
+
+    <h2>3. Confirm spoof protection and effective Postfix policy</h2>
+    <p>Check the Compose model without printing unrelated environment values, then read only the relevant effective Postfix parameters:</p>
+    <pre><code>docker compose config | grep -E '^[[:space:]]*- SPOOF_PROTECTION='
+
+docker compose exec mailserver postconf \
+  smtpd_sender_login_maps \
+  smtpd_sender_restrictions</code></pre>
+    <p>Docker Mailserver documents <code>SPOOF_PROTECTION=1</code> as denying forged sender addresses: each account may send as its own address or an alias assigned to it. Under the hood, Postfix uses sender-login lookup tables together with a sender-login mismatch restriction. Inspect the generated settings, but make persistent changes through supported DMS configuration—not by editing generated files in a running container.</p>
+
+    <h2>4. Decide whether the second address is an alias or a separate account</h2>
+    <p>Use an alias when several addresses intentionally belong to one mailbox and one person or application is authorised to send as each of them. Use a separate account when the identity needs its own password, mailbox, access lifecycle, audit boundary, or ownership.</p>
+    <table>
+      <thead><tr><th>Requirement</th><th>Better model</th></tr></thead>
+      <tbody>
+        <tr><td><code>person@</code> receives and sends as <code>billing@</code></td><td>Alias owned by the person account</td></tr>
+        <tr><td>Billing system needs an independent credential</td><td>Separate mailbox/account</td></tr>
+        <tr><td>Several people need a shared address</td><td>Purpose-specific account or deliberately governed alias</td></tr>
+        <tr><td>Address only forwards to an external mailbox</td><td>Forwarding alias; do not assume it grants a local SMTP login ownership</td></tr>
+        <tr><td><code>person+tag@</code> is used as sender</td><td>Use the base address; DMS says extension-delimiter addresses cannot send with spoof protection</td></tr>
+      </tbody>
+    </table>
+    <p>Aliases are primarily recipient-routing records, but DMS also uses supported alias configuration to permit associated sender identities when spoof protection is enabled. Alias direction therefore matters: the alias address points to the real account that owns it.</p>
+
+    <h2>5. Add or verify the alias through Docker Mailserver</h2>
+    <p>For the default file provisioner, list the supported account and alias configuration:</p>
+    <pre><code>docker compose exec mailserver setup email list
+docker compose exec mailserver setup alias list</code></pre>
+    <p>If <code>billing@example.com</code> should belong to <code>person@example.com</code>, add it in that direction:</p>
+    <pre><code>docker compose exec mailserver setup alias add \
+  billing@example.com person@example.com</code></pre>
+    <p>Wait for DMS change detection or follow the reload procedure documented for your pinned image. Then verify the effective lookups rather than assuming the source file was loaded:</p>
+    <pre><code>docker compose exec mailserver postmap -q \
+  billing@example.com /etc/postfix/virtual</code></pre>
+    <p>The exact table path depends on the provisioner and DMS version. The official account-management guide gives <code>/etc/postfix/virtual</code> as the file-provisioner example. LDAP deployments need a correctly scoped sender query such as the supported <code>LDAP_QUERY_FILTER_SENDERS</code> flow, not edits to the file-provisioner maps.</p>
+
+    <h2>6. Do not use these tempting workarounds</h2>
+    <ul>
+      <li><strong>Set <code>SPOOF_PROTECTION=0</code>:</strong> DMS warns that this allows any logged-in user to forge any sender address. It turns one missing mapping into a server-wide permission change.</li>
+      <li><strong>Add every address as an alias to one super-account:</strong> this removes useful separation and makes credential compromise more damaging.</li>
+      <li><strong>Trust a broad Docker network:</strong> network relay permission is not sender ownership and can introduce an open-relay path.</li>
+      <li><strong>Modify generated <code>main.cf</code>:</strong> recreation can discard the edit and leave the declarative configuration lying about production.</li>
+      <li><strong>Test with a plus-tagged From address:</strong> DMS explicitly says extension-delimiter addresses cannot send when spoof protection is enabled.</li>
+      <li><strong>Assume DKIM grants sender permission:</strong> DKIM signing happens later; it does not authorise the SASL login to claim an envelope sender.</li>
+    </ul>
+
+    <h2>7. Verify both allowed and denied cases</h2>
+    <p>A useful repair proves the positive path without erasing the control:</p>
+    <ol>
+      <li>Authenticate as the real account on port 587 with STARTTLS or 465 with implicit TLS.</li>
+      <li>Send from the account’s primary address and confirm acceptance.</li>
+      <li>Send from the newly authorised alias and confirm acceptance.</li>
+      <li>Follow each queue ID to a final <code>status=sent</code> or preserve the next exact error.</li>
+      <li>At a mailbox you control, verify the intended visible From address and SPF/DKIM/DMARC results.</li>
+      <li>Try one harmless, unauthorised sender identity and confirm Postfix still rejects it.</li>
+      <li>Confirm inbound mail to the alias reaches the intended mailbox if receiving there is part of the design.</li>
+    </ol>
+    <p>That final negative test matters. “Mail sends now” is not sufficient evidence if the fix silently let every authenticated user impersonate every address.</p>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Match one submission attempt to one redacted Postfix transaction.</li>
+      <li>Compare SASL login, envelope sender, and header From.</li>
+      <li>Check the client or application’s selected outgoing identity.</li>
+      <li>Inspect <code>SPOOF_PROTECTION</code>, <code>smtpd_sender_login_maps</code>, and sender restrictions.</li>
+      <li>Model the address as the correct account or an alias pointing to its owner.</li>
+      <li>Apply the change through the provisioner supported by the pinned DMS image.</li>
+      <li>Verify primary and alias sending, final delivery, inbound alias routing, and rejection of an unauthorised sender.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/overview/" rel="noopener noreferrer">account-management overview</a> explains accounts, aliases, submission, and supported sender identities; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/#spoof_protection" rel="noopener noreferrer">environment reference</a> documents <code>SPOOF_PROTECTION</code>; and Postfix documents <a href="https://www.postfix.org/postconf.5.html#smtpd_sender_login_maps" rel="noopener noreferrer"><code>smtpd_sender_login_maps</code></a> and sender-login mismatch restrictions. Match commands and map paths to the DMS version and provisioner you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-sasl-authentication-failed.html">Docker Mailserver SASL authentication failed?</a><span>Use this when the login itself fails before sender ownership is evaluated.</span></li>
+        <li><a href="/posts/docker-mailserver-relay-access-denied.html">Fix “Relay access denied” safely</a><span>Separate sender ownership from permission to submit to an external recipient.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Docker Mailserver multi-domain setup</a><span>Model mailboxes, aliases, hosted domains, DNS, TLS, and DKIM explicitly.</span></li>
+        <li><a href="/posts/docker-mailserver-not-signing-outgoing-email-dkim.html">Docker Mailserver not signing outgoing email?</a><span>After sender policy accepts the message, verify the correct domain is signed.</span></li>
+        <li><a href="/posts/docker-mailserver-emails-going-to-spam.html">Docker Mailserver emails going to spam</a><span>Follow an accepted message through authentication, reputation, and recipient evidence.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

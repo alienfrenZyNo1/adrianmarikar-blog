@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver “Sender Address Rejected: Not Owned by User”: https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html
+  - Least-privilege SMTP submission troubleshooting covering SASL login, envelope sender versus header From, client identities, SPOOF_PROTECTION, effective sender-login maps, account-versus-alias modelling, file and LDAP provisioners, plus positive and negative verification.
 |- Coolify PostgreSQL “Database Files Are Incompatible with Server”: https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html
   - Volume-safe recovery and major-upgrade guide covering PG_VERSION evidence, effective image and PGDATA identity, old-major service restoration, pinned tags, PostgreSQL 18 mount-layout changes, dump/restore, pg_upgrade, logical replication, write-freeze cutover, destination verification, and rollback retention.
 |- Coolify PostgreSQL “Relation Does Not Exist” After Deploy: https://adrianmarikar.com/posts/coolify-postgresql-relation-does-not-exist.html
