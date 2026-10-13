@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver “Mail for Domain Loops Back to Myself”: https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html
+  - Domain-routing recovery covering public MX/A/AAAA evidence, intended destination ownership, Postfix address classes, DMS account-derived hosted domains, effective map queries, hostname conflicts, stale transport rules, safe recreation, and SMTP-to-mailbox verification.
 |- Docker Mailserver “Sender Address Rejected: Not Owned by User”: https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html
   - Least-privilege SMTP submission troubleshooting covering SASL login, envelope sender versus header From, client identities, SPOOF_PROTECTION, effective sender-login maps, account-versus-alias modelling, file and LDAP provisioners, plus positive and negative verification.
 |- Coolify PostgreSQL “Database Files Are Incompatible with Server”: https://adrianmarikar.com/posts/coolify-postgresql-database-files-incompatible-server.html

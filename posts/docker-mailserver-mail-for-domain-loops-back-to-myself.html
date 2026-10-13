@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver “Mail for Domain Loops Back to Myself” — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver mail for domain loops back to myself by proving MX routing, Postfix address classes, hosted-domain maps, and the mail hostname without creating a relay loop.">
+  <meta name="keywords" content="Docker Mailserver mail for domain loops back to myself, Postfix mail loops back to myself, virtual_mailbox_domains, mydestination, Docker Mailserver MX">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver “Mail for Domain Loops Back to Myself”">
+  <meta property="og:description" content="Trace the MX destination, effective Postfix domain class, DMS account source, and hostname before changing mail routing.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html">
+  <meta property="article:published_time" content="2026-10-13T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-13T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver “Mail for Domain Loops Back to Myself”">
+  <meta name="twitter:description" content="An evidence-led fix for Postfix domain-routing loops in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver ‘Mail for Domain Loops Back to Myself’","description":"Fix Docker Mailserver mail for domain loops back to myself by proving MX routing, Postfix address classes, hosted-domain maps, and the mail hostname without creating a relay loop.","url":"https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html"},"datePublished":"2026-10-13T10:00:00Z","dateModified":"2026-10-13T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","mail loops back to myself","Postfix","virtual mailbox domains","MX records","mydestination","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / domain routing 072</p>
+      <h1>Docker Mailserver “mail for domain loops back to myself”</h1>
+    </header>
+
+    <p>Postfix defers or bounces a message with <code>mail for example.com loops back to myself</code>. DNS says this server is the best mail exchanger for the domain, so Postfix connects back to itself. The receiving Postfix instance does not classify that domain as one it should deliver locally, host virtually, or relay deliberately. Sending it out again would repeat the same route, so Postfix stops the loop.</p>
+
+    <p>In Docker Mailserver, the most common causes are a mailbox domain that never reached the active account maps, a conflict between the server hostname and a hosted mail domain, or MX records that still point at this server even though mail is meant to live elsewhere.</p>
+
+    <blockquote>Do not silence the error with a broad relay rule or a transport map pointing back to the MX. First decide whether this Docker Mailserver is the final destination for the domain, then make DNS and the effective Postfix address class agree.</blockquote>
+
+    <h2>What this error actually means</h2>
+    <p>Postfix divides recipient domains into address classes. The important ones here are:</p>
+    <table>
+      <thead><tr><th>Address class</th><th>Typical role</th><th>Relevant setting</th></tr></thead>
+      <tbody>
+        <tr><td>Local</td><td>Postfix’s own host identities and traditional system users</td><td><code>mydestination</code></td></tr>
+        <tr><td>Virtual mailbox</td><td>Hosted mail domains with non-system mailboxes</td><td><code>virtual_mailbox_domains</code></td></tr>
+        <tr><td>Virtual alias</td><td>Hosted domains whose addresses redirect elsewhere</td><td><code>virtual_alias_domains</code></td></tr>
+        <tr><td>Relay</td><td>Domains this server forwards for intentionally</td><td><code>relay_domains</code></td></tr>
+        <tr><td>Default</td><td>Remote Internet destinations for authorised senders</td><td>Normal SMTP routing</td></tr>
+      </tbody>
+    </table>
+    <p>Postfix’s official virtual-domain guide explicitly says that omitting a hosted domain from its virtual domain class can produce either <code>Relay access denied</code> or <code>mail for example.com loops back to myself</code>. The error is therefore about domain ownership and routing. It is not, by itself, a DNS timeout, password failure, DKIM failure, or missing TLS certificate.</p>
+
+    <h2>1. Preserve the exact queue evidence</h2>
+    <p>Capture a narrow log window around one current attempt:</p>
+    <pre><code>docker compose logs --since 10m mailserver</code></pre>
+    <p>Privately record the queue ID, envelope recipient domain, relay target, and exact diagnostic. A representative line may contain:</p>
+    <pre><code>status=bounced (mail for example.com loops back to myself)</code></pre>
+    <p>Do not publish full logs: they can expose real addresses, message IDs, hostnames, and network details. Also distinguish this diagnostic from <code>mail forwarding loop</code> or <code>too many Received headers</code>. Those can indicate an address-level forwarding cycle or repeated hand-offs between servers, while <code>mail for domain loops back to myself</code> commonly appears when the SMTP client resolves the destination back to its own server without a matching destination class.</p>
+
+    <h2>2. Decide which server should own the domain</h2>
+    <p>Before changing anything, choose the intended model:</p>
+    <ul>
+      <li><strong>DMS is the final mailbox server:</strong> the domain needs at least one valid DMS account or supported alias arrangement, and Postfix must classify it as a hosted domain.</li>
+      <li><strong>Another provider is the final server:</strong> public MX records should point there; this DMS instance should not pretend to host the domain.</li>
+      <li><strong>DMS is a deliberate relay or backup MX:</strong> configure a narrow relay-domain and recipient-validation design. Do not improvise this from a mailbox-server guide.</li>
+    </ul>
+    <p>This decision prevents the most dangerous false repair: making an arbitrary domain relayable merely because Postfix reported a loop.</p>
+
+    <h2>3. Read public MX and both address families</h2>
+    <p>Query the recipient domain from a normal recursive resolver, then resolve every MX hostname:</p>
+    <pre><code>dig +short MX example.com
+
+dig +short A mail.example.com
+dig +short AAAA mail.example.com</code></pre>
+    <p>The MX target must be a hostname, not a raw address. Check all returned MX records, including lower-priority backup hosts. If mail recently moved, compare authoritative answers as well as cached recursive answers and allow for the previous TTL.</p>
+    <p>If another provider should receive the mail but MX still points to your DMS hostname, fix DNS at the zone source. If DMS should receive the mail, continue: DNS may be correct while the live container’s domain maps are not.</p>
+
+    <h2>4. Inspect the live Postfix identity and domain classes</h2>
+    <p>Read the effective configuration from the running container, not a copied forum example:</p>
+    <pre><code>docker compose exec mailserver postconf \
+  myhostname mydomain mydestination \
+  virtual_mailbox_domains virtual_alias_domains \
+  relay_domains relayhost</code></pre>
+    <p>Keep the real output private. For the usual DMS mailbox model, a server identity such as <code>mail.example.com</code> belongs to <code>myhostname</code>, while the mailbox domain <code>example.com</code> is represented through the virtual mailbox configuration derived from provisioned accounts.</p>
+    <p>Look for four specific failures:</p>
+    <ol>
+      <li>the recipient domain appears in none of the intended destination classes;</li>
+      <li>the same domain appears in both <code>mydestination</code> and <code>virtual_mailbox_domains</code>;</li>
+      <li>the bare mailbox domain was also used as the DMS hostname;</li>
+      <li>a custom <code>relayhost</code> or transport rule sends the domain back to this server.</li>
+    </ol>
+    <p>Docker Mailserver’s debugging guide calls out the warning <code>do not list domain ... in BOTH mydestination and virtual_mailbox_domains</code>. DMS also warns that assigning the same FQDN to its <code>hostname</code> and to mail accounts is not supported by the default arrangement. Fix that model rather than editing generated <code>main.cf</code> inside the container.</p>
+
+    <h2>5. Prove that Docker Mailserver knows the hosted domain</h2>
+    <p>DMS normally derives hosted mail domains from provisioned accounts. For the default file provisioner, list accounts and aliases through the supported setup interface:</p>
+    <pre><code>docker compose exec mailserver setup email list
+
+docker compose exec mailserver setup alias list</code></pre>
+    <p>If <code>example.com</code> should be hosted but there is no account under that domain, add the smallest correct account interactively so its password does not enter shell history:</p>
+    <pre><code>docker compose exec mailserver \
+  setup email add person@example.com</code></pre>
+    <p>An alias may be appropriate when an additional address should deliver to an existing mailbox, but an alias and a mailbox account are not interchangeable. Follow the provisioner used by the deployment: an LDAP-backed server will not be repaired by changing the file provisioner.</p>
+    <p>If the account source lists the address but the effective virtual domain lookup still does not recognize its domain, check that the expected configuration volume is mounted and that the running container was generated from that source. Do not create a catch-all to hide a missing domain or recipient.</p>
+
+    <h2>6. Query the effective maps</h2>
+    <p>Inspect the exact lookup definitions before issuing a query:</p>
+    <pre><code>docker compose exec mailserver postconf \
+  virtual_mailbox_domains virtual_mailbox_maps virtual_alias_maps</code></pre>
+    <p>The map type and path vary by DMS version and account provisioner. Use the values returned by your container. The general diagnostic shapes are:</p>
+    <pre><code>docker compose exec mailserver \
+  postmap -q example.com &lt;domain-map-from-postconf&gt;
+
+docker compose exec mailserver \
+  postmap -q person@example.com &lt;mailbox-map-from-postconf&gt;</code></pre>
+    <p>A domain hit proves Postfix classifies the domain as hosted; an address hit proves the recipient map recognizes that mailbox. If the domain is recognized but the recipient is not, the next error is likely to be <code>User unknown in virtual mailbox table</code>. Use the <a href="/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">virtual mailbox recipient guide</a> for that branch rather than weakening recipient validation.</p>
+
+    <h2>7. Recreate through the supported deployment path</h2>
+    <p>Docker Mailserver’s current debugging guidance recommends replacing the container cleanly so startup setup scripts run against the image’s original configuration. After confirming persistent volumes and the intended Compose model, use the documented deployment operation for your pinned version. A typical Compose action is:</p>
+    <pre><code>docker compose up -d --force-recreate mailserver</code></pre>
+    <p>Do not rely on edits made only inside the running container. Do not delete mail volumes. Do not run <code>down -v</code>. If this is a production mail host, retain the prior Compose revision and image reference so configuration—not mailbox data—can be rolled back safely.</p>
+    <p>After recreation, repeat <code>postconf</code>, account listing, and the effective map query. A successful container start is not proof that routing changed.</p>
+
+    <h2>8. Check for a custom route pointing back to yourself</h2>
+    <p>If the domain is not supposed to be local, inspect only the relevant transport and next-hop settings:</p>
+    <pre><code>docker compose exec mailserver postconf \
+  transport_maps relayhost sender_dependent_relayhost_maps</code></pre>
+    <p>A custom transport that sends <code>example.com</code> to <code>mail.example.com</code> will loop if that hostname resolves to the same DMS instance and the server does not own the recipient domain. Likewise, using the domain’s public MX as a manual transport does not escape DNS routing—it merely restates it.</p>
+    <p>Remove stale custom routing through the persistent DMS override or Compose source that created it. Keep smarthost configuration separate from inbound hosted-domain ownership: a relay used for outbound delivery should not become the route for mail destined to a locally hosted domain.</p>
+
+    <h2>9. Verify at SMTP, queue, and mailbox layers</h2>
+    <p>Use an external system you control to test the final route. First confirm the MX hostname and certificate identity, then issue a recipient probe over port 25:</p>
+    <pre><code>openssl s_client -quiet -starttls smtp \
+  -connect mail.example.com:25 \
+  -servername mail.example.com
+
+EHLO test.example.net
+MAIL FROM:&lt;sender@test.example.net&gt;
+RCPT TO:&lt;person@example.com&gt;
+QUIT</code></pre>
+    <p>Use real domains and addresses you control. A <code>250</code>-class response to <code>RCPT TO</code> proves recipient acceptance, not final delivery. Complete the check with one harmless message:</p>
+    <ol>
+      <li>send from an external mailbox to the intended recipient;</li>
+      <li>follow one queue ID through the private logs;</li>
+      <li>confirm a successful local delivery status rather than another SMTP relay attempt;</li>
+      <li>open the intended mailbox and verify the message arrived once;</li>
+      <li>confirm there is no new loop diagnostic or growing deferred queue;</li>
+      <li>repeat after the next normal container recreation to prove persistence.</li>
+    </ol>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Adding the domain broadly to <code>mynetworks</code>:</strong> client trust does not establish destination ownership and can weaken relay controls.</li>
+      <li><strong>Setting permissive <code>relay_domains</code>:</strong> an accidental relay policy can create abuse and backscatter instead of mailbox delivery.</li>
+      <li><strong>Listing one domain in multiple address classes:</strong> Postfix warns against the resulting ambiguity.</li>
+      <li><strong>Pointing a transport map at the same public MX:</strong> that recreates the route Postfix already detected as a loop.</li>
+      <li><strong>Changing the PTR, SPF, DKIM, or TLS certificate first:</strong> those matter for identity and deliverability, but they do not make Postfix own a recipient domain.</li>
+      <li><strong>Deleting queues or volumes:</strong> destruction removes evidence and mail; it does not repair domain classification.</li>
+      <li><strong>Editing generated files in the container:</strong> the change can vanish on recreation and leave the deployment source incorrect.</li>
+    </ul>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Capture the exact current queue diagnostic and recipient domain.</li>
+      <li>Decide whether DMS, another provider, or a deliberate relay should own delivery.</li>
+      <li>Verify all MX, A, and AAAA answers.</li>
+      <li>Inspect effective <code>myhostname</code>, <code>mydestination</code>, virtual domains, and relay domains.</li>
+      <li>List accounts and aliases through the active DMS provisioner.</li>
+      <li>Query the live domain and mailbox maps.</li>
+      <li>Repair DNS or persistent DMS configuration—never both speculatively.</li>
+      <li>Recreate safely and repeat the effective checks.</li>
+      <li>Test external SMTP acceptance, final mailbox delivery, queue stability, and persistence.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/debugging/" rel="noopener noreferrer">debugging guide</a> documents hostname/domain conflicts and clean recreation; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/overview/" rel="noopener noreferrer">account-management overview</a> explains how accounts establish hosted mail domains; and Postfix’s official <a href="https://www.postfix.org/VIRTUAL_README.html" rel="noopener noreferrer">virtual domain guide</a> and <a href="https://www.postfix.org/ADDRESS_CLASS_README.html" rel="noopener noreferrer">address-class reference</a> define destination classes and the loop condition. Match commands to the DMS image and provisioner you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">User unknown in virtual mailbox table?</a><span>Use this when Postfix owns the domain but rejects one recipient.</span></li>
+        <li><a href="/posts/docker-mailserver-multiple-domains.html">Add multiple domains without breaking existing mail</a><span>Keep one stable mail host identity while adding hosted mailbox domains.</span></li>
+        <li><a href="/posts/docker-mailserver-relay-access-denied.html">Relay access denied?</a><span>Separate inbound destination ownership from authenticated outbound submission.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Group queued mail by destination and preserve the last delivery response.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Trace DNS, port 25, firewalls, listeners, and IPv4/IPv6 when no SMTP response returns.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver “Mail for Domain Loops Back to Myself”</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html</guid>
+      <pubDate>Tue, 13 Oct 2026 10:00:00 GMT</pubDate>
+      <description>An evidence-led guide to reconciling MX routing, Docker Mailserver accounts, the mail hostname, Postfix address classes, and custom transports without creating a relay loop.</description>
+    </item>
+    <item>
       <title>Docker Mailserver “Sender Address Rejected: Not Owned by User”</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html</guid>
