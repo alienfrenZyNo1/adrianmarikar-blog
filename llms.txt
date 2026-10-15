@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver 451 4.3.0 “Temporary Lookup Failure”: https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html
+  - Evidence-led Postfix lookup recovery covering SMTP-stage diagnosis, effective map discovery, direct postmap queries, supported table types, local file generation and permissions, LDAP/SQL/socket/policy-service networking, durable DMS configuration, positive delivery, and negative recipient verification.
 |- Docker Mailserver “Mail for Domain Loops Back to Myself”: https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html
   - Domain-routing recovery covering public MX/A/AAAA evidence, intended destination ownership, Postfix address classes, DMS account-derived hosted domains, effective map queries, hostname conflicts, stale transport rules, safe recreation, and SMTP-to-mailbox verification.
 |- Docker Mailserver “Sender Address Rejected: Not Owned by User”: https://adrianmarikar.com/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver 451 4.3.0 Temporary Lookup Failure — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver 451 4.3.0 Temporary lookup failure by identifying the failed Postfix map or policy service, testing it directly, and repairing its persistent source.">
+  <meta name="keywords" content="Docker Mailserver 451 4.3.0 temporary lookup failure, Postfix temporary lookup failure, virtual alias map lookup problem, Docker Mailserver LDAP, postmap query">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver 451 4.3.0 Temporary Lookup Failure">
+  <meta property="og:description" content="Find the exact Postfix lookup that deferred mail, test that backend directly, and repair the durable Docker Mailserver configuration.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html">
+  <meta property="article:published_time" content="2026-10-15T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-15T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver 451 4.3.0 Temporary Lookup Failure">
+  <meta name="twitter:description" content="An evidence-led guide to failed Postfix maps and policy lookups in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver 451 4.3.0 Temporary Lookup Failure","description":"Fix Docker Mailserver 451 4.3.0 Temporary lookup failure by identifying the failed Postfix map or policy service, testing it directly, and repairing its persistent source.","url":"https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html"},"datePublished":"2026-10-15T10:00:00Z","dateModified":"2026-10-15T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","451 4.3.0","temporary lookup failure","Postfix","lookup maps","LDAP","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / lookup backends 073</p>
+      <h1>Docker Mailserver 451 4.3.0 “Temporary lookup failure”</h1>
+    </header>
+
+    <p>An SMTP client reaches Docker Mailserver, but Postfix answers with <code>451 4.3.0 Temporary lookup failure</code>. The word <em>temporary</em> matters: Postfix could not get a trustworthy answer from a lookup table or policy service, so it asks the sender to retry instead of accepting or permanently rejecting the message.</p>
+
+    <p>The useful clue is usually not the 451 line itself. It is the warning immediately before it: a map path, map type, socket, hostname, permission error, connection refusal, or malformed query. Find that dependency first. Rebuilding every map, restarting every service, or changing DNS blindly can destroy evidence without fixing the failed lookup.</p>
+
+    <blockquote>A temporary lookup failure is a safety response, not a diagnosis. Identify the exact lookup, reproduce it directly, then repair the persistent source that creates it.</blockquote>
+
+    <h2>What Postfix may be trying to look up</h2>
+    <p>Postfix uses key-value lookups for recipient validation, aliases, sender ownership, transport selection, access rules, and other routing decisions. Docker Mailserver can supply those answers from generated local files or from an external provisioner such as LDAP. A policy service, including a quota check, may also be consulted during the SMTP conversation.</p>
+    <table>
+      <thead><tr><th>Log clue</th><th>Likely boundary</th><th>First direct test</th></tr></thead>
+      <tbody>
+        <tr><td><code>virtual_alias_maps map lookup problem</code></td><td>Alias map or its backend</td><td>Query the exact map for the logged address</td></tr>
+        <tr><td><code>virtual_mailbox_maps map lookup problem</code></td><td>Mailbox recipient map</td><td>Query the exact recipient through the effective map</td></tr>
+        <tr><td><code>sender_login_maps map lookup problem</code></td><td>Authenticated sender ownership</td><td>Query the envelope sender and compare the SASL login</td></tr>
+        <tr><td><code>connect to ...: Connection refused</code></td><td>LDAP, SQL, socketmap, or policy service</td><td>Test name resolution, route, port, and service health from the mail container</td></tr>
+        <tr><td><code>open database ...: Permission denied</code></td><td>Local source or compiled map</td><td>Inspect the exact file and parent-directory access inside the container</td></tr>
+        <tr><td><code>unsupported dictionary type</code></td><td>Map type absent from this Postfix build</td><td>Compare the configured type with <code>postconf -m</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Preserve one complete failure</h2>
+    <p>Collect a short current log window and keep it private:</p>
+    <pre><code>docker compose logs --since 10m mailserver</code></pre>
+    <p>For one failed attempt, record the timestamp, Postfix process name, queue ID if one exists, SMTP stage, envelope address, full 451 response, and every adjacent warning. Redact real addresses, hostnames, addresses, credentials, and message identifiers before sharing excerpts.</p>
+    <p>The SMTP stage narrows the search. A failure during <code>RCPT TO</code> often involves recipient, domain, alias, access, or quota policy lookups. A failure after authenticated <code>MAIL FROM</code> can involve sender-login restrictions. A queued delivery failure may instead involve transport or next-hop lookup data.</p>
+
+    <h2>2. Read the effective lookup configuration</h2>
+    <p>Do not infer the running configuration from a Compose file alone. Ask Postfix which maps and restrictions are active:</p>
+    <pre><code>docker compose exec mailserver postconf \
+  virtual_mailbox_domains virtual_mailbox_maps virtual_alias_maps \
+  smtpd_sender_login_maps transport_maps \
+  smtpd_recipient_restrictions smtpd_sender_restrictions</code></pre>
+    <p>Then list map types supported by this image:</p>
+    <pre><code>docker compose exec mailserver postconf -m</code></pre>
+    <p>Keep the output private because lookup configuration can include internal names, bind identities, and file locations. Match the warning to one returned <code>type:table</code> value. Do not substitute a path from another DMS version or a forum post.</p>
+
+    <h2>3. Query the failing map directly</h2>
+    <p>Postfix’s official lookup-table guide recommends <code>postmap -q</code> for testing a key against the same table used by Postfix. Use the exact map value from <code>postconf</code>:</p>
+    <pre><code>docker compose exec mailserver \
+  postmap -q person@example.com '&lt;type:table-from-postconf&gt;'</code></pre>
+    <p>Interpret the result carefully:</p>
+    <ul>
+      <li><strong>A valid value:</strong> the map works for that key now. Compare timing, process, and any intermittent backend or network failure.</li>
+      <li><strong>No output with exit success:</strong> the key was not found. That is different from a temporary backend error; verify address case, provisioner data, and the table’s documented search order.</li>
+      <li><strong>An explicit error:</strong> its map type, path, socket, permission, or connection detail is the branch to repair.</li>
+    </ul>
+    <p>Test only representative keys you control. A lookup result can expose an internal mailbox, alias target, or routing destination.</p>
+
+    <h2>4. If it is a local file map, inspect source and generated state</h2>
+    <p>With the DMS file provisioner, accounts and aliases in the persistent configuration are transformed into effective Postfix data. Confirm the supported account view first:</p>
+    <pre><code>docker compose exec mailserver setup email list
+
+docker compose exec mailserver setup alias list</code></pre>
+    <p>Then inspect metadata for only the path named in the warning:</p>
+    <pre><code>docker compose exec mailserver \
+  stat '&lt;exact-map-path-from-the-log&gt;'</code></pre>
+    <p>Check that the source exists, the generated database matches the expected table type, every parent directory is traversable by the effective service identity, and the filesystem is writable during generation. Also check host bytes and inodes before rebuilding a map: Postfix warns that an interrupted overwrite caused by a full disk can leave a local database unusable.</p>
+    <p>Do not fix a generated file by making the entire configuration tree world-writable. Repair the narrow source ownership or mount mode, preserve a copy for evidence, and let the supported DMS startup path regenerate effective configuration.</p>
+
+    <h2>5. If it is LDAP, SQL, socketmap, or a policy service</h2>
+    <p>External lookups add four failure layers: configuration, container DNS, network reachability, and backend behavior. From inside the mail container, verify them in that order:</p>
+    <pre><code>docker compose exec mailserver getent hosts directory.example.internal
+
+docker compose exec mailserver \
+  bash -lc 'timeout 5 bash -c "&lt;/dev/null &gt;/dev/tcp/directory.example.internal/389"'</code></pre>
+    <p>Replace the placeholder with the internal service name and port from your deployment; never publish a real internal address. Docker documents that containers on the same user-defined network can resolve one another by container name or network alias. A host-only name, the wrong network, an internal-only network without the required route, or <code>127.0.0.1</code> used for a different container will fail from DMS even if a host-side test succeeds.</p>
+    <p>For LDAP or SQL, also verify that the configured backend type appears in <code>postconf -m</code>, the backend is healthy, the bind identity can perform the required narrow read, TLS trust is valid where enabled, and the query returns one correctly shaped result. Do not print bind passwords or connection URIs. For a Unix socket or quota policy service, inspect the socket path, owner, mode, and the target service log at the same timestamp.</p>
+
+    <h2>6. Distinguish a missing key from a failed backend</h2>
+    <p>This distinction prevents unsafe recipient fixes:</p>
+    <ul>
+      <li><strong>Missing mailbox or alias:</strong> the lookup mechanism answered normally but found no key. Provision the intended address or alias through the active DMS provisioner.</li>
+      <li><strong>Failed lookup:</strong> the mechanism could not answer reliably. Repair its file, permissions, supported map type, socket, DNS, network, certificate, credentials, query, or backend availability.</li>
+    </ul>
+    <p>If the mechanism works and Postfix returns <code>User unknown in virtual mailbox table</code>, follow the <a href="/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">recipient-map guide</a>. If the authenticated sender exists but is not authorised for the envelope address, use the <a href="/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html">sender ownership guide</a>. Turning either case into a catch-all or disabling recipient checks is not a lookup repair.</p>
+
+    <h2>7. Apply the repair at the durable source</h2>
+    <p>Docker Mailserver documents persistent Postfix overrides in <code>docker-data/dms/config/postfix-main.cf</code>; it applies them during container startup. Account-provisioner settings, Compose networks, mounted configuration, and backend definitions likewise belong in their deployment source—not in an interactive edit inside the running container.</p>
+    <p>After correcting the smallest proven fault, retain the pinned image and persistent mail volumes, then recreate the service so DMS startup scripts generate configuration from a clean image:</p>
+    <pre><code>docker compose up -d --force-recreate mailserver</code></pre>
+    <p>Do not use <code>down -v</code>. Do not delete the mail store. Do not upgrade the image in the same change unless the unsupported map type is the demonstrated cause and the upgrade has its own backup and rollback plan.</p>
+
+    <h2>8. Verify the lookup, SMTP outcome, and delivery</h2>
+    <ol>
+      <li>Repeat the exact <code>postmap -q</code> test and confirm the intended result.</li>
+      <li>Repeat <code>postconf</code> and prove the effective map still points at the intended durable source.</li>
+      <li>Send one controlled external message to an address you own.</li>
+      <li>Trace its queue ID through acceptance and final mailbox delivery.</li>
+      <li>Confirm the 451 and its preceding lookup warning do not recur.</li>
+      <li>Run a negative test for one nonexistent recipient; it should still be rejected according to policy rather than accepted broadly.</li>
+      <li>Recheck after the next normal recreation so the fix is proven persistent.</li>
+    </ol>
+    <p>If the backend was intermittent, one successful message is weak evidence. Observe several normal lookup cycles and monitor backend latency, connection errors, and container restarts over a bounded period.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Retrying the whole queue before the lookup is healthy:</strong> this adds noise and can repeatedly defer every affected message.</li>
+      <li><strong>Disabling recipient validation:</strong> it can accept mail that later bounces, creating backscatter risk.</li>
+      <li><strong>Making configuration world-readable or writable:</strong> lookup files and backend configs may contain sensitive account or bind information.</li>
+      <li><strong>Hard-coding a container address:</strong> container addresses can change; repair the shared network and service name instead.</li>
+      <li><strong>Editing <code>/etc/postfix/main.cf</code> only inside the container:</strong> the change disappears on recreation and leaves the source of truth wrong.</li>
+      <li><strong>Assuming every 451 is DNS:</strong> the adjacent warning may identify a local database, unsupported map type, socket, permission, or policy-service failure.</li>
+      <li><strong>Deleting mail or configuration volumes:</strong> that removes state and evidence without proving the lookup boundary.</li>
+    </ul>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Capture one complete 451 event with adjacent warnings and SMTP stage.</li>
+      <li>Map the warning to the effective <code>type:table</code> or policy service.</li>
+      <li>Confirm that this Postfix build supports the map type.</li>
+      <li>Query the exact map and key directly.</li>
+      <li>For files, check source, generated database, ownership, mounts, bytes, and inodes.</li>
+      <li>For services, test container DNS, shared network, port, health, TLS, access, and query shape.</li>
+      <li>Repair the smallest persistent source and recreate DMS cleanly.</li>
+      <li>Verify positive delivery, negative recipient behavior, no repeated warning, and persistence.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/debugging/" rel="noopener noreferrer">debugging guide</a> explains log collection and clean recreation; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/account-management/overview/" rel="noopener noreferrer">account-management overview</a> describes account, alias, and Postfix lookup responsibilities; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/override-defaults/postfix/" rel="noopener noreferrer">Postfix override guide</a> documents durable overrides; Postfix’s official <a href="https://www.postfix.org/DATABASE_README.html" rel="noopener noreferrer">lookup-table overview</a> documents table types and direct <code>postmap -q</code> tests; and Docker’s <a href="https://docs.docker.com/engine/network/" rel="noopener noreferrer">networking guide</a> documents container DNS and user-defined networks. Match every command to the image, provisioner, and backend you actually operate.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-user-unknown-virtual-mailbox-table.html">User unknown in virtual mailbox table?</a><span>Use this when the map answers normally but the recipient key is absent.</span></li>
+        <li><a href="/posts/docker-mailserver-sender-address-rejected-not-owned-by-user.html">Sender address not owned by user?</a><span>Separate a working sender map with a policy denial from a failed lookup backend.</span></li>
+        <li><a href="/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html">Mail for domain loops back to myself?</a><span>Repair domain ownership and routing when Postfix can look up data but classifies the destination incorrectly.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Preserve queue evidence and retry only affected mail after its dependency is healthy.</span></li>
+        <li><a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">Mailbox quota exceeded?</a><span>Distinguish an intentional quota response from an unavailable quota policy lookup.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
