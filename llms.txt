@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide: https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html
+  - Least-privilege lockout recovery covering source-specific diagnosis, effective Fail2Ban state, DMS ban inventory, jail and log correlation, stale-client containment, exact-address unban, protocol-level verification, persistent policy tuning, shared NAT, and proxy source visibility.
 |- Docker Mailserver 451 4.3.0 “Temporary Lookup Failure”: https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html
   - Evidence-led Postfix lookup recovery covering SMTP-stage diagnosis, effective map discovery, direct postmap queries, supported table types, local file generation and permissions, LDAP/SQL/socket/policy-service networking, durable DMS configuration, positive delivery, and negative recipient verification.
 |- Docker Mailserver “Mail for Domain Loops Back to Myself”: https://adrianmarikar.com/posts/docker-mailserver-mail-for-domain-loops-back-to-myself.html

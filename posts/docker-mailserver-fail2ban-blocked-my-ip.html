@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide — Adrian Marikar</title>
+  <meta name="description" content="Fix a Docker Mailserver Fail2Ban lockout by proving the source IP and jail, stopping repeated bad logins, unbanning one address, and verifying protection remains active.">
+  <meta name="keywords" content="Docker Mailserver Fail2Ban blocked my IP, Docker Mailserver unban IP, setup fail2ban unban, Postfix banned IP, Dovecot Fail2Ban lockout">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide">
+  <meta property="og:description" content="Prove which jail blocked the client, stop the failing device, remove one ban, and confirm Docker Mailserver remains protected.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html">
+  <meta property="article:published_time" content="2026-10-17T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-17T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide">
+  <meta name="twitter:description" content="A least-privilege recovery guide for Docker Mailserver Fail2Ban lockouts.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide","description":"Fix a Docker Mailserver Fail2Ban lockout by proving the source IP and jail, stopping repeated bad logins, unbanning one address, and verifying protection remains active.","url":"https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html"},"datePublished":"2026-10-17T10:00:00Z","dateModified":"2026-10-17T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Fail2Ban","blocked IP","unban IP","Postfix","Dovecot","self-hosted email"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / access recovery 074</p>
+      <h1>Docker Mailserver Fail2Ban blocked my IP: unban it safely</h1>
+    </header>
+
+    <p>IMAP, SMTP submission, or both suddenly time out from one network, even though Docker Mailserver is healthy and other clients still connect. If that network recently produced repeated bad logins, Fail2Ban may have blocked its public source address.</p>
+
+    <p>Do not begin by disabling Fail2Ban. First prove that a ban—not DNS, a closed port, TLS, or the mail service—is stopping this client. Then stop the device that is repeating the bad credential, remove only the confirmed source address, and verify that the relevant jail still catches deliberate failures.</p>
+
+    <blockquote>An unban restores access; it does not fix the event that triggered the ban. Stop the failing client before removing the block or the address can be banned again immediately.</blockquote>
+
+    <h2>Fast recovery path</h2>
+    <ol>
+      <li>Confirm the failure affects one public source network rather than every client.</li>
+      <li>Identify that source address privately and match it to Docker Mailserver’s ban list.</li>
+      <li>Use logs and jail status to identify the triggering service.</li>
+      <li>Stop or correct every client behind that address.</li>
+      <li>Unban only that exact address with the DMS setup command.</li>
+      <li>Retest IMAP or SMTP once and confirm Fail2Ban remains enabled.</li>
+    </ol>
+
+    <h2>1. Distinguish a ban from a general outage</h2>
+    <p>A Fail2Ban block is usually source-specific. Run the same narrow connection test from two genuinely different networks, such as the affected broadband connection and a mobile connection:</p>
+    <pre><code># IMAPS: implicit TLS
+openssl s_client -connect mail.example.com:993 \
+  -servername mail.example.com -brief
+
+# SMTP submission: STARTTLS
+openssl s_client -starttls smtp \
+  -connect mail.example.com:587 \
+  -servername mail.example.com -brief</code></pre>
+    <p>Replace the example hostname with your public mail hostname. If both sources fail, inspect public DNS, host reachability, published ports, firewall policy, and service health instead. The <a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP timeout guide</a> covers that wider path.</p>
+    <p>If a second network connects while the first times out, a source-specific firewall or ban becomes likely. It is still not proof: the first network may have broken IPv6, captive filtering, or a local firewall. Keep the comparison and check the server-side ban state next.</p>
+
+    <h2>2. Confirm Fail2Ban is enabled and running</h2>
+    <p>Docker Mailserver’s documented container integration requires both <code>ENABLE_FAIL2BAN=1</code> and the <code>NET_ADMIN</code> capability. Check the effective environment and service status without printing the entire environment:</p>
+    <pre><code>docker compose exec mailserver \
+  sh -c 'test "$ENABLE_FAIL2BAN" = 1 &amp;&amp; echo enabled || echo disabled'
+
+docker compose exec mailserver supervisorctl status fail2ban</code></pre>
+    <p>If it is disabled, Fail2Ban did not create this block. Check the host firewall, a separate security container, a provider firewall, and any upstream proxy. If it is enabled but not running, inspect current startup logs before restarting anything:</p>
+    <pre><code>docker compose logs --since 20m mailserver</code></pre>
+    <p>Keep logs private. They can contain real addresses, account names, message identifiers, internal hostnames, and authentication activity.</p>
+
+    <h2>3. List bans through Docker Mailserver</h2>
+    <p>DMS exposes a supported setup helper for viewing bans:</p>
+    <pre><code>docker compose exec mailserver setup fail2ban
+
+docker compose exec mailserver setup fail2ban status</code></pre>
+    <p>The first command shows banned addresses; the status view provides more detail. Match the affected network’s current public source address exactly. Do not assume it is the address shown by a laptop’s Wi-Fi settings: home routers and mobile networks normally present a translated public address, and IPv4 and IPv6 can take different paths.</p>
+    <p>Treat the address as private operational data. Record it in the incident note, not a public issue or screenshot. If it is absent from every jail, stop following the unban path and investigate the actual network boundary.</p>
+
+    <h2>4. Identify the jail and triggering failures</h2>
+    <p>Inspect the detailed status for the named jail reported by Fail2Ban:</p>
+    <pre><code>docker compose exec mailserver \
+  fail2ban-client status '&lt;jail-name-from-status&gt;'</code></pre>
+    <p>Then correlate a short log window with the affected account, protocol, and source. Typical causes include:</p>
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely cause</th><th>Fix before unban</th></tr></thead>
+      <tbody>
+        <tr><td>Repeated SASL failures on 587 or 465</td><td>Stale SMTP password or wrong mailbox identity</td><td>Correct or stop the sending client</td></tr>
+        <tr><td>Repeated Dovecot auth failures</td><td>Mail app polling with an old IMAP password</td><td>Update every configured device</td></tr>
+        <tr><td>Failures immediately after a password rotation</td><td>One forgotten phone, desktop, scanner, or application</td><td>Find all consumers of the old credential</td></tr>
+        <tr><td>Many account names from one unfamiliar source</td><td>Credential attack rather than your client</td><td>Leave it banned and review account security</td></tr>
+        <tr><td>Many real users appear as one proxy address</td><td>Source-address visibility is lost</td><td>Repair the network design before tuning bans</td></tr>
+      </tbody>
+    </table>
+    <p>The official DMS defaults currently document six failed attempts over the previous week and a one-week ban. Check the documentation for your pinned image and any persistent <code>fail2ban-jail.cf</code> override rather than assuming those values never change.</p>
+
+    <h2>5. Stop the retry loop first</h2>
+    <p>Disable automatic mail checking on the affected devices or stop the application that uses the mailbox. A single public address may represent many clients behind NAT, so fixing the laptop you are holding may not be enough. Check phones, desktop mail apps, monitoring systems, contact forms, scanners, and scheduled jobs that use the same account.</p>
+    <p>If the credential was intentionally rotated, update it through each client’s protected credential store. Do not put a mailbox password in a Compose command, shell history, process argument, chat, screenshot, or log. If failures are unfamiliar or continue while your devices are stopped, treat the event as hostile: leave the ban in place, preserve evidence, and rotate any credential that may be exposed.</p>
+
+    <h2>6. Unban only the confirmed address</h2>
+    <p>Once the bad retries have stopped and the address is proven to belong to the affected client network, use Docker Mailserver’s documented helper:</p>
+    <pre><code>docker compose exec mailserver \
+  setup fail2ban unban '&lt;exact-client-ip&gt;'</code></pre>
+    <p>Replace the placeholder locally; never paste a real client address into a public guide. Repeat the ban listing and confirm only the intended entry disappeared:</p>
+    <pre><code>docker compose exec mailserver setup fail2ban status</code></pre>
+    <p>Do not flush every jail, disable <code>ENABLE_FAIL2BAN</code>, remove <code>NET_ADMIN</code> from a running protection design, or restart the whole mail stack merely to clear one known ban. Broad changes can release hostile sources and obscure whether your targeted recovery worked.</p>
+
+    <h2>7. Verify access without creating another ban</h2>
+    <ol>
+      <li>Connect once from the formerly blocked network to the intended port.</li>
+      <li>Confirm the TLS certificate matches the mail hostname.</li>
+      <li>Attempt one login with the corrected full mailbox identity and credential.</li>
+      <li>For SMTP, send one harmless message to a mailbox you control and follow its queue ID to <code>status=sent</code>.</li>
+      <li>For IMAP, confirm the mailbox opens and a known folder can be listed.</li>
+      <li>Review the matching server log and make sure authentication failures are not continuing in the background.</li>
+      <li>Recheck Fail2Ban status and confirm the jail is active and the source remains unbanned.</li>
+    </ol>
+    <p>If SMTP still rejects the credential but the connection no longer times out, the ban is fixed and authentication is now the separate fault. Follow the <a href="/posts/docker-mailserver-sasl-authentication-failed.html">SASL authentication guide</a>. For mailbox access failures, use the <a href="/posts/docker-mailserver-imap-login-failed.html">IMAP and Dovecot guide</a>.</p>
+
+    <h2>8. Make tuning persistent only when evidence supports it</h2>
+    <p>DMS loads persistent Fail2Ban overrides from the mail configuration volume. Its documentation maps <code>docker-data/dms/config/fail2ban-jail.cf</code> to <code>/etc/fail2ban/jail.d/user-jail.local</code>. Use that source if measured normal behaviour proves a jail needs adjustment.</p>
+    <p>Before changing <code>maxretry</code>, <code>findtime</code>, <code>bantime</code>, or <code>ignoreip</code>, answer three questions:</p>
+    <ul>
+      <li>Were the failures generated by legitimate users, or by a broken client that should be fixed?</li>
+      <li>Does the server see each real client address, or only a shared proxy address?</li>
+      <li>Can a narrow, stable trusted source be justified without creating a broad bypass?</li>
+    </ul>
+    <p>Never allowlist a whole consumer ISP range, mobile carrier range, or arbitrary public subnet to hide a credential problem. Dynamic addresses also make a one-address allowlist brittle. If a proxy masks origins, repair trusted source-address handling or place rate controls at the boundary that can see the real client; do not exempt the proxy casually.</p>
+    <p>After a persistent configuration change, validate it and apply it through the maintained service path. The DMS FAQ documents restarting the Fail2Ban sub-service after its configuration changes:</p>
+    <pre><code>docker compose exec mailserver fail2ban-client -t
+
+docker compose exec mailserver supervisorctl restart fail2ban
+
+docker compose exec mailserver setup fail2ban status</code></pre>
+    <p>For a clean DMS configuration recreation, preserve mail and state volumes and use the project’s pinned image. Never use <code>docker compose down -v</code> as a troubleshooting shortcut.</p>
+
+    <h2>Common mistakes</h2>
+    <ul>
+      <li><strong>Unbanning before stopping clients:</strong> cached bad credentials can trigger another ban within seconds.</li>
+      <li><strong>Assuming a timeout proves Fail2Ban:</strong> DNS, IPv6, firewall, provider, Docker publishing, and service failures can look similar.</li>
+      <li><strong>Resetting every mailbox:</strong> first identify the account and device represented by the matching failures.</li>
+      <li><strong>Clearing all bans:</strong> unrelated hostile sources may be blocked for valid reasons.</li>
+      <li><strong>Disabling protection permanently:</strong> it converts a small client problem into a larger security exposure.</li>
+      <li><strong>Publishing ban output:</strong> addresses and login activity are operational data.</li>
+      <li><strong>Editing only inside the container:</strong> ad hoc changes disappear on recreation and leave the durable source wrong.</li>
+      <li><strong>Ignoring shared-address effects:</strong> one broken device can block every user behind the same NAT address.</li>
+    </ul>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Compare the same protocol from two independent source networks.</li>
+      <li>Confirm Fail2Ban is enabled and its supervised process is running.</li>
+      <li>List current bans through <code>setup fail2ban</code>.</li>
+      <li>Match the exact private source address and jail.</li>
+      <li>Correlate the ban with a short server log window.</li>
+      <li>Stop every client that is repeating the failed credential.</li>
+      <li>Unban one confirmed address through the DMS helper.</li>
+      <li>Run one corrected login and one protocol-level success test.</li>
+      <li>Confirm the jail remains active and no failures continue.</li>
+      <li>Tune persistent policy only from evidence, with a negative security check.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/security/fail2ban/" rel="noopener noreferrer">Fail2Ban guide</a> documents required capabilities, defaults, persistent override files, status, and ban management; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/faq/" rel="noopener noreferrer">FAQ</a> documents the supported unban helper and sub-service restart pattern; and its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/debugging/" rel="noopener noreferrer">debugging guide</a> explains log-led diagnosis and clean container recreation. Match commands and configuration paths to the image version you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-sasl-authentication-failed.html">SASL authentication failed?</a><span>Repair the SMTP login fault that often triggers the ban.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Test Dovecot, port 993, account identity, storage, and the client path.</span></li>
+        <li><a href="/posts/docker-mailserver-smtp-connection-timeout-ports.html">SMTP connection timeout?</a><span>Trace DNS, ports, firewall, container publishing, and listeners when no ban exists.</span></li>
+        <li><a href="/posts/practical-vps-hardening-checklist.html">Practical VPS hardening checklist</a><span>Layer mail protection with key-only SSH, firewall policy, updates, and tested recovery.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

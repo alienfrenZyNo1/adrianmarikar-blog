@@ -158,6 +158,7 @@ docker compose exec mailserver \
     <p>Repeated password prompts can cause a legitimate client address to be banned. Inspect Docker Mailserver’s Fail2Ban status:</p>
     <pre><code>docker compose exec mailserver setup fail2ban status</code></pre>
     <p>If the source is listed, stop every device still retrying stale credentials, confirm the attempts are yours, and use the version-appropriate narrow unban action. Do not disable Fail2Ban globally or allowlist a broad public range. Unfamiliar repeated login failures are a security signal: preserve relevant evidence, rotate the affected credential if appropriate, and keep rate controls enabled.</p>
+    <p>The <a href="/posts/docker-mailserver-fail2ban-blocked-my-ip.html">Docker Mailserver Fail2Ban lockout guide</a> covers jail identification, shared-NAT diagnosis, the exact-address unban helper, and post-recovery verification.</p>
 
     <h2>10. Prove recovery at every boundary</h2>
     <ol>

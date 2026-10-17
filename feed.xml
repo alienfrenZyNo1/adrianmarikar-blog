@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html</guid>
+      <pubDate>Sat, 17 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A least-privilege guide to proving a Docker Mailserver Fail2Ban lockout, stopping repeated bad logins, unbanning one confirmed address, and verifying the jail remains active.</description>
+    </item>
+    <item>
       <title>Docker Mailserver 451 4.3.0 “Temporary Lookup Failure”</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-451-4-3-0-temporary-lookup-failure.html</guid>

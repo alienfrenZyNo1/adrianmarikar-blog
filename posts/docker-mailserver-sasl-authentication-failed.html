@@ -152,6 +152,7 @@ docker compose exec mailserver df -h</code></pre>
     <p>Repeated failed logins can trigger Docker Mailserver’s Fail2Ban protection. That is useful, but it means a corrected password may still appear broken from the already-banned source. Inspect status through DMS:</p>
     <pre><code>docker compose exec mailserver setup fail2ban status</code></pre>
     <p>If the source is banned, first confirm the failures were your own tests and that no device or attacker is continuing to submit bad credentials. Stop the faulty client before applying the version-appropriate unban command. Do not disable Fail2Ban globally or allowlist a broad public range just to make one login work.</p>
+    <p>For the full source-specific diagnosis, exact-address unban, shared-NAT checks, and post-recovery verification, use the <a href="/posts/docker-mailserver-fail2ban-blocked-my-ip.html">Docker Mailserver Fail2Ban lockout guide</a>.</p>
     <p>A continuing stream of unfamiliar failures is a security event. Preserve relevant logs, rotate the affected credential if necessary, review mailbox/application access, and keep rate controls enabled.</p>
 
     <h2>8. Separate client authentication from relay-host authentication</h2>
