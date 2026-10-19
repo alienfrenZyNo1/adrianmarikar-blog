@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Postfix master.lock Permission Denied — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver Postfix master.lock permission denied by checking the mail-state mount, parent traversal, ownership, storage support, and queue-safe recovery.">
+  <meta name="keywords" content="Docker Mailserver master.lock permission denied, Postfix master.lock cannot create file exclusively, var mail-state permissions, Docker Mailserver Postfix not starting">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Postfix master.lock Permission Denied">
+  <meta property="og:description" content="Trace the lock path into the persistent mail-state volume, preserve the queue, and repair only the failed ownership or traversal boundary.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html">
+  <meta property="article:published_time" content="2026-10-19T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-19T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Postfix master.lock Permission Denied">
+  <meta name="twitter:description" content="A queue-safe recovery guide for Postfix lock-file permission failures in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Postfix master.lock Permission Denied","description":"Fix Docker Mailserver Postfix master.lock permission denied by checking the mail-state mount, parent traversal, ownership, storage support, and queue-safe recovery.","url":"https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html"},"datePublished":"2026-10-19T10:00:00Z","dateModified":"2026-10-19T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Postfix","master.lock","permission denied","mail-state","Docker volumes","mail queue"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / mail-state permissions 075</p>
+      <h1>Docker Mailserver Postfix <code>master.lock</code> permission denied</h1>
+    </header>
+
+    <p>Docker Mailserver starts, but Postfix exits with an error such as <code>fatal: open lock file /var/lib/postfix/master.lock: cannot create file exclusively: Permission denied</code>. Restarting does not help because the failure is normally in the persistent state mount, not the disposable container layer.</p>
+
+    <p>The safe repair is not <code>chmod -R 777</code>, a privileged container, or deleting <code>mail-state</code>. First resolve the lock path, preserve the state volume and pending queue, then prove whether the failed boundary is the parent directory, the Postfix state directory, the storage backend, or a security label.</p>
+
+    <blockquote><code>/var/lib/postfix</code> may be a symlink into <code>/var/mail-state</code>. Diagnose the resolved volume path, not only the name printed in the error.</blockquote>
+
+    <h2>Fast diagnosis order</h2>
+    <ol>
+      <li>Confirm Postfix—not another service—is the component failing.</li>
+      <li>Record the exact image reference and resolved state-volume mount.</li>
+      <li>Resolve <code>/var/lib/postfix</code> and inspect every parent directory.</li>
+      <li>Check numeric ownership from inside the container.</li>
+      <li>Test whether the storage supports ownership, modes, symlinks, and file creation.</li>
+      <li>Back up <code>mail-state</code> before changing it.</li>
+      <li>Repair only the proven boundary, recreate once, and verify the queue.</li>
+    </ol>
+
+    <h2>1. Preserve the first useful evidence</h2>
+    <p>Capture the service state and a narrow startup log window. Do not paste the complete output into a public issue: mail logs and Compose configuration can expose domains, addresses, message metadata, and environment values.</p>
+    <pre><code>docker compose ps
+
+docker compose logs --since 20m mailserver</code></pre>
+    <p>Use your actual Compose service name. Look for the first Postfix failure, not only Supervisor’s later restart messages. Distinguish these cases:</p>
+    <ul>
+      <li><code>Permission denied</code> on <code>master.lock</code>: continue with the storage checks below.</li>
+      <li><code>Resource temporarily unavailable</code> or an existing lock owner: check for a second Postfix process rather than changing permissions.</li>
+      <li><code>Read-only file system</code>: inspect the mount mode and host storage state.</li>
+      <li><code>No space left on device</code>: check bytes and inodes; ownership is not the primary fault.</li>
+    </ul>
+
+    <h2>2. Record the image and effective mount</h2>
+    <p>Before modifying persistent data, identify the image and the mount Docker actually supplied:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'</code></pre>
+    <p>Keep host paths private. Confirm that the intended state volume is mounted at <code>/var/mail-state</code> and is writable. A path typo can silently create a new empty bind-mount directory; a Compose override can also replace the expected volume definition.</p>
+    <p>Do not pull <code>latest</code> during diagnosis. Keep the exact image that produced the state so that a recovery attempt does not mix a permission repair with an unreviewed upgrade.</p>
+
+    <h2>3. Resolve the lock path and every parent</h2>
+    <p>If the container stays up long enough for <code>exec</code>, inspect the path from inside it:</p>
+    <pre><code>docker compose exec mailserver \
+  readlink -f /var/lib/postfix
+
+docker compose exec mailserver \
+  namei -l /var/lib/postfix/master.lock
+
+docker compose exec mailserver \
+  stat -c '%A %u:%g %n' \
+  /var/mail-state /var/mail-state/lib-postfix</code></pre>
+    <p>If the normal container exits too quickly, use a one-off container from the same Compose service and image:</p>
+    <pre><code>docker compose run --rm --no-deps \
+  --entrypoint sh mailserver -c '
+    readlink -f /var/lib/postfix
+    namei -l /var/lib/postfix/master.lock
+    stat -c "%A %u:%g %n" \
+      /var/mail-state /var/mail-state/lib-postfix
+    id postfix
+  '</code></pre>
+    <p><code>namei -l</code> matters because a correctly owned final directory is still unreachable when a parent lacks execute—or traversal—permission for the service identity. The official DMS issue tracker has documented this exact parent-directory failure on <code>/var/mail-state</code>.</p>
+    <p>Read numeric UID and GID values inside the container. Names displayed on the host can be misleading because host and container account databases do not need to assign the same names to the same numbers.</p>
+
+    <h2>4. Decide which boundary is actually broken</h2>
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely boundary</th><th>Next action</th></tr></thead>
+      <tbody>
+        <tr><td><code>/var/mail-state</code> lacks traversal</td><td>Parent directory mode or ACL</td><td>Repair that parent narrowly, then recreate</td></tr>
+        <tr><td><code>lib-postfix</code> has an unrelated owner</td><td>Stale or altered state ownership</td><td>Back up, derive the expected Postfix IDs, repair only that directory</td></tr>
+        <tr><td>Mount is read-only</td><td>Compose or storage configuration</td><td>Restore a writable state mount; do not chmod files</td></tr>
+        <tr><td><code>chown</code>, symlink, or lock creation is unsupported</td><td>NAS/network/plugin filesystem semantics</td><td>Move state to supported local storage or fix the storage class</td></tr>
+        <tr><td>SELinux denial accompanies normal Unix modes</td><td>Host security label</td><td>Apply the documented relabel option; do not disable host policy globally</td></tr>
+        <tr><td>Fresh disposable local volume works</td><td>Existing volume or backend</td><td>Keep production stopped and repair/restore the real state deliberately</td></tr>
+      </tbody>
+    </table>
+
+    <h2>5. Preserve the state volume and queue</h2>
+    <p>Docker Mailserver’s state volume is not merely disposable locks. Its documentation lists the Postfix queue, Fail2Ban bans, antivirus updates, and Rspamd Redis data among the state that may be worth retaining across a crash or power loss.</p>
+    <p>Stop the service cleanly before copying state so queue files do not change during the archive:</p>
+    <pre><code>docker compose down
+
+# Example bind-mount backup; replace the path privately
+sudo tar --numeric-owner -cpf \
+  mail-state-before-permission-repair.tar \
+  -C ./docker-data/dms mail-state</code></pre>
+    <p>Store the archive with restricted permissions. If you use a named volume, use a temporary container that mounts the volume read-only and writes the archive to a separate protected backup directory. Verify that the archive can be listed before proceeding.</p>
+    <p>Removing the state mount may make a disposable test container start, but it is not a production fix: recreating the container can then discard queued mail and other useful state.</p>
+
+    <h2>6. Let a supported fresh start repair normal ownership first</h2>
+    <p>For ordinary rootful Docker on local Linux storage, DMS startup logic sets up service state. After the backup, recreate the same pinned image and inspect the first startup:</p>
+    <pre><code>docker compose up -d --force-recreate mailserver
+
+docker compose logs --since 5m mailserver</code></pre>
+    <p>If it starts and the resolved directory now has the expected ownership, the durable volume is repaired. If ownership remains wrong, do not loop recreations. Something in the host, remote filesystem, ACL, security policy, rootless mapping, or volume plugin is preventing the startup correction.</p>
+
+    <h2>7. Make a scoped manual correction only from measured IDs</h2>
+    <p>When evidence proves that only <code>lib-postfix</code> has the wrong owner, derive the service IDs from the exact pinned image instead of copying numbers from a forum post:</p>
+    <pre><code>POSTFIX_UID=$(docker compose run --rm --no-deps \
+  --entrypoint id mailserver -u postfix)
+POSTFIX_GID=$(docker compose run --rm --no-deps \
+  --entrypoint id mailserver -g postfix)
+
+printf 'Postfix numeric identity: %s:%s\n' \
+  "$POSTFIX_UID" "$POSTFIX_GID"</code></pre>
+    <p>With the mail service stopped and the backup verified, apply ownership only to the confirmed Postfix state directory on the host bind mount:</p>
+    <pre><code># Example path only; verify your actual Mounts output first
+sudo chown -R "$POSTFIX_UID:$POSTFIX_GID" \
+  ./docker-data/dms/mail-state/lib-postfix</code></pre>
+    <p>Do not recursively apply that owner to all of <code>mail-state</code>. Different sub-services require different identities, and the Postfix spool contains paths with deliberate ownership and mode differences. Likewise, do not change all mail storage to the Postfix user: mailbox data belongs to DMS’s virtual-mail identity, not Postfix.</p>
+    <p>If the parent alone lacks traversal, compare it with a fresh DMS local volume and grant only the required directory traversal. Check ACLs as well as mode bits. A broad recursive <code>chmod 777</code> exposes mail state and hides the real incompatibility.</p>
+
+    <h2>8. Test storage semantics before trusting the repair</h2>
+    <p>Permission failures that return after every restart often point to the backing filesystem. NAS shares, network mounts, volume plugins, rootless mappings, and desktop file-sharing layers may reject or translate ownership, Unix sockets, symlinks, set-group-ID bits, or locks.</p>
+    <p>Use a disposable directory or volume on the same backend to test the required operations. Never experiment on the live queue. Compare against a disposable local named volume as a control. If local storage works and the production backend does not, move <code>mail-state</code> to a supported local filesystem or reconfigure the storage backend; do not compensate with <code>privileged: true</code>.</p>
+    <p>On SELinux hosts, Docker Mailserver’s Podman guidance documents relabelling bind mounts with <code>:Z</code>. Confirm an actual SELinux denial first and use the appropriate private/shared label for your deployment. Do not disable SELinux globally. On AppArmor systems, preserve and inspect the denial evidence rather than assuming ordinary mode bits are responsible.</p>
+
+    <h2>9. Verify Postfix, queue preservation, and real delivery</h2>
+    <p>Start the same pinned release and verify the daemon rather than stopping at “container is running”:</p>
+    <pre><code>docker compose up -d mailserver
+
+docker compose exec mailserver supervisorctl status postfix
+
+docker compose exec mailserver postfix status
+
+docker compose exec mailserver postqueue -p</code></pre>
+    <p>Compare the queue with the private pre-repair record. Then test the actual boundaries:</p>
+    <ol>
+      <li>Confirm Postfix remains running through a full health-check interval.</li>
+      <li>Connect to port 25 and the configured submission port from an authorised test path.</li>
+      <li>Send one harmless message between controlled accounts.</li>
+      <li>Follow its queue ID to successful delivery.</li>
+      <li>Confirm the message appears in the intended mailbox.</li>
+      <li>Recreate the container once more and confirm the permission failure does not return.</li>
+      <li>Recheck the queue after recreation and retain the backup through the rollback window.</li>
+    </ol>
+    <p>If Postfix starts but deferred mail remains, diagnose each queue ID’s latest response instead of flushing everything. The <a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Docker Mailserver deferred-queue guide</a> covers that evidence-led path.</p>
+
+    <h2>Unsafe fixes to avoid</h2>
+    <ul>
+      <li><strong><code>chmod -R 777</code>:</strong> grants broad access across sensitive state and erases useful evidence.</li>
+      <li><strong><code>chown -R</code> on all state:</strong> breaks the deliberately different identities used by Postfix, Dovecot, Rspamd, Fail2Ban, and other services.</li>
+      <li><strong>Deleting <code>mail-state</code>:</strong> can discard the Postfix queue and other persistent operational data.</li>
+      <li><strong>Removing the volume permanently:</strong> makes state dependent on the replaceable container layer.</li>
+      <li><strong>Adding <code>privileged: true</code>:</strong> weakens host isolation without proving why the filesystem rejected the operation.</li>
+      <li><strong>Hard-coding a UID from another machine:</strong> image versions and host mappings can differ.</li>
+      <li><strong>Disabling SELinux or AppArmor globally:</strong> trades one scoped fault for a host-wide security regression.</li>
+      <li><strong>Upgrading during recovery:</strong> combines a storage repair with unrelated image changes and complicates rollback.</li>
+    </ul>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>Capture the exact first Postfix error and running image.</li>
+      <li>Inspect Docker’s effective <code>/var/mail-state</code> mount.</li>
+      <li>Resolve <code>/var/lib/postfix</code> and run <code>namei -l</code>.</li>
+      <li>Compare numeric directory ownership with <code>id postfix</code> in the pinned image.</li>
+      <li>Check read-only flags, ACLs, labels, free blocks, and inodes.</li>
+      <li>Stop DMS and make a numeric-owner state backup.</li>
+      <li>Try one normal forced recreation on supported local storage.</li>
+      <li>If necessary, repair only the measured parent or <code>lib-postfix</code> boundary.</li>
+      <li>Start Postfix and compare the preserved queue.</li>
+      <li>Prove one end-to-end delivery and one further recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/optional-config/#volumes-state" rel="noopener noreferrer">state-volume documentation</a> explains what <code>/var/mail-state</code> retains and how service paths are redirected into it; the official <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/debugging/" rel="noopener noreferrer">debugging guide</a> covers clean recreation and compatibility boundaries; and the project’s <a href="https://github.com/docker-mailserver/docker-mailserver/issues/4419" rel="noopener noreferrer">parent traversal</a> and <a href="https://github.com/docker-mailserver/docker-mailserver/issues/4479" rel="noopener noreferrer">master.lock</a> issue threads show real resolved-path and storage-permission failures. Match all advice to the exact DMS version and runtime you operate.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and image identity before changing persistent storage.</span></li>
+        <li><a href="/posts/docker-mailserver-deferred-queue-not-sending.html">Deferred queue not sending?</a><span>Trace preserved queue IDs after Postfix starts instead of flushing or deleting them blindly.</span></li>
+        <li><a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">Mailbox quota exceeded?</a><span>Separate state permissions from mailbox limits, stale accounting, full disks, and inode exhaustion.</span></li>
+        <li><a href="/posts/docker-mailserver-fail2ban-blocked-my-ip.html">Fail2Ban blocked my IP?</a><span>Recover one confirmed client lockout without deleting the state that records valid bans.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
