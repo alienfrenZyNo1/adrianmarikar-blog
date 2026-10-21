@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Dovecot Permission Denied Opening a Mailbox: https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html
+  - Mailbox-safe Dovecot storage recovery covering the effective mail-data mount, user lookup and path, numeric UID/GID, parent traversal, capacity and inodes, ACLs and security labels, storage semantics, verified backup, scoped repair, and persistent IMAP plus delivery checks.
 |- Docker Mailserver Postfix master.lock Permission Denied: https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html
   - Queue-safe Postfix startup recovery covering the resolved mail-state path, parent traversal, numeric ownership, storage semantics, state backup, scoped repair, queue preservation, security labels, and end-to-end delivery verification.
 |- Docker Mailserver Fail2Ban Blocked My IP — Safe Unban Guide: https://adrianmarikar.com/posts/docker-mailserver-fail2ban-blocked-my-ip.html

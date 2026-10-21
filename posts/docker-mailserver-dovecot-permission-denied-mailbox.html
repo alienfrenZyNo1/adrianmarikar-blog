@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Dovecot Permission Denied Opening a Mailbox — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver Dovecot mailbox permission denied errors by proving the mail-data mount, user path, numeric identity, traversal, storage, and safe repair.">
+  <meta name="keywords" content="Docker Mailserver Dovecot permission denied, Dovecot mailbox cannot open, var mail permissions, Docker Mailserver mail-data ownership, Maildir permission denied">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Dovecot Permission Denied Opening a Mailbox">
+  <meta property="og:description" content="Trace the failing mailbox into /var/mail, preserve the mail volume, and repair only the proven ownership, traversal, mount, or storage boundary.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">
+  <meta property="article:published_time" content="2026-10-21T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-21T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Dovecot Permission Denied Opening a Mailbox">
+  <meta name="twitter:description" content="A mailbox-safe recovery guide for Dovecot permission errors in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Dovecot Permission Denied Opening a Mailbox","description":"Fix Docker Mailserver Dovecot mailbox permission denied errors by proving the mail-data mount, user path, numeric identity, traversal, storage, and safe repair.","url":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html"},"datePublished":"2026-10-21T10:00:00Z","dateModified":"2026-10-21T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot","permission denied","mail-data","Maildir","Docker volumes","mailbox recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / mailbox permissions 076</p>
+      <h1>Docker Mailserver Dovecot permission denied opening a mailbox</h1>
+    </header>
+
+    <p>A Docker Mailserver user authenticates successfully, but Dovecot cannot open, create, rename, or update the mailbox. Logs may mention <code>Permission denied</code> beside a path under <code>/var/mail</code>, <code>Maildir</code>, <code>dovecot.index</code>, <code>dovecot-uidlist</code>, <code>tmp</code>, <code>new</code>, or <code>cur</code>. Delivery may fail too, or SMTP delivery may continue while IMAP cannot update indexes and flags.</p>
+
+    <p>The safe fix is not a recursive <code>chmod 777</code> or a guessed <code>chown</code>. First prove the exact failing operation, Docker’s effective <code>mail-data</code> mount, Dovecot’s user lookup and numeric identity, and every parent directory. Back up the mail volume before changing metadata, then repair only the boundary the evidence identifies.</p>
+
+    <blockquote>Docker Mailserver’s mail-storage volume is <code>/var/mail</code>. It contains real mailbox data. Do not delete, replace, or test broad permission commands against it.</blockquote>
+
+    <h2>Fast diagnosis order</h2>
+    <ol>
+      <li>Match one controlled mailbox action to one Dovecot log event.</li>
+      <li>Separate authentication success from mailbox-open failure.</li>
+      <li>Inspect Docker’s effective <code>/var/mail</code> mount and read/write mode.</li>
+      <li>Ask Dovecot for the user’s actual home, mail path, UID and GID.</li>
+      <li>Inspect numeric ownership and traversal along the complete failing path.</li>
+      <li>Rule out a full filesystem, exhausted inodes, ACLs, labels, and unsupported storage.</li>
+      <li>Stop writes, back up the mail volume, and make one scoped repair.</li>
+      <li>Verify login, delivery, flag changes, folder creation, and persistence after recreation.</li>
+    </ol>
+
+    <h2>1. Prove this is a storage error, not a bad password</h2>
+    <p>Watch a short log window, then perform one harmless action: open INBOX, mark a test message read, or create a temporary folder.</p>
+    <pre><code>docker compose logs --since 10m --follow mailserver</code></pre>
+    <p>Use the real Compose service name. Keep complete logs private because they can expose mailbox addresses, message metadata, client addresses, and internal paths. Classify the first relevant event:</p>
+    <ul>
+      <li><strong>Authentication failed:</strong> diagnose the identity or credential before touching mailbox storage.</li>
+      <li><strong>Login succeeded, then open or stat failed:</strong> continue with the mail path and filesystem checks.</li>
+      <li><strong>Read works but rename, index, flag, or folder creation fails:</strong> the path may be readable but not writable.</li>
+      <li><strong>No space left on device:</strong> inspect blocks and inodes; do not misdiagnose it as ownership.</li>
+      <li><strong>Read-only file system:</strong> inspect the mount and host filesystem state before file modes.</li>
+    </ul>
+    <p>If the client only reports “login failed”, the separate <a href="/posts/docker-mailserver-imap-login-failed.html">Docker Mailserver IMAP diagnosis guide</a> shows how to prove authentication independently.</p>
+
+    <h2>2. Record the image and effective mail-data mount</h2>
+    <p>Inspect the running container rather than assuming Compose was applied as intended:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'</code></pre>
+    <p>Confirm that the intended bind mount or named volume reaches <code>/var/mail</code> and reports <code>true</code> for write access. Keep host paths private. A typo can cause Docker to create an empty host directory, while a Compose override can replace the intended mount or mark it read-only.</p>
+    <p>Do not upgrade the image during recovery. Keep the exact image reference and ID so a storage repair is not mixed with new startup logic, Dovecot defaults, or mailbox-format changes.</p>
+
+    <h2>3. Ask Dovecot where this user’s mailbox really lives</h2>
+    <p>Do not infer the mailbox path only from the email address. Query the effective user database:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm user person@example.com
+
+docker compose exec mailserver \
+  doveconf -n</code></pre>
+    <p>Review both outputs privately. The user lookup should expose the effective home, mail location, UID, and GID used for mailbox access. <code>doveconf -n</code> shows active overrides, namespaces, index paths, and account-provider settings. LDAP or another provisioner can return a different identity or location from the default file provisioner.</p>
+    <p>Names such as <code>docker</code>, <code>mail</code>, or <code>vmail</code> are not portable evidence. Record numeric UID and GID values from inside the pinned image. Host and container account databases may display different names for the same number.</p>
+
+    <h2>4. Inspect the complete path, not just the final file</h2>
+    <p>Substitute the exact path reported by Dovecot. If <code>namei</code> is available in the image:</p>
+    <pre><code>docker compose exec mailserver \
+  namei -l /var/mail/example.com/person
+
+docker compose exec mailserver \
+  stat -c '%A %u:%g %n' \
+  /var/mail \
+  /var/mail/example.com \
+  /var/mail/example.com/person</code></pre>
+    <p>A process needs execute—or traversal—permission on every parent directory. Correct ownership on the final Maildir does not help if <code>/var/mail</code> or the domain directory blocks the effective identity. Also inspect the exact object from the error, including its parent: Dovecot must create temporary files and atomically rename them when updating indexes, flags, subscriptions, and Maildir state.</p>
+    <p>If the service container exits too quickly, use a one-off container from the same Compose service and image with the real volume mounted, but do not run write tests yet:</p>
+    <pre><code>docker compose run --rm --no-deps \
+  --entrypoint sh mailserver -c '
+    namei -l /var/mail/example.com/person
+    stat -c "%A %u:%g %n" \
+      /var/mail /var/mail/example.com \
+      /var/mail/example.com/person
+  '</code></pre>
+
+    <h2>5. Check capacity and policy boundaries</h2>
+    <p>Permissions are only one reason an operation can fail. Capture these read-only checks:</p>
+    <pre><code>docker compose exec mailserver df -h /var/mail
+docker compose exec mailserver df -i /var/mail
+
+docker compose exec mailserver \
+  findmnt -T /var/mail</code></pre>
+    <p>Then inspect host-side evidence for the backing mount: ACLs, filesystem errors, read-only remounts, SELinux or AppArmor denials, rootless/user-namespace mapping, NFS root squashing, and volume-plugin behavior. Docker bind mounts retain host filesystem semantics. A mount can look writable in container metadata while the backing filesystem still rejects a particular UID, ownership change, lock, hard link, or rename.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely boundary</th><th>Safe direction</th></tr></thead>
+      <tbody>
+        <tr><td>One mailbox path has a different numeric owner</td><td>Restore or manual-copy drift</td><td>Back up, compare with a healthy sibling, repair only that mailbox</td></tr>
+        <tr><td>Domain parent lacks traversal</td><td>Parent mode or ACL</td><td>Correct the parent narrowly</td></tr>
+        <tr><td>Mount reports read-only</td><td>Compose or host storage</td><td>Restore a writable mount; do not chmod content</td></tr>
+        <tr><td>Blocks or inodes are exhausted</td><td>Capacity</td><td>Free measured safe space, then re-test</td></tr>
+        <tr><td>Unix modes look correct but SELinux denies access</td><td>Security label</td><td>Use the documented mount relabel policy</td></tr>
+        <tr><td>Local named-volume control works, remote storage fails</td><td>Storage semantics or ID mapping</td><td>Fix the backend or move mail-data to supported storage</td></tr>
+        <tr><td>Only index files fail after copied restoration</td><td>Index ownership or restore metadata</td><td>Preserve mail first; repair measured index paths, not all mail</td></tr>
+      </tbody>
+    </table>
+
+    <h2>6. Stop writes and back up mail-data</h2>
+    <p>Stop the mail service cleanly before archiving or changing ownership. This avoids a backup that races with delivery, index writes, or IMAP changes:</p>
+    <pre><code>docker compose down
+
+# Bind-mount example; replace the path privately
+sudo tar --numeric-owner -cpf \
+  mail-data-before-permission-repair.tar \
+  -C ./docker-data/dms mail-data
+
+tar -tf mail-data-before-permission-repair.tar &gt;/dev/null</code></pre>
+    <p>Restrict access to the archive: it contains private mail. For a named volume, mount it read-only in a temporary backup container and write the archive to a separate protected destination. Keep the backup until the repaired service has survived verification and at least one deliberate recreation.</p>
+    <p>The broader <a href="/posts/backup-restore-docker-mailserver.html">Docker Mailserver backup and restore runbook</a> covers mail-data, state, configuration, image identity, and restore testing together.</p>
+
+    <h2>7. Make only a measured correction</h2>
+    <p>Compare the affected path with a healthy mailbox created by the same pinned DMS image and the same account provisioner. Compare numeric owners, groups, directory modes, ACLs, and relevant labels. Do not copy a UID or mode from a forum post.</p>
+    <p>If evidence proves that one restored mailbox has the wrong owner, apply the measured owner only to that mailbox while the service is stopped:</p>
+    <pre><code># Example only: use the UID:GID returned by your own user lookup
+sudo chown -R MAIL_UID:MAIL_GID \
+  ./docker-data/dms/mail-data/example.com/person</code></pre>
+    <p><code>MAIL_UID:MAIL_GID</code> is intentionally a placeholder, not a command to paste unchanged. Resolve the host path from Docker’s mount inspection and the numeric identity from Dovecot’s effective user lookup. If user namespaces or rootless Docker are enabled, translate IDs according to that runtime instead of assuming container and host numbers match directly.</p>
+    <p>If only a parent ACL or mode blocks traversal, repair that parent rather than recursively rewriting every mailbox. If the mount is read-only, full, incorrectly labelled, or backed by incompatible storage, fix that boundary instead of changing file ownership.</p>
+
+    <h2>8. Treat indexes carefully</h2>
+    <p>Dovecot index errors do not automatically justify deleting index files. First prove that message files under <code>cur</code>, <code>new</code>, and <code>tmp</code> are preserved and readable, and that the error is limited to regenerable index state. A wrong mailbox owner, read-only mount, or full disk will simply make regenerated indexes fail again.</p>
+    <p>If official guidance for your pinned Dovecot release supports rebuilding the affected index, do it only after the storage boundary is fixed and the mailbox backup is verified. Never delete message files, <code>dovecot-uidlist</code>, or subscription metadata casually: UID stability and client state matter.</p>
+
+    <h2>9. Verify more than a successful login</h2>
+    <p>Start the pinned service and exercise every operation that previously crossed the broken boundary:</p>
+    <pre><code>docker compose up -d mailserver
+
+docker compose ps
+docker compose logs --since 5m mailserver</code></pre>
+    <ol>
+      <li>Authenticate to IMAPS with one controlled account.</li>
+      <li>Open INBOX and an existing folder.</li>
+      <li>Deliver one harmless message and confirm it reaches <code>new</code> or <code>cur</code>.</li>
+      <li>Mark the message read and confirm the flag survives reconnect.</li>
+      <li>Create, rename, and remove a temporary folder.</li>
+      <li>Check that no fresh permission, read-only, capacity, or index errors appear.</li>
+      <li>Recreate the container once and repeat the read/write check.</li>
+      <li>Retain the pre-repair archive through the rollback window.</li>
+    </ol>
+    <p>Test a second healthy mailbox too. A repair that makes one account work by broadening access can silently damage isolation or hide a wrong per-user lookup.</p>
+
+    <h2>Unsafe fixes to avoid</h2>
+    <ul>
+      <li><strong><code>chmod -R 777 /var/mail</code>:</strong> exposes private mailbox data and destroys useful permission evidence.</li>
+      <li><strong>Guessing <code>chown -R 5000:5000</code>:</strong> account backends, image versions, and user mappings differ.</li>
+      <li><strong>Deleting and recreating <code>mail-data</code>:</strong> removes the actual mailboxes rather than fixing access.</li>
+      <li><strong>Deleting every Dovecot index first:</strong> adds churn before the underlying write failure is fixed.</li>
+      <li><strong>Running the whole container as root or privileged:</strong> weakens isolation and can create more root-owned files.</li>
+      <li><strong>Disabling SELinux or AppArmor globally:</strong> replaces a scoped labelling problem with a host-wide regression.</li>
+      <li><strong>Testing writes on production mail during diagnosis:</strong> risks changing UID lists, flags, and message state without a backup.</li>
+      <li><strong>Upgrading during recovery:</strong> makes rollback and root-cause analysis harder.</li>
+    </ul>
+
+    <h2>Compact recovery checklist</h2>
+    <ol>
+      <li>Capture the first Dovecot permission error from one controlled action.</li>
+      <li>Prove authentication succeeds before touching mailbox storage.</li>
+      <li>Record the pinned image and effective writable <code>/var/mail</code> mount.</li>
+      <li>Query Dovecot for the real home, mail path, UID, and GID.</li>
+      <li>Inspect numeric ownership and traversal on every parent.</li>
+      <li>Check capacity, inodes, ACLs, labels, mappings, and storage semantics.</li>
+      <li>Stop the service and make a verified numeric-owner mail-data backup.</li>
+      <li>Repair only the proven mailbox, parent, mount, or policy boundary.</li>
+      <li>Verify delivery, reads, flags, folders, a second user, and container recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/optional-config/#mail-storage-volume" rel="noopener noreferrer">volume documentation</a> identifies <code>/var/mail</code> as the delivered-mail storage boundary; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/examples/tutorials/basic-installation/" rel="noopener noreferrer">basic Compose example</a> shows the intended mail-data mount; Dovecot’s <a href="https://doc.dovecot.org/main/core/config/mail_location.html" rel="noopener noreferrer">mail-location documentation</a> explains how mailbox paths and index paths are resolved; Docker’s <a href="https://docs.docker.com/engine/storage/bind-mounts/" rel="noopener noreferrer">bind-mount documentation</a> explains host-backed mount behavior; and DMS’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/podman/" rel="noopener noreferrer">Podman guidance</a> documents SELinux relabelling for these volumes. Match all commands and repair decisions to the exact DMS, Dovecot, provisioner, and container-runtime versions you operate.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Separate transport, TLS, authentication, mailbox storage, and Fail2Ban failures before changing data.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and image identity before storage repairs.</span></li>
+        <li><a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">Mailbox quota exceeded?</a><span>Distinguish a user quota from a full volume, exhausted inodes, stale accounting, or permission drift.</span></li>
+        <li><a href="/posts/docker-mailserver-postfix-master-lock-permission-denied.html">Postfix master.lock permission denied</a><span>Use the separate state-volume path when Postfix cannot open its lock rather than a mailbox.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
