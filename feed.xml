@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Dovecot “Corrupted Index Cache File”</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html</guid>
+      <pubDate>Fri, 23 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A mailbox-safe guide to separating Dovecot index state from real mail, proving storage health, resynchronising one affected mailbox, and verifying IMAP state.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Dovecot Permission Denied Opening a Mailbox</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html</guid>

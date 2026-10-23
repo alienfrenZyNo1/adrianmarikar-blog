@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Dovecot “Corrupted Index Cache File”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html
+  - Mailbox-safe Dovecot index recovery covering the exact affected user and folder, index-versus-message boundaries, effective Maildir and mount configuration, capacity and storage checks, protected backup, scoped doveadm force-resync, cache-file safeguards, FTS separation, and persistent IMAP-state verification.
 |- Docker Mailserver Dovecot Permission Denied Opening a Mailbox: https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html
   - Mailbox-safe Dovecot storage recovery covering the effective mail-data mount, user lookup and path, numeric UID/GID, parent traversal, capacity and inodes, ACLs and security labels, storage semantics, verified backup, scoped repair, and persistent IMAP plus delivery checks.
 |- Docker Mailserver Postfix master.lock Permission Denied: https://adrianmarikar.com/posts/docker-mailserver-postfix-master-lock-permission-denied.html

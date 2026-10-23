@@ -169,7 +169,7 @@ sudo chown -R MAIL_UID:MAIL_GID \
 
     <h2>8. Treat indexes carefully</h2>
     <p>Dovecot index errors do not automatically justify deleting index files. First prove that message files under <code>cur</code>, <code>new</code>, and <code>tmp</code> are preserved and readable, and that the error is limited to regenerable index state. A wrong mailbox owner, read-only mount, or full disk will simply make regenerated indexes fail again.</p>
-    <p>If official guidance for your pinned Dovecot release supports rebuilding the affected index, do it only after the storage boundary is fixed and the mailbox backup is verified. Never delete message files, <code>dovecot-uidlist</code>, or subscription metadata casually: UID stability and client state matter.</p>
+    <p>If official guidance for your pinned Dovecot release supports rebuilding the affected index, do it only after the storage boundary is fixed and the mailbox backup is verified. The <a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">Dovecot corrupted index cache guide</a> shows the scoped <code>doveadm force-resync</code> path and explains which Maildir metadata must not be swept into a wildcard deletion. Never delete message files, <code>dovecot-uidlist</code>, or subscription metadata casually: UID stability and client state matter.</p>
 
     <h2>9. Verify more than a successful login</h2>
     <p>Start the pinned service and exercise every operation that previously crossed the broken boundary:</p>

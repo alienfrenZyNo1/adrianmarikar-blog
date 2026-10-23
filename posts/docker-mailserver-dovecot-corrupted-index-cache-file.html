@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Dovecot Corrupted Index Cache File — Adrian Marikar</title>
+  <meta name="description" content="Fix a Docker Mailserver Dovecot corrupted index cache safely: preserve Maildir messages, prove storage health, resync one mailbox, and verify IMAP state.">
+  <meta name="keywords" content="Docker Mailserver corrupted index cache file, Dovecot corrupted index, doveadm force-resync, dovecot.index.cache, Maildir repair">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Dovecot Corrupted Index Cache File">
+  <meta property="og:description" content="Separate rebuildable Dovecot index state from real mail, repair the smallest affected mailbox, and prove IMAP state after recovery.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">
+  <meta property="article:published_time" content="2026-10-23T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-23T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Dovecot Corrupted Index Cache File">
+  <meta name="twitter:description" content="A mailbox-safe recovery guide for corrupted Dovecot index and cache files in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Dovecot Corrupted Index Cache File","description":"Fix a Docker Mailserver Dovecot corrupted index cache safely: preserve Maildir messages, prove storage health, resync one mailbox, and verify IMAP state.","url":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html"},"datePublished":"2026-10-23T10:00:00Z","dateModified":"2026-10-23T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot","corrupted index cache","doveadm force-resync","Maildir","IMAP","mailbox recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / mailbox indexes 077</p>
+      <h1>Docker Mailserver Dovecot “Corrupted index cache file”</h1>
+    </header>
+
+    <p>Dovecot logs <code>Corrupted index cache file</code>, an IMAP folder will not open, message counts look wrong, or the same index error returns on every connection. In Docker Mailserver, the important first distinction is between Dovecot’s index/cache state and the mailbox messages themselves. A rebuildable index problem is not permission to delete a mail volume.</p>
+
+    <p>The narrow recovery path is to capture the exact user and mailbox, prove the underlying storage is healthy, protect the message files, and ask Dovecot to resynchronise that mailbox. Only a log or version-specific Dovecot instruction should lead you to remove a named cache file—and only after a backup.</p>
+
+    <blockquote>Repair one affected mailbox first. Never turn an index error into a recursive deletion across <code>/var/mail</code>.</blockquote>
+
+    <h2>What the Dovecot files do</h2>
+    <p>With Maildir, messages normally live as individual files below the mailbox’s <code>cur</code>, <code>new</code>, and <code>tmp</code> directories. Dovecot maintains files such as <code>dovecot.index</code>, <code>dovecot.index.cache</code>, and transaction logs to make mailbox access efficient and track state.</p>
+    <p>Those files are related but not interchangeable. The cache stores selected message metadata; the main index and transaction log participate in mailbox state; <code>dovecot-uidlist</code> associates Maildir files with IMAP UIDs. Do not include <code>dovecot-uidlist</code> in a casual “delete all Dovecot files” command. UID changes can make clients download messages again or lose their view of flags.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely problem</th><th>First action</th></tr></thead>
+      <tbody>
+        <tr><td><code>Corrupted index cache file</code> for one folder</td><td>Mailbox cache/index inconsistency</td><td>Back up and run a scoped <code>force-resync</code></td></tr>
+        <tr><td><code>Permission denied</code> writing an index</td><td>Ownership, traversal, mount, or policy</td><td>Fix storage access before resyncing</td></tr>
+        <tr><td><code>No space left on device</code></td><td>Blocks or inodes exhausted</td><td>Restore measured capacity first</td></tr>
+        <tr><td><code>Cached message size larger than expected</code></td><td>Message changed, import/compression mismatch, or stale cache</td><td>Preserve the file and investigate the producing path</td></tr>
+        <tr><td>Errors across many users after a crash</td><td>Filesystem or storage-wide incident</td><td>Stop writes and inspect host/storage health</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Capture the exact mailbox and first error</h2>
+    <p>Open the affected folder once while watching a short log window:</p>
+    <pre><code>docker compose logs --since 10m --follow mailserver</code></pre>
+    <p>Record the timestamp, Dovecot process, account, mailbox, first corruption line, and any earlier I/O, permission, locking, or capacity error. Keep the raw log private because it can reveal addresses, folder names, message identifiers, client addresses, and host paths.</p>
+    <p>If authentication fails before any mailbox opens, use the separate <a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login troubleshooting guide</a>. If the first storage error is <code>Permission denied</code>, follow the <a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot mailbox permissions guide</a> before rebuilding an index.</p>
+
+    <h2>2. Record the running image, mount, and mailbox format</h2>
+    <p>Use runtime evidence instead of assuming the current Compose file matches the running container:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'
+
+docker compose exec mailserver doveconf -n</code></pre>
+    <p>Confirm the expected writable mount reaches <code>/var/mail</code>. Review the effective <code>mail_driver</code> or mail location, index path, cache path, namespaces, compression and full-text-search settings. Keep host paths and private configuration out of public logs.</p>
+    <p>This guide focuses on ordinary Maildir index/cache recovery. Dovecot’s <code>sdbox</code> and <code>mdbox</code> formats use indexes as a more central part of storage, and <code>force-resync</code> checks their storage files too. Do not transplant Maildir file-deletion advice onto dbox.</p>
+
+    <h2>3. Prove storage health before rebuilding</h2>
+    <p>An index rebuild needs working storage. Check capacity inside the same container boundary:</p>
+    <pre><code>docker compose exec mailserver df -h /var/mail
+docker compose exec mailserver df -i /var/mail</code></pre>
+    <p>Then inspect host evidence for filesystem errors, read-only remounts, container restarts, abrupt shutdowns, remote-storage failures, and mandatory-access-control denials. If several mailboxes broke at the same time, treat that as a storage incident until disproved.</p>
+    <p>Also query the affected identity and list mailboxes through Dovecot:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm user person@example.com
+
+docker compose exec mailserver \
+  doveadm mailbox list -u person@example.com</code></pre>
+    <p>Use a mailbox you control and keep the real address private. A successful user lookup does not prove that every parent directory is writable; it does prove which effective identity and path should be investigated.</p>
+
+    <h2>4. Back up before any write repair</h2>
+    <p>For a production mailbox, stop or quiesce mail writes before taking the repair backup. Preserve the pinned image identity, mail-data volume, and relevant configuration. A bind-mount example is:</p>
+    <pre><code>docker compose down
+
+# Replace the source path privately; the archive contains private mail.
+sudo tar --numeric-owner -cpf \
+  mail-data-before-index-repair.tar \
+  -C ./docker-data/dms mail-data
+
+tar -tf mail-data-before-index-repair.tar &gt;/dev/null</code></pre>
+    <p>Store the archive with restrictive permissions and away from the live volume. For a large installation, a tested snapshot may provide a shorter write pause. The essential acceptance test is that you can restore the affected mailbox files and metadata—not merely that an archive command returned zero.</p>
+    <p>The broader <a href="/posts/backup-restore-docker-mailserver.html">Docker Mailserver backup and restore runbook</a> covers mail, state, configuration, image pinning, and restore drills.</p>
+
+    <h2>5. Start cleanly and resynchronise one mailbox</h2>
+    <p>After correcting any proven capacity, mount, ownership, or filesystem fault, start the same pinned image. Ask Dovecot to repair the affected mailbox:</p>
+    <pre><code>docker compose up -d mailserver
+
+docker compose exec mailserver \
+  doveadm force-resync -u person@example.com INBOX</code></pre>
+    <p>Replace <code>INBOX</code> with the exact mailbox from the error. Dovecot documents <code>force-resync</code> for cases where it cannot automatically solve mailbox problems. Beginning with one account and one mailbox limits impact and gives you a useful control before considering a wider scope.</p>
+    <p>Do not start with <code>-A</code>. An all-user repair can add heavy I/O, obscures which mailbox was actually broken, and depends on correct user enumeration. If several folders are affected, prove the first repair and then handle each evidenced folder deliberately.</p>
+
+    <h2>6. If the cache error remains</h2>
+    <p>Repeat the log capture immediately. If the exact message is still <code>Corrupted index cache file</code>, storage is healthy, the mailbox is confirmed as Maildir, and the documentation for your pinned Dovecot version specifically directs removal of <code>dovecot.index.cache</code>, preserve that exact file and remove only that cache file for the affected mailbox while writes are stopped. Let Dovecot recreate it on access.</p>
+    <p>Do not use a recursive wildcard such as <code>find /var/mail -name 'dovecot*' -delete</code>. It can remove UID lists, transaction history, subscriptions, and unrelated users’ state. Do not remove message files from <code>cur</code>, <code>new</code>, or <code>tmp</code>. If logs identify a damaged message or a compression mismatch, preserve the original file and diagnose that separate data-path problem rather than repeatedly rebuilding indexes.</p>
+
+    <h2>7. Keep FTS repair separate</h2>
+    <p>A normal Dovecot mailbox index is not the same thing as a full-text-search index. If ordinary folder access works but search is incomplete, use the commands documented for the enabled FTS backend. Docker Mailserver’s Flatcurve guidance provides backend-specific check, remove, rescan, and queued indexing commands.</p>
+    <p>Do not drop a full-text index to fix an unrelated <code>dovecot.index.cache</code> error, and do not assume rebuilding FTS repairs Maildir metadata. Confirm the active plugin with <code>doveconf -n</code>, then follow the matching DMS and Dovecot version documentation.</p>
+
+    <h2>8. Verify mailbox content and IMAP state</h2>
+    <p>A successful command is not the acceptance test. Exercise the recovered mailbox:</p>
+    <ol>
+      <li>Open the affected folder through IMAP and confirm the expected message count.</li>
+      <li>Open several old and new messages, including the area that previously failed.</li>
+      <li>Deliver one controlled message and confirm it appears once.</li>
+      <li>Mark it read, add and remove a flag, then reconnect and confirm state persists.</li>
+      <li>Move a disposable test message between two folders and back.</li>
+      <li>Compare Dovecot’s mailbox status before and after the client actions.</li>
+      <li>Check logs for fresh corruption, I/O, permission, or cache-size errors.</li>
+      <li>Recreate the container once and repeat the read/write check.</li>
+    </ol>
+    <pre><code>docker compose exec mailserver \
+  doveadm mailbox status -u person@example.com \
+  'messages unseen uidnext uidvalidity' INBOX
+
+docker compose logs --since 10m mailserver</code></pre>
+    <p>Keep the pre-repair backup through the rollback window. If UID validity changes unexpectedly or a client begins downloading the mailbox again, stop and compare the protected metadata before making more changes.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Deleting the mail-data volume:</strong> it contains the messages, not just cache.</li>
+      <li><strong>Deleting every <code>dovecot*</code> file:</strong> cache, indexes, UID lists, subscriptions, and logs have different roles.</li>
+      <li><strong>Running <code>force-resync -A</code> first:</strong> it expands I/O and impact before one mailbox proves the method.</li>
+      <li><strong>Resyncing on a full or read-only filesystem:</strong> regenerated state will fail again.</li>
+      <li><strong>Changing ownership recursively without evidence:</strong> it can expose private mail or create new delivery failures.</li>
+      <li><strong>Upgrading DMS during recovery:</strong> it mixes storage repair with image and configuration changes.</li>
+      <li><strong>Confusing FTS with mailbox indexes:</strong> rebuilding one does not necessarily repair the other.</li>
+      <li><strong>Trusting one successful login:</strong> verify delivery, reads, flags, moves, logs, and persistence.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Capture the exact account, mailbox, and first Dovecot error.</li>
+      <li>Record the image, effective <code>/var/mail</code> mount, mailbox format, and index settings.</li>
+      <li>Check blocks, inodes, mount state, host storage, permissions, and recent crashes.</li>
+      <li>Stop writes and take a verified private backup.</li>
+      <li>Fix the underlying storage fault, if one exists.</li>
+      <li>Run <code>doveadm force-resync</code> for one affected user and mailbox.</li>
+      <li>Only if pinned-version guidance requires it, replace one named cache file.</li>
+      <li>Verify messages, counts, flags, moves, delivery, logs, and recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Dovecot’s <a href="https://doc.dovecot.org/main/core/man/doveadm-force-resync.1.html" rel="noopener noreferrer">force-resync manual</a> defines the scoped mailbox repair command; its <a href="https://doc.dovecot.org/main/core/admin/errors.html" rel="noopener noreferrer">error reference</a> documents corrupted index-cache handling; its <a href="https://doc.dovecot.org/2.4.1/core/config/mailbox_formats/maildir.html" rel="noopener noreferrer">Maildir guide</a> separates message, control, and index paths; and Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/full-text-search/" rel="noopener noreferrer">full-text-search guide</a> documents backend-specific checks and rebuilds. Match commands to the DMS and Dovecot versions, mailbox format, and FTS backend you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot permission denied opening a mailbox?</a><span>Fix the underlying storage boundary before regenerating indexes.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Separate authentication and TLS failures from mailbox index problems.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and image identity before repair.</span></li>
+        <li><a href="/posts/docker-mailserver-mailbox-quota-exceeded.html">Mailbox quota exceeded?</a><span>Distinguish quota accounting from a full filesystem or broken index.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
