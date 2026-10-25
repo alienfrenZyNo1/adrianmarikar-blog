@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Dovecot Mail Location Not Set — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver Dovecot mail_location not set and autodetection failed by proving user lookup, effective paths, mounts, and persistent configuration.">
+  <meta name="keywords" content="Docker Mailserver mail_location not set, Dovecot autodetection failed, Mail storage autodetection failed, Dovecot mail path, Docker Mailserver Maildir">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Dovecot “mail_location not set and autodetection failed”">
+  <meta property="og:description" content="Find the broken user, path, mount, or override behind Dovecot mail-storage autodetection failures without moving or recreating mail blindly.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html">
+  <meta property="article:published_time" content="2026-10-25T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-25T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Dovecot Mail Location Not Set">
+  <meta name="twitter:description" content="An evidence-led fix for Dovecot mail-location autodetection failures in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Dovecot “mail_location not set and autodetection failed”","description":"Fix Docker Mailserver Dovecot mail_location not set and autodetection failed by proving user lookup, effective paths, mounts, and persistent configuration.","url":"https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html"},"datePublished":"2026-10-25T10:00:00Z","dateModified":"2026-10-25T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot","mail_location","autodetection failed","Maildir","mail storage","IMAP"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
+  <details class="nav-menu" open>
+    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
+    <nav id="primary-navigation" aria-label="Primary navigation">
+      <a href="/#writing">Writing</a>
+      <a href="/categories/ai-agents.html">AI agents</a>
+      <a href="/categories/newbizfeed.html">NewBizFeed</a>
+      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+      <a href="/#about">About</a>
+      <a href="mailto:hello@adrianmarikar.com">Contact</a>
+    </nav>
+  </details>
+</header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / mailbox location 078</p>
+      <h1>Docker Mailserver Dovecot “mail_location not set and autodetection failed”</h1>
+    </header>
+
+    <p>Dovecot accepts the login, then reports <code>mail_location not set and autodetection failed</code>, <code>Mail storage autodetection failed</code>, or an initialization failure for one mailbox. The tempting fix is to paste a <code>mail_location</code> line from an unrelated server. In Docker Mailserver, that can point Dovecot at the wrong tree while the real mail remains on the persistent <code>/var/mail</code> volume.</p>
+
+    <p>The safe fix is to trace four connected facts: the account returned by Dovecot’s user database, its expanded home and mail fields, the effective Dovecot configuration in the running container, and the volume actually mounted at the resolved path. Repair the first fact that is wrong; do not create a second empty mailbox hierarchy to silence the error.</p>
+
+    <blockquote>A mail-location error is a path-resolution failure, not evidence that the mailbox is empty. Preserve the current mail volume before changing paths.</blockquote>
+
+    <h2>What the error actually means</h2>
+    <p>Dovecot needs a mailbox driver and root path before it can open an account. If those values are not explicit, it may inspect known locations below the user’s mail home. Autodetection only succeeds when a recognised, populated mailbox layout exists. Dovecot deliberately does not create a missing mailbox while using autodetection.</p>
+    <p>Docker Mailserver normally supplies a coherent virtual-user and Maildir configuration. This error therefore often follows a stale custom Dovecot override, an incomplete migration, a missing or wrong <code>/var/mail</code> mount, an account lookup that expands to the wrong domain/user path, or a container image/configuration mismatch.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely boundary</th><th>Next check</th></tr></thead>
+      <tbody>
+        <tr><td>Every mailbox fails after an override</td><td>Global Dovecot configuration</td><td>Compare <code>doveconf -n</code> with persisted overrides</td></tr>
+        <tr><td>One mailbox fails</td><td>Userdb result or that mailbox tree</td><td>Run <code>doveadm user</code> for affected and healthy accounts</td></tr>
+        <tr><td>The expected tree is absent inside the container</td><td>Mount or source-volume selection</td><td>Inspect the live container’s mounts</td></tr>
+        <tr><td>The tree exists but cannot be traversed</td><td>Ownership, mode, ACL, or host policy</td><td>Follow the mailbox permission path</td></tr>
+        <tr><td>A fresh account fails but old accounts work</td><td>Autodetection or provisioning</td><td>Confirm explicit effective location and account creation</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Capture the first failure and its scope</h2>
+    <p>Reproduce one login while watching a bounded log window:</p>
+    <pre><code>docker compose logs --since 10m --follow mailserver</code></pre>
+    <p>Record whether the error affects one account, all accounts, only newly created accounts, or only one protocol. Preserve the first Dovecot error before follow-on IMAP messages. Keep raw logs private because they can contain addresses, mailbox names, client addresses, and host paths.</p>
+    <p>If the log instead begins with an authentication or TLS failure, start with the <a href="/posts/docker-mailserver-imap-login-failed.html">Docker Mailserver IMAP login guide</a>. A successful password check followed by mail-storage initialization failure points further down the path.</p>
+
+    <h2>2. Ask Dovecot how it resolves the user</h2>
+    <p>Query an affected account and, if possible, one known-good account through the same running service:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm user person@example.com
+
+docker compose exec mailserver \
+  doveadm user healthy@example.com</code></pre>
+    <p>Compare the returned home, UID, GID, and any mail-related fields. The exact output depends on the DMS and Dovecot versions. Do not assume that an address maps to <code>/var/mail/example.com/person</code> merely because that path looks plausible; use the effective userdb result and configuration.</p>
+    <p>If the account is missing or resolves differently from its peers, inspect the persistent DMS account configuration or external provisioner. Recreate an account only through the supported setup mechanism, and only after proving that doing so will not overwrite or orphan existing mail.</p>
+
+    <h2>3. Inspect effective configuration, not a template</h2>
+    <p>Dump the configuration loaded by the running container:</p>
+    <pre><code>docker compose exec mailserver doveconf -n
+
+docker compose exec mailserver sh -lc \
+  'doveconf -n | grep -E "^(mail_|namespace|passdb|userdb)"'</code></pre>
+    <p>Depending on the installed Dovecot major version, relevant settings may be represented by older <code>mail_location</code> syntax or newer fields such as <code>mail_driver</code>, <code>mail_path</code>, and <code>mail_home</code>. Match the documentation to the version inside the pinned image:</p>
+    <pre><code>docker compose exec mailserver dovecot --version</code></pre>
+    <p>Look for an empty or unexpected location, a path expanded from the wrong home, duplicate definitions, and custom namespaces. Also inspect the DMS-supported persistent extension file if you use one:</p>
+    <pre><code>docker compose exec mailserver \
+  sh -lc 'test -f /etc/dovecot/local.conf &amp;&amp; cat /etc/dovecot/local.conf || true'</code></pre>
+    <p>Configuration may contain private paths or backend details, so compare it locally rather than publishing the dump. Docker Mailserver documents <code>docker-data/dms/config/dovecot.cf</code> as the normal additive override copied into <code>/etc/dovecot/local.conf</code>. A whole-file override is broader and more likely to drift across image upgrades.</p>
+
+    <h2>4. Prove the running image and mount</h2>
+    <p>A correct Compose file is not proof that the current container uses it. Capture runtime identity and mounts:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'
+
+docker compose exec mailserver \
+  sh -lc 'findmnt /var/mail 2&gt;/dev/null || mount | grep " /var/mail "'</code></pre>
+    <p>The Docker Mailserver reference layout persists mail storage at <code>/var/mail</code>, configuration at <code>/tmp/docker-mailserver</code>, and optional runtime state at <code>/var/mail-state</code>. Confirm that the expected mail source is mounted read-write at the expected destination. Do not print the host source path in a public issue.</p>
+    <p>A newly created anonymous volume, an empty bind-mount source, or a mount moved to the wrong destination can make valid configuration look like failed autodetection. Stop at that point: locate and protect the original volume rather than populating the empty one.</p>
+
+    <h2>5. Compare the resolved path with real mailbox evidence</h2>
+    <p>Using the path derived from <code>doveadm user</code> and <code>doveconf -n</code>, inspect only the necessary levels inside the container. This placeholder must be replaced privately with the resolved path:</p>
+    <pre><code>docker compose exec mailserver \
+  sh -lc 'namei -l /var/mail/example.com/person'
+
+docker compose exec mailserver \
+  sh -lc 'find /var/mail/example.com/person -maxdepth 2 -type d -print'</code></pre>
+    <p>For Maildir, expect the mailbox root and its <code>cur</code>, <code>new</code>, and <code>tmp</code> directories. Existing folders and messages are stronger evidence than a guessed path. If the real populated tree is elsewhere, determine whether the userdb/config is wrong or the wrong volume is mounted before moving anything.</p>
+    <p>If the path is correct but traversal fails, follow the <a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot mailbox permission guide</a>. Do not use recursive <code>chmod 777</code> or broad <code>chown</code>; mail privacy and delivery processes depend on the intended numeric identity and restrictive modes.</p>
+
+    <h2>6. Back up before changing location or mounts</h2>
+    <p>Stop or quiesce writes, then preserve the mail-data volume, DMS configuration, current image reference, and Compose definition. For a bind-mounted reference layout:</p>
+    <pre><code>docker compose down
+
+# The archive contains private mail; store it securely.
+sudo tar --numeric-owner -cpf \
+  mail-data-before-location-repair.tar \
+  -C ./docker-data/dms mail-data
+
+tar -tf mail-data-before-location-repair.tar &gt;/dev/null</code></pre>
+    <p>For a named volume, use a documented volume backup or storage snapshot rather than guessing its host path. Test that the protected copy contains the affected Maildir and metadata. The broader <a href="/posts/backup-restore-docker-mailserver.html">backup and restore runbook</a> covers mail, state, configuration, image pinning, and isolated restore checks.</p>
+
+    <h2>7. Apply the smallest durable repair</h2>
+    <p>The evidence normally leads to one of these repairs:</p>
+    <ul>
+      <li><strong>Wrong or empty mail volume:</strong> restore the original mount mapping or selected named volume, without copying empty data over it.</li>
+      <li><strong>Stale custom override:</strong> remove or correct only the conflicting setting in the persisted DMS override, then validate configuration.</li>
+      <li><strong>Broken user mapping:</strong> repair the account or userdb source so its home and mail fields match the established layout.</li>
+      <li><strong>Missing Maildir for a genuinely new account:</strong> fix explicit location/provisioning so supported delivery creates it; do not hand-build a path that disagrees with DMS.</li>
+      <li><strong>Permissions or host policy:</strong> repair the narrow failed traversal or write boundary while retaining the intended ownership and restrictive access.</li>
+    </ul>
+    <p>Validate before starting service:</p>
+    <pre><code>docker compose run --rm mailserver doveconf -n &gt;/dev/null
+
+docker compose up -d mailserver</code></pre>
+    <p>If the one-off command is unsuitable for your Compose version or service dependencies, validate inside a controlled replacement container before cutover. Do not combine this recovery with a Docker Mailserver image upgrade; path repair and version migration should be separate changes.</p>
+
+    <h2>8. Verify storage, IMAP, and delivery</h2>
+    <p>A clean startup is necessary but not sufficient. Prove the repaired account through Dovecot and through the client-visible path:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm user person@example.com
+
+docker compose exec mailserver \
+  doveadm mailbox list -u person@example.com
+
+docker compose exec mailserver \
+  doveadm mailbox status -u person@example.com \
+  'messages unseen uidnext uidvalidity' INBOX
+
+docker compose logs --since 10m mailserver</code></pre>
+    <ol>
+      <li>Open the account over IMAP and confirm the expected folders and old messages.</li>
+      <li>Deliver one controlled message and confirm it appears once.</li>
+      <li>Mark it read, move it to a test folder, reconnect, and confirm state persists.</li>
+      <li>Verify an unaffected account still works as a negative control.</li>
+      <li>Recreate the mail container once and repeat user lookup, folder listing, and delivery.</li>
+      <li>Check that logs contain no fresh autodetection, permission, or index errors.</li>
+    </ol>
+    <p>If the path now resolves but Dovecot reports a corrupted index, keep the location repair intact and use the separate <a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">scoped index recovery guide</a>. Do not move mail again to treat a derived index problem.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Pasting a generic <code>mail_location</code>:</strong> it may hide the error by exposing a new empty mailbox.</li>
+      <li><strong>Deleting the mail-data volume:</strong> this removes the evidence and may remove the mail itself.</li>
+      <li><strong>Moving mail before resolving the user:</strong> a wrong lookup will simply point away from the new location too.</li>
+      <li><strong>Creating <code>cur/new/tmp</code> everywhere:</strong> it makes autodetection succeed without proving that delivery and existing mail use that tree.</li>
+      <li><strong>Recursive <code>chmod 777</code> or blind ownership changes:</strong> they weaken mailbox privacy and can break other services.</li>
+      <li><strong>Editing only inside the container:</strong> the change disappears on recreation.</li>
+      <li><strong>Overriding an entire Dovecot config for one setting:</strong> copied files drift as the image evolves.</li>
+      <li><strong>Upgrading during recovery:</strong> it combines path, syntax, default, and image changes in one incident.</li>
+    </ul>
+
+    <h2>Compact diagnosis order</h2>
+    <ol>
+      <li>Capture the exact account, first Dovecot error, and affected scope.</li>
+      <li>Compare <code>doveadm user</code> output for affected and healthy accounts.</li>
+      <li>Record the installed Dovecot version and effective <code>doveconf -n</code>.</li>
+      <li>Inspect the running image and live <code>/var/mail</code> mount.</li>
+      <li>Compare the resolved path with the populated mailbox tree.</li>
+      <li>Protect mail and configuration before changing anything.</li>
+      <li>Repair one mount, override, mapping, provisioning, or permission boundary.</li>
+      <li>Verify old mail, new delivery, IMAP state, an unaffected account, logs, and recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/optional-config/" rel="noopener noreferrer">optional configuration guide</a> identifies the persistent mail, state, log, and configuration volumes; its <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/override-defaults/dovecot/" rel="noopener noreferrer">Dovecot override guide</a> documents <code>dovecot.cf</code>, <code>local.conf</code>, effective configuration debugging, and version-matched setup tooling. Dovecot’s <a href="https://doc.dovecot.org/latest/core/config/mail_location.html" rel="noopener noreferrer">mail-location documentation</a> explains explicit drivers and paths, mailbox-root autodetection, and why autodetection does not create a missing mailbox. Use the documentation matching the Dovecot major inside your pinned DMS image.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot permission denied opening a mailbox?</a><span>Repair the narrow ownership, traversal, mount, capacity, or policy failure.</span></li>
+        <li><a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">Corrupted index cache file?</a><span>Resynchronise one mailbox after proving its storage path is correct.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Separate authentication and TLS errors from mail-storage initialization.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, state, configuration, and image identity before repair.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Dovecot “mail_location Not Set and Autodetection Failed”: https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html
+  - Evidence-led mail-storage path recovery covering affected-scope capture, Dovecot userdb results, version-aware effective configuration, live image and mount identity, populated Maildir evidence, protected backup, durable mount/override/mapping/provisioning repair, and persistent IMAP plus delivery verification.
 |- Docker Mailserver Dovecot “Corrupted Index Cache File”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html
   - Mailbox-safe Dovecot index recovery covering the exact affected user and folder, index-versus-message boundaries, effective Maildir and mount configuration, capacity and storage checks, protected backup, scoped doveadm force-resync, cache-file safeguards, FTS separation, and persistent IMAP-state verification.
 |- Docker Mailserver Dovecot Permission Denied Opening a Mailbox: https://adrianmarikar.com/posts/docker-mailserver-dovecot-permission-denied-mailbox.html

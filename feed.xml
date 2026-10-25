@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Dovecot “mail_location Not Set and Autodetection Failed”</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html</guid>
+      <pubDate>Sun, 25 Oct 2026 10:00:00 GMT</pubDate>
+      <description>An evidence-led guide to tracing Dovecot user lookup, effective mail paths, live mounts, persistent overrides, and mailbox provisioning before repairing a Docker Mailserver storage-autodetection failure.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Dovecot “Corrupted Index Cache File”</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html</guid>
