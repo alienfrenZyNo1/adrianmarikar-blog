@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver Dovecot “Broken File dovecot-uidlist”</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html</guid>
+      <pubDate>Tue, 27 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A mailbox-safe guide to preserving Maildir messages and UID identity, proving storage health, repairing one broken dovecot-uidlist, and verifying UIDVALIDITY plus IMAP client behaviour.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Dovecot “mail_location Not Set and Autodetection Failed”</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html</guid>

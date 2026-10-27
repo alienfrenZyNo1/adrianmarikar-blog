@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver Dovecot “Broken File dovecot-uidlist”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html
+  - Mailbox-safe Maildir UID recovery covering exact error capture, live image and mount identity, UID-list locking and rename requirements, storage health, protected metadata backup, scoped doveadm force-resync, documented last-resort regeneration, UIDVALIDITY impact, and persistent IMAP client verification.
 |- Docker Mailserver Dovecot “mail_location Not Set and Autodetection Failed”: https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html
   - Evidence-led mail-storage path recovery covering affected-scope capture, Dovecot userdb results, version-aware effective configuration, live image and mount identity, populated Maildir evidence, protected backup, durable mount/override/mapping/provisioning repair, and persistent IMAP plus delivery verification.
 |- Docker Mailserver Dovecot “Corrupted Index Cache File”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html

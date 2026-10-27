@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver Dovecot Broken dovecot-uidlist — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver Dovecot Broken file dovecot-uidlist safely: preserve Maildir messages and UIDs, prove storage health, resync one mailbox, and verify clients.">
+  <meta name="keywords" content="Docker Mailserver broken dovecot-uidlist, Dovecot Broken file invalid data, dovecot-uidlist repair, Maildir UIDVALIDITY changed, doveadm force-resync">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver Dovecot “Broken file dovecot-uidlist”">
+  <meta property="og:description" content="Repair one broken Maildir UID list without deleting mail, masking a storage fault, or making every IMAP client download the mailbox again.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html">
+  <meta property="article:published_time" content="2026-10-27T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-27T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver Dovecot Broken dovecot-uidlist">
+  <meta name="twitter:description" content="A mailbox-safe recovery guide for broken dovecot-uidlist files in Docker Mailserver.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver Dovecot “Broken file dovecot-uidlist”","description":"Fix Docker Mailserver Dovecot Broken file dovecot-uidlist safely: preserve Maildir messages and UIDs, prove storage health, resync one mailbox, and verify clients.","url":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html"},"datePublished":"2026-10-27T10:00:00Z","dateModified":"2026-10-27T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot","dovecot-uidlist","Broken file","Maildir","UIDVALIDITY","IMAP recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / Maildir UIDs 079</p>
+      <h1>Docker Mailserver Dovecot “Broken file dovecot-uidlist”</h1>
+    </header>
+
+    <p>Dovecot logs <code>Broken file .../dovecot-uidlist</code> with details such as <code>Invalid data</code>, <code>Broken header</code>, <code>UIDs not ordered</code>, or <code>UID larger than next_uid</code>. The affected IMAP folder may fail to open, repeatedly resynchronise, or show confusing message state. In Docker Mailserver, this is a mailbox-control-file incident—not a reason to delete the mail-data volume.</p>
+
+    <p>The <code>dovecot-uidlist</code> file maps persistent IMAP UIDs to Maildir filenames. Dovecot can reconstruct a UID list from the message files, but reconstruction can change UID state and force clients to invalidate their local cache or download messages again. First preserve the mailbox and its metadata, identify why the file broke, and try Dovecot’s scoped repair path.</p>
+
+    <blockquote>A disposable index cache and a Maildir UID list are not the same thing. Protect <code>dovecot-uidlist</code> before any repair, and never delete every <code>dovecot*</code> file recursively.</blockquote>
+
+    <h2>What dovecot-uidlist protects</h2>
+    <p>Maildir stores messages as files under <code>cur</code>, <code>new</code>, and <code>tmp</code>. IMAP also needs a stable numeric UID for each message and a mailbox UIDVALIDITY value. Dovecot keeps that mapping in <code>dovecot-uidlist</code>. Clients use the combination of UIDVALIDITY and UID to recognise messages across sessions.</p>
+    <p>This creates two separate recovery goals:</p>
+    <ol>
+      <li>Preserve the actual message files and make the mailbox readable again.</li>
+      <li>Preserve existing UID identity where possible so clients retain flags, cached bodies, and synchronisation state.</li>
+    </ol>
+    <p>A regenerated file may satisfy the first goal while disrupting the second. That is why “just delete it” is a last resort, not the opening command.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely boundary</th><th>First response</th></tr></thead>
+      <tbody>
+        <tr><td>One mailbox reports one malformed line</td><td>Interrupted or damaged UID-list update</td><td>Protect that mailbox and run a scoped resync</td></tr>
+        <tr><td><code>Permission denied</code> or lock-file errors</td><td>Ownership, traversal, mount, or host policy</td><td>Repair write access before touching metadata</td></tr>
+        <tr><td><code>No space left on device</code></td><td>Blocks or inodes exhausted</td><td>Restore measured capacity first</td></tr>
+        <tr><td>Errors recur across several accounts</td><td>Filesystem, remote storage, or concurrent-writer problem</td><td>Stop writes and investigate storage-wide evidence</td></tr>
+        <tr><td>UIDVALIDITY changes after recovery</td><td>UID list was regenerated</td><td>Expect client resynchronisation; verify no duplicates or loss</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Capture the exact error and affected scope</h2>
+    <p>Open the failing folder once while following a bounded log window:</p>
+    <pre><code>docker compose logs --since 10m --follow mailserver</code></pre>
+    <p>Record the first error, account, mailbox, line number, and any earlier I/O, locking, permission, capacity, or read-only-filesystem message. Keep the raw output private: mailbox names, addresses, host paths, and message identifiers can be sensitive.</p>
+    <p>Determine whether the failure affects one folder, every folder for one account, or many users. If the first error is instead <code>Corrupted index cache file</code>, use the separate <a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">Dovecot index-cache recovery guide</a>. Different files have different consequences.</p>
+
+    <h2>2. Confirm the live image, mailbox format, and mount</h2>
+    <p>Do not assume the checked-in Compose file describes the running container. Capture runtime evidence:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'
+
+docker compose exec mailserver dovecot --version
+docker compose exec mailserver doveconf -n</code></pre>
+    <p>Confirm that the mailbox is Maildir, that the expected persistent storage is mounted read-write at <code>/var/mail</code>, and that index or control files have not been redirected elsewhere. Keep host source paths and private configuration out of public reports.</p>
+    <p>This guide is specifically about Maildir. Dovecot’s dbox formats rely on their indexes differently; do not apply Maildir file-removal advice to <code>sdbox</code> or <code>mdbox</code>.</p>
+
+    <h2>3. Prove storage can perform safe UID-list updates</h2>
+    <p>Dovecot locks <code>dovecot-uidlist</code> for writes and may replace it using a rename operation. A repair will fail again if storage cannot create locks, append reliably, or rename atomically.</p>
+    <pre><code>docker compose exec mailserver df -h /var/mail
+docker compose exec mailserver df -i /var/mail
+
+docker compose exec mailserver \
+  doveadm user person@example.com</code></pre>
+    <p>Inspect host logs for filesystem errors, read-only remounts, abrupt shutdowns, storage latency, out-of-memory kills, and mandatory-access-control denials. On NFS or another remote filesystem, verify the documented locking and rename semantics for the actual Dovecot version and topology. Recurring malformed UID lists across nodes are evidence of a storage or concurrent-access problem, not many independent unlucky mailboxes.</p>
+    <p>If Dovecot cannot create <code>dovecot-uidlist.lock</code>, follow the <a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">mailbox permission guide</a> first. Do not make mail world-writable to get past the lock.</p>
+
+    <h2>4. Preserve messages and metadata before repair</h2>
+    <p>For a production mailbox, stop or quiesce delivery and IMAP writes long enough to take a consistent backup. Preserve the pinned image reference, DMS configuration, mail-data storage, and the affected mailbox metadata. A bind-mounted reference-layout example is:</p>
+    <pre><code>docker compose down
+
+# This archive contains private mail; protect it accordingly.
+sudo tar --numeric-owner -cpf \
+  mail-data-before-uidlist-repair.tar \
+  -C ./docker-data/dms mail-data
+
+tar -tf mail-data-before-uidlist-repair.tar &gt;/dev/null</code></pre>
+    <p>For named volumes or large storage, use a documented volume backup or consistent snapshot. Verify that the protected copy contains the affected mailbox’s message directories and its original <code>dovecot-uidlist</code>. Store it with restrictive permissions away from the live volume.</p>
+    <p>The broader <a href="/posts/backup-restore-docker-mailserver.html">Docker Mailserver backup and restore runbook</a> covers configuration, mail, state, image pinning, and restore drills.</p>
+
+    <h2>5. Use Dovecot’s scoped repair first</h2>
+    <p>After correcting any proven storage, capacity, permission, or mount fault, start the same pinned image and ask Dovecot to resynchronise only the affected mailbox:</p>
+    <pre><code>docker compose up -d mailserver
+
+docker compose exec mailserver \
+  doveadm force-resync -u person@example.com INBOX</code></pre>
+    <p>Replace the placeholder address and mailbox privately. Dovecot documents <code>force-resync</code> for repairing mailboxes it cannot automatically fix. Start with one account and one folder; do not begin with an all-user operation.</p>
+    <p>Immediately capture the result and a fresh log window. If resync succeeds, continue to the UID and client checks below. If it fails, preserve the new error instead of repeating the command until evidence scrolls away.</p>
+
+    <h2>6. If the UID list cannot be repaired in place</h2>
+    <p>Only consider regeneration when all of these are true:</p>
+    <ul>
+      <li>The mailbox is confirmed as Maildir.</li>
+      <li>The actual <code>cur</code> and <code>new</code> message files are protected and readable.</li>
+      <li>The original UID list is backed up separately.</li>
+      <li>The underlying storage fault has been corrected.</li>
+      <li>A scoped <code>force-resync</code> still cannot recover the mailbox.</li>
+      <li>The documentation for the pinned Dovecot version supports recreating this control file for this error.</li>
+    </ul>
+    <p>Dovecot’s Maildir documentation warns that deleting control files can give messages new UIDs and lose keyword names. Its error guidance describes deleting <code>dovecot-uidlist</code> only as a way to recreate UIDs in specific otherwise-unrecoverable cases. If you reach that path, stop writes, move—not recursively delete—the one affected UID-list file into the protected incident directory, then let Dovecot reconstruct state for that one mailbox.</p>
+    <p>Do not publish or blindly copy a guessed filesystem command: Docker Mailserver account paths vary, mailbox folders have different on-disk names, and a typo can target the wrong user. Resolve the exact path from <code>doveadm user</code>, effective configuration, and the error itself.</p>
+
+    <h2>7. Record UIDVALIDITY before and after</h2>
+    <p>Before repair, if the mailbox still answers, record its status. Repeat after repair:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm mailbox status -u person@example.com \
+  'messages unseen uidnext uidvalidity' INBOX</code></pre>
+    <p>If UIDVALIDITY is unchanged and clients retain normal state, the repair likely preserved mailbox identity. If it changed, clients must treat prior UID mappings as invalid. That can cause a full resynchronisation and may look like duplicate downloading even when the server has one copy of each message.</p>
+    <p>Do not “fix” a changed UIDVALIDITY by editing numbers manually. Restoring inconsistent UID metadata can associate a UID with the wrong message. Either restore the complete known-good mailbox state or accept a controlled client resync after proving server-side message integrity.</p>
+
+    <h2>8. Verify mail and client behaviour</h2>
+    <p>A clean <code>force-resync</code> exit is not the acceptance test. Verify the affected folder end to end:</p>
+    <ol>
+      <li>Count server-side messages and compare them with the protected pre-repair evidence.</li>
+      <li>Open several old and recent messages over IMAP.</li>
+      <li>Deliver one controlled message and confirm it appears exactly once.</li>
+      <li>Mark a disposable message read, flag it, move it, reconnect, and confirm state persists.</li>
+      <li>Reconnect one existing client and observe whether it performs a normal incremental sync or a full resync.</li>
+      <li>Check another unaffected mailbox as a negative control.</li>
+      <li>Review logs for fresh UID-list, lock, I/O, permission, or index errors.</li>
+      <li>Recreate the mail container once and repeat status plus delivery checks.</li>
+    </ol>
+    <p>Keep the original UID list and full mailbox backup through the rollback window. If corruption returns after new delivery, stop treating the file as the root cause and investigate the storage and writer path.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Deleting the mail-data volume:</strong> the message files and control state live there.</li>
+      <li><strong>Deleting every <code>dovecot*</code> file:</strong> UID lists, indexes, caches, transaction logs, subscriptions, and keyword maps are not interchangeable.</li>
+      <li><strong>Editing a malformed UID-list line:</strong> a syntactically plausible file can still map UIDs to the wrong messages.</li>
+      <li><strong>Running a repair for every user first:</strong> it increases I/O and impact before one mailbox proves the method.</li>
+      <li><strong>Regenerating on unhealthy storage:</strong> the new file is likely to break again.</li>
+      <li><strong>Ignoring a UIDVALIDITY change:</strong> client redownloads are an expected protocol consequence that need monitoring.</li>
+      <li><strong>Broad recursive ownership changes:</strong> they can expose private mail and break delivery identities.</li>
+      <li><strong>Upgrading DMS during recovery:</strong> keep image migration separate from mailbox repair.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Capture the exact broken-file detail, user, mailbox, and affected scope.</li>
+      <li>Record the running image, Dovecot version, Maildir configuration, and live mount.</li>
+      <li>Check blocks, inodes, write access, locking, host storage, and recent crashes.</li>
+      <li>Quiesce writes and take a verified private backup including the original UID list.</li>
+      <li>Correct the underlying storage or permission fault.</li>
+      <li>Run <code>doveadm force-resync</code> for one user and one mailbox.</li>
+      <li>Regenerate a UID list only as a documented last resort, with client impact understood.</li>
+      <li>Verify counts, content, flags, moves, UIDVALIDITY, delivery, clients, logs, and recreation.</li>
+    </ol>
+
+    <p>Authoritative references: Dovecot’s <a href="https://doc.dovecot.org/2.4.0/core/config/mailbox/formats/maildir.html" rel="noopener noreferrer">Maildir format documentation</a> explains the UID-to-filename mapping, locking, append, and rename behaviour of <code>dovecot-uidlist</code>; its <a href="https://doc.dovecot.org/main/core/man/doveadm-force-resync.1.html" rel="noopener noreferrer"><code>doveadm force-resync</code> manual</a> defines the scoped repair command; and its <a href="https://doc.dovecot.org/main/core/admin/errors.html" rel="noopener noreferrer">error reference</a> describes UID recreation for exceptional Maildir failures. Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/config/advanced/optional-config/" rel="noopener noreferrer">optional configuration guide</a> documents its persistent storage boundaries. Match every command to the DMS and Dovecot versions and mailbox format you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">Corrupted index cache file?</a><span>Separate rebuildable cache/index state from Maildir UID identity.</span></li>
+        <li><a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot permission denied opening a mailbox?</a><span>Repair lock, traversal, ownership, mount, or host-policy failures first.</span></li>
+        <li><a href="/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html">Mail location not set or autodetection failed?</a><span>Prove the resolved user path and persistent mail mount.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, metadata, configuration, and image identity before repair.</span></li>
+        <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Separate TLS and authentication errors from mailbox control-file failures.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

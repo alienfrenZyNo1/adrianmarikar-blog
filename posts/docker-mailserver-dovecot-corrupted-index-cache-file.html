@@ -23,20 +23,26 @@
 </head>
 <body>
 <header class="site-header">
-  <a class="brand" href="/" aria-label="Adrian Marikar home"><span class="brand-mark">AM</span><span>Adrian Marikar</span></a>
-  <details class="nav-menu" open>
-    <summary><span>Menu</span><span class="nav-icon" aria-hidden="true"></span></summary>
-    <nav id="primary-navigation" aria-label="Primary navigation">
-      <a href="/#writing">Writing</a>
-      <a href="/categories/ai-agents.html">AI agents</a>
-      <a href="/categories/newbizfeed.html">NewBizFeed</a>
-      <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
-      <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
-      <a href="/#about">About</a>
-      <a href="mailto:hello@adrianmarikar.com">Contact</a>
-    </nav>
-  </details>
-</header>
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
 
 <main>
   <article class="article">
@@ -177,6 +183,7 @@ docker compose logs --since 10m mailserver</code></pre>
       <p class="eyebrow">// keep reading</p>
       <h2>Related Docker Mailserver guides</h2>
       <ul>
+        <li><a href="/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html">Broken file dovecot-uidlist?</a><span>Preserve UID identity and repair one Maildir control file without treating it as disposable cache.</span></li>
         <li><a href="/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html">Mail location not set or autodetection failed?</a><span>Prove the user lookup, effective path, and live mail mount before rebuilding mailbox state.</span></li>
         <li><a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot permission denied opening a mailbox?</a><span>Fix the underlying storage boundary before regenerating indexes.</span></li>
         <li><a href="/posts/docker-mailserver-imap-login-failed.html">IMAP login failed?</a><span>Separate authentication and TLS failures from mailbox index problems.</span></li>
