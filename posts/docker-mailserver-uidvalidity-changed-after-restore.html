@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docker Mailserver UIDVALIDITY Changed After Restore — Adrian Marikar</title>
+  <meta name="description" content="Fix Docker Mailserver IMAP resyncs after UIDVALIDITY changes: prove what changed, preserve Maildir identity, choose rollback or controlled client recovery, and verify mail.">
+  <meta name="keywords" content="Docker Mailserver UIDVALIDITY changed after restore, Dovecot UIDVALIDITY changed, IMAP redownload all messages, preserve dovecot-uidlist backup, Maildir restore">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Docker Mailserver UIDVALIDITY Changed After Restore">
+  <meta property="og:description" content="Diagnose an IMAP identity change after a Maildir restore without deleting mail, editing UID metadata, or making every client resynchronise twice.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html">
+  <meta property="article:published_time" content="2026-10-29T10:00:00Z">
+  <meta property="article:modified_time" content="2026-10-29T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Docker Mailserver UIDVALIDITY Changed After Restore">
+  <meta name="twitter:description" content="A mailbox-safe guide to UIDVALIDITY changes, client redownloads, and Maildir identity after a Docker Mailserver restore.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Docker Mailserver UIDVALIDITY Changed After Restore","description":"Fix Docker Mailserver IMAP resyncs after UIDVALIDITY changes: prove what changed, preserve Maildir identity, choose rollback or controlled client recovery, and verify mail.","url":"https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html"},"datePublished":"2026-10-29T10:00:00Z","dateModified":"2026-10-29T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Docker Mailserver","Dovecot","UIDVALIDITY","Maildir restore","dovecot-uidlist","IMAP resynchronisation","mailbox recovery"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.10 / IMAP identity 080</p>
+      <h1>Docker Mailserver UIDVALIDITY changed after a restore</h1>
+    </header>
+
+    <p>After restoring Docker Mailserver, an IMAP client downloads every message again, shows old mail as new, loses local labels, or reports that the mailbox UIDVALIDITY changed. The server may still contain exactly one copy of every message. The disruption happens because the client can no longer trust its old mapping between cached records and server-side IMAP UIDs.</p>
+
+    <p>Do not respond by deleting the client account, clearing every Dovecot file, or editing UID numbers until you know which mailbox identity changed and why. First determine whether the complete pre-restore Maildir control state can be restored safely. If it cannot, accept one controlled client resynchronisation only after proving that server-side messages and flags are sound.</p>
+
+    <blockquote>UIDVALIDITY is an identity boundary, not a message count. A changed value can trigger a full client resync without proving message loss or server-side duplication.</blockquote>
+
+    <h2>What UIDVALIDITY means</h2>
+    <p>Each IMAP mailbox has a UIDVALIDITY value, and each message in that mailbox has a UID. Together with the mailbox name, those values let a client recognise a specific server message across sessions. The IMAP specification requires the server to change UIDVALIDITY when previous UID mappings no longer persist.</p>
+    <p>In Dovecot Maildir, <code>dovecot-uidlist</code> stores the mailbox UIDVALIDITY, next UID, global mailbox identifier, and the mapping between message UIDs and Maildir filenames. It is a control file, not a disposable index cache. Restoring only <code>cur</code> and <code>new</code>, or deleting the UID list after restore, can preserve message bodies while discarding their old IMAP identity.</p>
+
+    <table>
+      <thead><tr><th>What you observe</th><th>What it suggests</th><th>Safe next step</th></tr></thead>
+      <tbody>
+        <tr><td>UIDVALIDITY changed but message count and content match</td><td>Mailbox identity was regenerated</td><td>Choose complete rollback or one controlled client resync</td></tr>
+        <tr><td>Only one folder changed</td><td>That folder’s UID list was missing, damaged, or replaced</td><td>Investigate and recover that mailbox only</td></tr>
+        <tr><td>Every folder changed after a file-only copy</td><td>Control metadata was omitted from the restore</td><td>Stop clients and assess the complete known-good backup</td></tr>
+        <tr><td>Counts differ or messages are actually duplicated</td><td>Source and destination were merged or writes overlapped</td><td>Preserve both states and reconcile before client cleanup</td></tr>
+        <tr><td>UID errors return after new delivery</td><td>Storage, permissions, locking, or concurrent writers remain broken</td><td>Fix the underlying write path before another repair</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Contain writes and capture evidence</h2>
+    <p>If a restore has just gone live, pause mailbox-changing activity before more clients, deliveries, moves, or expunges create a second divergent state. Record the running image and the real persistent mounts:</p>
+    <pre><code>docker inspect mailserver \
+  --format 'image={{.Config.Image}} id={{.Image}}'
+
+docker inspect mailserver \
+  --format '{{range .Mounts}}{{println .Type .Source "-&gt;" .Destination .RW}}{{end}}'
+
+docker compose exec mailserver dovecot --version
+docker compose exec mailserver doveconf -n</code></pre>
+    <p>Keep complete output private. Runtime configuration, account names, host paths, and mount sources can expose sensitive infrastructure. Confirm that <code>/var/mail</code> points at the intended restored mail-data storage and that the mailbox format is actually Maildir before using this guide.</p>
+
+    <h2>2. Measure the affected mailbox identity</h2>
+    <p>Query the problem account and compare the affected folder with an unaffected control folder:</p>
+    <pre><code>docker compose exec mailserver \
+  doveadm mailbox status -u person@example.com \
+  'guid messages unseen uidnext uidvalidity' INBOX
+
+docker compose exec mailserver \
+  doveadm mailbox status -u person@example.com \
+  'guid messages unseen uidnext uidvalidity' Archive</code></pre>
+    <p>Replace the address and folder names privately. Compare these values with a pre-restore incident record, backup manifest, migration report, or the old server if it remains read-only. A current value by itself cannot prove that it changed.</p>
+    <p>Also capture a bounded Dovecot log window. Look for <code>UIDVALIDITY changed</code>, a broken or missing <code>dovecot-uidlist</code>, duplicate GUIDs, lock failures, read-only filesystems, permission errors, and capacity failures. The first error often explains the later client symptoms.</p>
+
+    <h2>3. Prove message integrity separately</h2>
+    <p>Do not use a client’s redownload count as the server’s message count. Check each affected mailbox through Dovecot, open a sample of old and recent messages, and compare with the protected source or backup inventory. Preserve evidence of:</p>
+    <ul>
+      <li>mailbox names and subscriptions;</li>
+      <li>message counts and virtual sizes;</li>
+      <li>old and recent message content;</li>
+      <li>standard flags such as Seen, Answered, Flagged, Draft, and Deleted;</li>
+      <li>custom keywords or labels;</li>
+      <li>the current UIDVALIDITY, UIDNEXT, and mailbox GUID.</li>
+    </ul>
+    <p>If actual messages are missing or duplicated, stop treating this as only a UIDVALIDITY incident. Protect both copies and investigate the restore, import, or synchronization path before letting clients mutate either side.</p>
+
+    <h2>4. Find the restore boundary that changed</h2>
+    <p>Docker Mailserver’s standard persistent layout separates mail storage, mail state, logs, and configuration. For Maildir identity, the critical question is whether the complete mail-data tree—including hidden and per-folder Dovecot control files—was restored consistently with the messages.</p>
+    <p>Common causes include:</p>
+    <ul>
+      <li>copying only <code>cur</code> and <code>new</code> while omitting <code>dovecot-uidlist</code> and <code>dovecot-keywords</code>;</li>
+      <li>restoring messages from one timestamp and control files from another;</li>
+      <li>starting Dovecot against an empty target before the restore completed;</li>
+      <li>allowing delivery or IMAP writes on both old and new systems;</li>
+      <li>using a generic file copy that did not preserve ownership, timestamps, hidden files, or atomic replacement;</li>
+      <li>importing mail as new messages instead of synchronising mailbox identity;</li>
+      <li>mounting the wrong mail-data directory after recreating the container.</li>
+    </ul>
+    <p>Dovecot’s import documentation explicitly notes that <code>doveadm import</code> does not preserve UIDs. For a mailbox migration, Dovecot recommends its synchronization tooling and asks operators to verify flags, UIDs, UIDVALIDITY, and subscriptions.</p>
+
+    <h2>5. Choose rollback or controlled resynchronisation</h2>
+    <p>There are two valid recovery outcomes. Choose once, based on evidence.</p>
+
+    <h3>Option A: restore the complete known-good mailbox state</h3>
+    <p>This is appropriate when you have a consistent pre-incident backup or a read-only authoritative source containing the messages and matching control metadata, and no accepted new mail exists only on the changed target. Keep clients and delivery stopped, protect the current target, restore the complete mailbox state using the tested recovery method, and start the same pinned image.</p>
+    <p>Do not copy a lone old <code>dovecot-uidlist</code> over a mailbox whose messages have since changed. A stale UID list can map an old UID to the wrong message or omit accepted mail. Restore a consistent unit or use Dovecot’s supported synchronization path.</p>
+
+    <h3>Option B: accept the new UIDVALIDITY</h3>
+    <p>If the new server state is complete and authoritative but the old UID mapping cannot be recovered consistently, retain the new UIDVALIDITY. Verify the mailbox first, then reconnect one client and let it perform one full resync. Watch server I/O, network traffic, and client behaviour before releasing the rest.</p>
+    <p>A client may download bodies again, rebuild search indexes, or briefly show old mail as newly discovered. Do not reset UIDVALIDITY a second time to suppress that cost: another identity change causes another invalidation cycle.</p>
+
+    <h2>6. For migrations, preserve identity deliberately</h2>
+    <p>A file archive is useful for disaster recovery when it captures the complete persistent data consistently. A live migration is a different operation. Dovecot’s <code>doveadm backup</code> and <code>doveadm sync</code> use mailbox-aware synchronization and can preserve UID-to-GUID relationships when source and destination are configured correctly.</p>
+    <p>Test with a non-critical account first. Record source and destination message counts, flags, UIDVALIDITY, UIDNEXT, mailbox GUIDs, and subscriptions. Avoid opening target mailboxes before the first synchronization; Dovecot warns that doing so can create UIDVALIDITY or GUID conflicts. Keep the source authoritative and read-only during final cutover, then run the documented final synchronization for the chosen migration design.</p>
+    <p>Do not paste migration credentials into shell history or public notes. Use the authentication mechanism and protected configuration recommended for the pinned Dovecot versions.</p>
+
+    <h2>7. Verify the chosen recovery end to end</h2>
+    <p>Whether you restored old identity or accepted new identity, the acceptance test is broader than a successful container start:</p>
+    <ol>
+      <li>Re-run mailbox status and record messages, unseen count, UIDNEXT, UIDVALIDITY, and GUID.</li>
+      <li>Open several old and recent messages through IMAP.</li>
+      <li>Confirm important flags, keywords, subscriptions, and folder hierarchy.</li>
+      <li>Deliver one controlled message and prove it appears exactly once.</li>
+      <li>Mark it read, flag it, move it, reconnect, and confirm state persists.</li>
+      <li>Reconnect one existing client and observe incremental sync or the expected one-time full sync.</li>
+      <li>Check an unaffected account or folder as a negative control.</li>
+      <li>Review logs for fresh UID, GUID, lock, permission, I/O, or capacity errors.</li>
+      <li>Recreate the mail container once and repeat the status plus delivery checks.</li>
+    </ol>
+    <p>Retain the pre-recovery backup and evidence through the rollback window. If UIDVALIDITY changes again without another deliberate restore, investigate storage health and concurrent writers immediately.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Editing UIDVALIDITY by hand:</strong> a matching number does not make mismatched UID-to-message mappings valid.</li>
+      <li><strong>Copying only an old UID list:</strong> control state and message state must be consistent.</li>
+      <li><strong>Deleting every <code>dovecot*</code> file:</strong> control files, indexes, caches, subscriptions, and keyword maps have different consequences.</li>
+      <li><strong>Re-importing the same archive repeatedly:</strong> imports may create new messages rather than restore old identity.</li>
+      <li><strong>Resetting every client first:</strong> preserve server evidence before local caches obscure the original symptom.</li>
+      <li><strong>Accepting writes on both sides:</strong> split-brain mailbox state makes a clean rollback harder.</li>
+      <li><strong>Upgrading Docker Mailserver during recovery:</strong> keep image and configuration migration separate from identity repair.</li>
+      <li><strong>Assuming redownload means duplicates:</strong> prove server-side copies and UIDs independently.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Pause writes and capture the running image, Dovecot version, mounts, and effective mail configuration.</li>
+      <li>Record UIDVALIDITY, UIDNEXT, GUID, counts, and logs for affected and control mailboxes.</li>
+      <li>Prove server-side message, flag, keyword, and subscription integrity.</li>
+      <li>Identify whether the restore omitted, regenerated, or mismatched Maildir control state.</li>
+      <li>Protect the current target before any rollback.</li>
+      <li>Either restore one complete known-good state or accept one controlled client resynchronisation.</li>
+      <li>Verify mail access, delivery, flags, moves, reconnects, logs, and container recreation.</li>
+      <li>Keep the rollback set until identity remains stable under normal use.</li>
+    </ol>
+
+    <p>Authoritative references: the IMAP specification’s <a href="https://www.rfc-editor.org/rfc/rfc3501.html#section-2.3.1.1" rel="noopener noreferrer">UID rules</a> explain why a server must signal invalidated mappings; Dovecot’s <a href="https://doc.dovecot.org/latest/core/config/mailbox_formats/maildir.html" rel="noopener noreferrer">Maildir documentation</a> defines <code>dovecot-uidlist</code> and warns that control files are not disposable indexes; its <a href="https://doc.dovecot.org/latest/core/admin/migration.html" rel="noopener noreferrer">migration guide</a> requires testing preservation of flags, UIDs, UIDVALIDITY, and subscriptions; and Docker Mailserver’s <a href="https://docker-mailserver.github.io/docker-mailserver/latest/faq/#what-about-backups" rel="noopener noreferrer">backup guidance</a> identifies the persistent data that belongs in a recovery set. Match every command and migration design to the versions and storage layout you actually run.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Docker Mailserver guides</h2>
+      <ul>
+        <li><a href="/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html">Broken file dovecot-uidlist?</a><span>Repair one Maildir control file while preserving message and UID identity.</span></li>
+        <li><a href="/posts/backup-restore-docker-mailserver.html">Back up and restore Docker Mailserver</a><span>Protect mail, metadata, configuration, state, and image identity as one tested recovery set.</span></li>
+        <li><a href="/posts/docker-mailserver-dovecot-corrupted-index-cache-file.html">Corrupted Dovecot index cache?</a><span>Separate rebuildable cache state from persistent Maildir control files.</span></li>
+        <li><a href="/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html">Mail location not set or autodetection failed?</a><span>Prove which persistent path Dovecot resolves for the account.</span></li>
+        <li><a href="/posts/docker-mailserver-dovecot-permission-denied-mailbox.html">Dovecot permission denied opening a mailbox?</a><span>Fix the write, traversal, mount, capacity, or host-policy boundary first.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

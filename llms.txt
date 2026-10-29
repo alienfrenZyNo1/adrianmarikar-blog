@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Docker Mailserver UIDVALIDITY Changed After a Restore: https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html
+  - Mailbox-safe identity recovery covering IMAP UIDVALIDITY semantics, Maildir control state, evidence capture, message-versus-cache diagnosis, complete-state rollback, controlled client resynchronisation, Dovecot-aware migration, and persistent delivery verification.
 |- Docker Mailserver Dovecot “Broken File dovecot-uidlist”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html
   - Mailbox-safe Maildir UID recovery covering exact error capture, live image and mount identity, UID-list locking and rename requirements, storage health, protected metadata backup, scoped doveadm force-resync, documented last-resort regeneration, UIDVALIDITY impact, and persistent IMAP client verification.
 |- Docker Mailserver Dovecot “mail_location Not Set and Autodetection Failed”: https://adrianmarikar.com/posts/docker-mailserver-mail-location-not-set-autodetection-failed.html

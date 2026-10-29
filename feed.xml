@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Docker Mailserver UIDVALIDITY Changed After a Restore</title>
+      <link>https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html</link>
+      <guid>https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html</guid>
+      <pubDate>Thu, 29 Oct 2026 10:00:00 GMT</pubDate>
+      <description>A mailbox-safe guide to proving whether Maildir identity or actual messages changed, choosing complete rollback or controlled client resynchronisation, and verifying Docker Mailserver after a restore.</description>
+    </item>
+    <item>
       <title>Docker Mailserver Dovecot “Broken File dovecot-uidlist”</title>
       <link>https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html</link>
       <guid>https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html</guid>
