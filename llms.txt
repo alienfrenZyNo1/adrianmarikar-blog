@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Docker Hub Pull Rate Limit: Fix 429 Safely: https://adrianmarikar.com/posts/coolify-docker-hub-pull-rate-limit-429.html
+  - Evidence-led container-registry recovery covering pull allowance versus abuse-limit responses, build and deployment server identity, server-user authentication, shared egress accounting, bounded retries, cache preservation, GHCR trade-offs, immutable image references, and live digest verification.
 |- Docker Mailserver UIDVALIDITY Changed After a Restore: https://adrianmarikar.com/posts/docker-mailserver-uidvalidity-changed-after-restore.html
   - Mailbox-safe identity recovery covering IMAP UIDVALIDITY semantics, Maildir control state, evidence capture, message-versus-cache diagnosis, complete-state rollback, controlled client resynchronisation, Dovecot-aware migration, and persistent delivery verification.
 |- Docker Mailserver Dovecot “Broken File dovecot-uidlist”: https://adrianmarikar.com/posts/docker-mailserver-dovecot-broken-dovecot-uidlist.html
