@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html</loc>
+    <lastmod>2026-11-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://adrianmarikar.com/posts/coolify-docker-hub-pull-rate-limit-429.html</loc>
     <lastmod>2026-10-31</lastmod>
     <changefreq>monthly</changefreq>

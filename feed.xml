@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify npm ci Failed: Fix package-lock.json Out of Sync</title>
+      <link>https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html</guid>
+      <pubDate>Sun, 01 Nov 2026 10:00:00 GMT</pubDate>
+      <description>A lockfile-safe guide to reproducing a failed Coolify npm ci build, aligning the Node/npm toolchain and install flags, repairing package-lock.json, and verifying the exact live release.</description>
+    </item>
+    <item>
       <title>Coolify Docker Hub Pull Rate Limit: Fix 429 Safely</title>
       <link>https://adrianmarikar.com/posts/coolify-docker-hub-pull-rate-limit-429.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-docker-hub-pull-rate-limit-429.html</guid>

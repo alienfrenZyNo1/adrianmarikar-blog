@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify npm ci Failed: Fix package-lock.json Out of Sync — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify Node.js deployment failing because npm ci says package.json and package-lock.json are not in sync, without deleting the lockfile or hiding dependency drift.">
+  <meta name="keywords" content="Coolify npm ci failed, package-lock.json out of sync, npm ci package.json mismatch, Coolify Node.js deployment failed, npm lockfile fix">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify npm ci Failed: Fix package-lock.json Out of Sync">
+  <meta property="og:description" content="Reproduce the frozen-install failure, repair the lockfile with the intended npm version and flags, then prove the exact commit in Coolify.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html">
+  <meta property="article:published_time" content="2026-11-01T10:00:00Z">
+  <meta property="article:modified_time" content="2026-11-01T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify npm ci Failed: Fix package-lock.json Out of Sync">
+  <meta name="twitter:description" content="A practical lockfile-safe recovery guide for failed Node.js builds in Coolify.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify npm ci Failed: Fix package-lock.json Out of Sync","description":"Fix a Coolify Node.js deployment failing because npm ci says package.json and package-lock.json are not in sync, without deleting the lockfile or hiding dependency drift.","url":"https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html"},"datePublished":"2026-11-01T10:00:00Z","dateModified":"2026-11-01T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","npm ci","package-lock.json","Node.js deployment","Docker build","dependency lockfile"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.11 / reproducible builds 082</p>
+      <h1>Coolify <code>npm ci</code> failed: fix <code>package-lock.json</code> out of sync</h1>
+    </header>
+
+    <p>A Coolify Node.js deployment may stop during dependency installation with an error such as “<code>npm ci</code> can only install packages when your <code>package.json</code> and <code>package-lock.json</code> are in sync”, followed by one or more missing or invalid package entries. That failure is useful: the deployment has detected that the declared dependencies and the committed resolution no longer describe the same build.</p>
+
+    <p>The safe fix is not to replace <code>npm ci</code> with <code>npm install</code> in production. Reproduce the failure from the deployed commit, update the lockfile deliberately with the project’s intended npm version and dependency-tree flags, review the diff, and commit both manifests together.</p>
+
+    <blockquote>A frozen install is a release gate. Repair the inputs in source control rather than teaching the build to rewrite them.</blockquote>
+
+    <h2>What the error actually means</h2>
+    <p>npm documents four important properties of <code>npm ci</code>: an existing lockfile is required; the command fails when the lockfile disagrees with <code>package.json</code>; it removes an existing <code>node_modules</code> before installing; and it never writes back to either manifest. This is why a developer machine can appear healthy while a clean Coolify build fails.</p>
+
+    <table>
+      <thead><tr><th>Observation</th><th>Likely cause</th><th>Correct boundary</th></tr></thead>
+      <tbody>
+        <tr><td>Package is missing from the lockfile</td><td><code>package.json</code> changed without committing the generated lockfile</td><td>Regenerate and review the lockfile</td></tr>
+        <tr><td>Dependency version does not satisfy the manifest</td><td>Manual edit, incomplete merge, or stale lockfile</td><td>Resolve the source-control change</td></tr>
+        <tr><td>Peer-dependency failure appears only in Coolify</td><td>Different npm version or missing project-level install flag</td><td>Align toolchain and committed configuration</td></tr>
+        <tr><td>Wrong workspace package fails</td><td>Build root or monorepo context is wrong</td><td>Correct Coolify’s base directory or Docker context</td></tr>
+        <tr><td>Failure persists after a correct commit</td><td>Coolify built another branch, commit, or application</td><td>Trace source commit through deployment and live release</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Read the exact failed deployment</h2>
+    <p>Open the specific deployment in Coolify and record the source commit, branch, build pack or Dockerfile, base directory, Node image, and the complete npm error. Do not start by forcing a no-cache deployment. Cache cannot make a frozen install accept inconsistent manifests; a clean rebuild merely repeats the same deterministic failure.</p>
+
+    <p>Find the directory where the failed command ran. In a monorepo, the relevant files might be at the repository root, in <code>apps/web</code>, or managed through npm workspaces. The error concerns the manifest pair visible to that command, not whichever <code>package.json</code> you happened to open locally.</p>
+
+    <pre><code>git show --stat --oneline EXPECTED_COMMIT
+git show EXPECTED_COMMIT:package.json &gt;/dev/null
+git show EXPECTED_COMMIT:package-lock.json &gt;/dev/null
+
+# If Coolify builds a subdirectory, inspect that path instead
+git show EXPECTED_COMMIT:apps/web/package.json &gt;/dev/null</code></pre>
+
+    <p>These commands prove file presence without printing private registry configuration or environment values. If the lockfile is absent from the commit, check whether <code>.gitignore</code>, an incomplete merge, or an uncommitted local change excluded it.</p>
+
+    <h2>2. Match the Node and npm toolchain</h2>
+    <p>Record the versions used by the failed build, then reproduce with the same major versions. A Dockerfile makes this boundary explicit; Nixpacks or another generated build still selects a Node/npm toolchain that should be visible in the deployment log.</p>
+
+    <pre><code>node --version
+npm --version
+npm config get legacy-peer-deps
+npm config get install-links
+npm config get strict-peer-deps</code></pre>
+
+    <p>Pinning an intentional Node major in the Dockerfile or project configuration reduces surprise. Avoid reaching immediately for the newest local npm. Lockfile formats have compatibility support, but dependency resolution and peer-dependency behaviour can still vary across toolchain generations and flags.</p>
+
+    <h2>3. Reproduce a clean install from the intended commit</h2>
+    <p>Use a clean worktree, disposable clone, or container so an existing <code>node_modules</code> cannot hide the problem. The important test is the same <code>npm ci</code> command at the same project root with the same committed configuration.</p>
+
+    <pre><code>git switch --detach EXPECTED_COMMIT
+npm ci</code></pre>
+
+    <p>If the production Dockerfile is the authoritative build path, run it locally instead:</p>
+
+    <pre><code>docker build --progress=plain -t app-lockfile-check .</code></pre>
+
+    <p>Do not publish the application’s private registry URL, authentication headers, <code>.npmrc</code> credentials, or environment files while sharing logs. A project-level <code>.npmrc</code> may contain safe behaviour flags, but registry tokens belong in Coolify secrets or a build-secret mechanism—not in Git.</p>
+
+    <h2>4. Regenerate the lockfile deliberately</h2>
+    <p>Return to the branch that contains the intended dependency edit. Run <code>npm install</code> once with the project’s chosen npm version and any required dependency-tree flags. npm should update <code>package-lock.json</code> to match <code>package.json</code>. Then inspect the diff before accepting it.</p>
+
+    <pre><code>git switch main
+npm install
+
+git diff -- package.json package-lock.json
+npm ci
+npm test
+npm run build</code></pre>
+
+    <p>If only the manifest was intended to change, a large unrelated lockfile rewrite is evidence to stop. Check npm versions, line endings, workspaces, registry configuration, and whether another package manager previously owned the project. Never hand-edit hundreds of resolved entries to make the error disappear.</p>
+
+    <h2>5. Preserve required install flags in the project</h2>
+    <p>npm’s official guidance is explicit: if the lockfile was generated with a tree-shaping flag such as <code>--legacy-peer-deps</code> or <code>--install-links</code>, <code>npm ci</code> must receive the same setting. If that flag is genuinely part of the project’s dependency policy, store the non-secret setting in a committed project-level <code>.npmrc</code> rather than relying on one developer’s global config.</p>
+
+    <pre><code># Example only; choose this only when the dependency graph requires it
+legacy-peer-deps=true</code></pre>
+
+    <p>Do not use <code>legacy-peer-deps</code> as a reflexive universal bypass. First inspect the reported peer conflict and update incompatible direct dependencies where practical. The committed flag should document a reviewed compatibility decision, not conceal an unknown graph.</p>
+
+    <h2>6. Check monorepo and workspace boundaries</h2>
+    <p>npm workspaces normally use the root manifest and root lockfile. A Coolify base directory pointed at one workspace can change what files are available during installation. Similarly, a Dockerfile can copy only a child <code>package.json</code> while omitting the root lockfile or workspace manifests needed to resolve the tree.</p>
+
+    <p>Verify all four boundaries:</p>
+    <ul>
+      <li>Coolify’s configured base directory and Dockerfile location;</li>
+      <li>the Docker build context sent to the builder;</li>
+      <li>the manifest and lockfile copied before <code>npm ci</code>;</li>
+      <li>the workspace package files needed by the root dependency graph.</li>
+    </ul>
+
+    <p>A typical single-package dependency stage copies both files before the rest of the source:</p>
+
+    <pre><code>FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY . .
+RUN npm run build</code></pre>
+
+    <p>This ordering lets Docker reuse the dependency layer when application source changes but the manifests do not. The cache mount saves downloaded package data; it does not weaken the lockfile check. Add <code>node_modules</code>, local build output, logs, and environment files to <code>.dockerignore</code> so host state and secrets do not enter the build context.</p>
+
+    <h2>7. Commit the complete dependency change</h2>
+    <p>Commit the intended manifest, generated lockfile, and any reviewed non-secret project configuration together. Before pushing, rerun the frozen install from a clean state. This catches the common mistake of fixing <code>package-lock.json</code> locally but leaving it untracked or unstaged.</p>
+
+    <pre><code>git status --short
+git diff --check
+git diff --cached -- package.json package-lock.json .npmrc
+
+# After staging the intended files
+git commit -m 'Fix npm lockfile for reproducible build'
+git push origin main</code></pre>
+
+    <p>If a private package is involved, the lockfile may contain registry URLs and integrity metadata but must not contain an access token. Review the staged diff for credentials before pushing. Keep package-read credentials narrowly scoped and inject them only for the build step.</p>
+
+    <h2>8. Redeploy once and verify the release</h2>
+    <p>Trigger one Coolify deployment for the new commit and follow its opaque deployment identifier to a terminal state. A no-cache deploy is useful only when investigating a suspected stale layer after the inputs are correct; Coolify’s normal Docker cache is safe to retain when both manifest files are copied into the dependency layer.</p>
+
+    <ol>
+      <li>Confirm the deployment checks out the new commit and expected branch.</li>
+      <li>Confirm <code>npm ci</code> runs at the intended directory and completes.</li>
+      <li>Confirm tests and the production build complete.</li>
+      <li>Confirm the replacement container becomes healthy.</li>
+      <li>Verify a unique release marker, changed route, or expected behaviour at the public domain.</li>
+      <li>Check application logs after one real request.</li>
+      <li>Confirm the next ordinary cached build still succeeds.</li>
+    </ol>
+
+    <p>A green queue response is not completion, and HTTP 200 at a single-page-app fallback is not proof of the intended route. Match the running release to the source commit and assert content unique to that release.</p>
+
+    <h2>Repairs to avoid</h2>
+    <ul>
+      <li><strong>Changing <code>npm ci</code> to <code>npm install</code> in deployment:</strong> this lets production resolve and rewrite an unreviewed tree.</li>
+      <li><strong>Deleting <code>package-lock.json</code>:</strong> this removes reproducibility rather than repairing it.</li>
+      <li><strong>Committing <code>node_modules</code>:</strong> host-specific installed files are not a lockfile or portable build artifact.</li>
+      <li><strong>Using <code>--force</code> blindly:</strong> forcing resolution can replace a clear failure with an incompatible dependency graph.</li>
+      <li><strong>Purging every Docker cache:</strong> cache cleanup does not reconcile two different manifests and may slow unrelated builds.</li>
+      <li><strong>Copying a global <code>.npmrc</code> into Git:</strong> it may contain private registry credentials or unrelated machine policy.</li>
+      <li><strong>Editing the lockfile manually:</strong> regenerate it with npm and review the resulting dependency diff.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Capture the failed Coolify commit, branch, build method, working directory, toolchain versions, and exact npm error.</li>
+      <li>Prove which manifest and lockfile that commit contains.</li>
+      <li>Reproduce <code>npm ci</code> cleanly with the same Node/npm major and project settings.</li>
+      <li>Regenerate the lockfile on the intended branch using the chosen toolchain.</li>
+      <li>Review dependency, workspace, registry, and project-level configuration changes.</li>
+      <li>Run clean <code>npm ci</code>, tests, the build, and the Docker build.</li>
+      <li>Commit the complete dependency change and push it.</li>
+      <li>Deploy once, poll to terminal status, and verify the exact live release.</li>
+    </ol>
+
+    <p>Authoritative references: npm’s official <a href="https://docs.npmjs.com/cli/v11/commands/npm-ci" rel="noopener noreferrer"><code>npm ci</code> documentation</a> defines frozen-install behaviour and the requirement to preserve tree-shaping flags; its <a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json/" rel="noopener noreferrer"><code>package-lock.json</code> guide</a> explains why the generated tree belongs in source control. Docker’s <a href="https://docs.docker.com/build/cache/optimize/" rel="noopener noreferrer">build-cache guide</a> covers copying package-management files before source and using cache mounts. Coolify’s <a href="https://coolify.io/docs/builds/introduction" rel="noopener noreferrer">application build documentation</a> and <a href="https://coolify.io/docs/applications/configuration/advanced" rel="noopener noreferrer">advanced build settings</a> explain source builds, normal cache reuse, and one-off no-cache deployments.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push?</a><span>Trace the intended commit through checkout, build, health, routing, and public content.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress?</a><span>Separate a running package install from queue pressure, resource exhaustion, and stale logs.</span></li>
+        <li><a href="/posts/coolify-docker-hub-pull-rate-limit-429.html">Coolify Docker Hub pull rate limit?</a><span>Distinguish registry pulls from npm dependency resolution and authenticate the correct server identity.</span></li>
+        <li><a href="/posts/coolify-environment-variables-not-updating.html">Coolify environment variables not updating?</a><span>Separate build-time inputs from runtime configuration and frozen frontend assets.</span></li>
+        <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">GitHub Actions for Docker builds and Coolify deploys</a><span>Move a reproducible image build into CI, publish it, then trigger a controlled deployment.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>
