@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Docker COPY Failed: Fix File Not Found in Build Context — Adrian Marikar</title>
+  <meta name="description" content="Fix a Coolify Docker build where COPY says a file is not found by checking the exact commit, build context, base directory, Dockerfile path, .dockerignore, case, and generated files.">
+  <meta name="keywords" content="Coolify Docker COPY failed, file not found build context, Coolify Dockerfile base directory, dockerignore COPY file missing, Docker failed to calculate checksum">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Docker COPY Failed: Fix File Not Found in Build Context">
+  <meta property="og:description" content="Trace a missing COPY source through Git, Coolify’s base directory, Docker’s build context, ignore rules, filename case, and build stages.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html">
+  <meta property="article:published_time" content="2026-11-03T10:00:00Z">
+  <meta property="article:modified_time" content="2026-11-03T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Docker COPY Failed: Fix File Not Found in Build Context">
+  <meta name="twitter:description" content="A practical build-context guide for missing files in Coolify Docker builds.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify Docker COPY Failed: Fix File Not Found in Build Context","description":"Fix a Coolify Docker build where COPY says a file is not found by checking the exact commit, build context, base directory, Dockerfile path, .dockerignore, case, and generated files.","url":"https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html"},"datePublished":"2026-11-03T10:00:00Z","dateModified":"2026-11-03T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Docker COPY","build context","Dockerfile",".dockerignore","deployment troubleshooting"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.11 / Docker contexts 083</p>
+      <h1>Coolify Docker <code>COPY</code> failed: fix “file not found” in the build context</h1>
+    </header>
+
+    <p>A Coolify deployment can fail at a Dockerfile line such as <code>COPY package.json ./</code>, <code>COPY dist/ /usr/share/nginx/html/</code>, or <code>COPY apps/web .</code> even though the file exists on your laptop. BuildKit may report “failed to calculate checksum”, “not found”, or “failed to compute cache key”.</p>
+
+    <p>Those messages usually mean that the source does not exist <em>inside the build context presented to Docker</em>. The file may be uncommitted, outside Coolify’s base directory, removed by <code>.dockerignore</code>, named with different letter case, or expected to be generated in a stage where it was never created.</p>
+
+    <blockquote><code>COPY</code> cannot see your workstation or arbitrary paths around the Dockerfile. It can see only the selected context, prior build stages, named contexts, and images.</blockquote>
+
+    <h2>Read the failing source as Docker reads it</h2>
+    <p>In a normal instruction, the source path is relative to the root of the build context—not relative to the Dockerfile’s own directory. Coolify’s Dockerfile build pack combines its <strong>Base Directory</strong> and <strong>Dockerfile Location</strong> settings to select these boundaries. A valid Dockerfile path does not prove that its sibling files are in the context.</p>
+
+    <table>
+      <thead><tr><th>Evidence</th><th>Likely cause</th><th>Repair boundary</th></tr></thead>
+      <tbody>
+        <tr><td>File exists locally but not in <code>git show</code></td><td>Untracked, ignored, or not pushed</td><td>Git commit</td></tr>
+        <tr><td>File is in Git but above the Coolify base directory</td><td>Context is too narrow</td><td>Coolify base directory or repository layout</td></tr>
+        <tr><td>Build log transfers an unexpectedly tiny context</td><td><code>.dockerignore</code> excluded required input</td><td>Ignore rules</td></tr>
+        <tr><td>Works on a case-insensitive laptop only</td><td>Filename case differs</td><td>Committed path and Dockerfile spelling</td></tr>
+        <tr><td><code>COPY --from=build</code> fails</td><td>Wrong stage, source path, or missing build output</td><td>Multi-stage build</td></tr>
+        <tr><td>Correct commit still builds the wrong directory</td><td>Coolify source settings do not match the repository</td><td>Application configuration</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Capture the exact failed deployment</h2>
+    <p>Start with the deployment record, not a broad cache purge. Record the checked-out commit, branch, repository, build pack, base directory, Dockerfile location, failing Dockerfile line, and full error. Keep the deployment identifier as returned; it need not look like a conventional UUID.</p>
+
+    <p>The source operand matters. These instructions have different namespaces:</p>
+    <pre><code>COPY package.json ./
+COPY --from=build /app/dist/ /usr/share/nginx/html/
+COPY --from=nginx:alpine /etc/nginx/nginx.conf /tmp/default.conf</code></pre>
+
+    <p>The first reads from the build context, the second from a named earlier stage, and the third from an image. Do not troubleshoot all three as if they were missing Git files.</p>
+
+    <h2>2. Prove the file is in the deployed Git commit</h2>
+    <p>A local editor tab is not deployment evidence. Ask Git whether the exact commit contains the exact path and case:</p>
+
+    <pre><code>git show --stat --oneline EXPECTED_COMMIT
+
+git cat-file -e EXPECTED_COMMIT:package.json
+git cat-file -e EXPECTED_COMMIT:apps/web/package.json
+
+git ls-tree -r --name-only EXPECTED_COMMIT</code></pre>
+
+    <p>Use the path relevant to your project. If <code>git cat-file</code> fails, check <code>git status --short</code>, <code>.gitignore</code>, the pushed branch, submodules, and large-file handling. Commit a required source file; do not generate an empty placeholder in production merely to make <code>COPY</code> pass.</p>
+
+    <p>Also verify filename case. Linux treats <code>Package.json</code>, <code>package.json</code>, and <code>package.JSON</code> as different names. If a case-only rename is not being recorded on a case-insensitive workstation, perform an explicit two-step <code>git mv</code> and inspect the staged diff.</p>
+
+    <h2>3. Draw the context boundary</h2>
+    <p>Suppose a monorepo looks like this:</p>
+
+    <pre><code>repository/
+├── package-lock.json
+├── packages/shared/
+└── apps/web/
+    ├── Dockerfile
+    ├── package.json
+    └── src/</code></pre>
+
+    <p>If Coolify’s base directory is <code>/apps/web</code>, Docker can see <code>package.json</code> and <code>src</code>, but it cannot copy the repository-root lockfile or <code>packages/shared</code>. Moving the Dockerfile does not widen that context. Likewise, <code>COPY ../package-lock.json ./</code> cannot be used to escape it.</p>
+
+    <p>There are two sound designs:</p>
+    <ul>
+      <li>Set the build context to the repository root and set the Dockerfile location to the web app’s Dockerfile; or</li>
+      <li>Make the application directory self-contained, including every manifest and source tree its build requires.</li>
+    </ul>
+
+    <p>Choose based on the project’s real dependency boundary. Widening the context to the repository root is not automatically wrong, but pair it with a reviewed <code>.dockerignore</code> so unrelated artifacts and local credentials are not transmitted to the builder.</p>
+
+    <h2>4. Reproduce Coolify’s context locally</h2>
+    <p>Run the same Dockerfile and context combination. The final argument is the context; <code>-f</code> selects the Dockerfile:</p>
+
+    <pre><code># Repository-root context, nested Dockerfile
+docker build --progress=plain \
+  -f apps/web/Dockerfile \
+  -t web-context-check .
+
+# Narrow app-only context
+docker build --progress=plain \
+  -f apps/web/Dockerfile \
+  -t web-context-check apps/web</code></pre>
+
+    <p>These two commands can use the same Dockerfile while exposing different files to <code>COPY</code>. Reproduce from a clean clone or detached worktree of the expected commit so untracked local files cannot create a false pass.</p>
+
+    <p>A no-cache build can help reveal stage execution, but it cannot make a missing source enter the context. Fix the source boundary first.</p>
+
+    <h2>5. Audit <code>.dockerignore</code> in the context root</h2>
+    <p>Docker removes matching files before sending the context. A required file excluded by <code>.dockerignore</code> is therefore indistinguishable from an absent file to <code>COPY</code>. Check the ignore file at the context root and any Dockerfile-specific ignore file.</p>
+
+    <pre><code># Risky when the image needs prebuilt output
+dist
+
+# Risky when a later COPY expects a nested lockfile
+**/package-lock.json
+
+# Broad exclusion with a deliberate exception
+*
+!package.json
+!package-lock.json
+!src/**
+!public/**</code></pre>
+
+    <p>Exception order matters: the last matching rule determines whether a path is included. If a directory itself is excluded, adding only a child exception may not make the directory traversable as intended. Prefer a short allowlist only when you can test every required input.</p>
+
+    <p>Do keep genuinely unnecessary or sensitive local material out of the context: version-control metadata where unneeded, dependency directories, test output, logs, local environment files, editor state, and deployment credentials. Never “fix” a build by removing all ignore rules and sending the whole workstation directory.</p>
+
+    <h2>6. Separate source files from generated artifacts</h2>
+    <p>A common failing pattern expects a host-built <code>dist</code> directory:</p>
+
+    <pre><code>FROM nginx:alpine
+COPY dist/ /usr/share/nginx/html/</code></pre>
+
+    <p>This works locally only after a developer has run the frontend build. A clean Coolify checkout has no generated directory unless it is committed or created during the image build. For most applications, generate it in a builder stage and copy from that stage:</p>
+
+    <pre><code>FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist/ /usr/share/nginx/html/</code></pre>
+
+    <p>Now the final <code>COPY</code> reads from the filesystem produced by the <code>build</code> stage. If it fails, inspect the build command and output directory. Frameworks may write <code>build</code>, <code>out</code>, <code>.output/public</code>, or another configured path rather than <code>dist</code>.</p>
+
+    <h2>7. Check multi-stage names and paths</h2>
+    <p>For <code>COPY --from=build</code>, verify that:</p>
+    <ul>
+      <li>a preceding <code>FROM … AS build</code> uses that exact stage name;</li>
+      <li>the build command actually completed;</li>
+      <li>the source path is correct inside the stage;</li>
+      <li>the path is not confused with a host or repository path; and</li>
+      <li>the selected target did not skip the stage that produces the artifact.</li>
+    </ul>
+
+    <p>Add a temporary non-secret listing immediately after the build command if the output path is uncertain. List only application directories, not the entire filesystem or environment. Remove the diagnostic once the Dockerfile contract is clear.</p>
+
+    <h2>8. Handle monorepo manifests deliberately</h2>
+    <p>Package-manager workspaces often need root manifests plus selected workspace manifests before dependency installation. A Dockerfile under <code>apps/web</code> can still use a repository-root context:</p>
+
+    <pre><code>FROM node:22-alpine AS build
+WORKDIR /workspace
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN npm ci
+COPY apps/web apps/web
+COPY packages/shared packages/shared
+RUN npm --workspace apps/web run build</code></pre>
+
+    <p>The exact files depend on the workspace manager, but the principle is stable: context, manifests, install root, and source layout must describe the same graph. If dependency installation then fails because the committed lockfile is inconsistent, follow the separate <a href="/posts/coolify-npm-ci-package-lock-out-of-sync.html">Coolify <code>npm ci</code> lockfile recovery guide</a> rather than weakening the install.</p>
+
+    <h2>9. Commit, deploy once, and prove the live release</h2>
+    <p>After changing the repository layout, Dockerfile, ignore rules, or Coolify settings, run the production Docker build locally from a clean checkout. Inspect the diff for accidental environment files or credentials, then push the complete change.</p>
+
+    <pre><code>git diff --check
+git status --short
+git diff -- Dockerfile .dockerignore
+
+docker build --progress=plain -t app-context-check .</code></pre>
+
+    <p>Trigger one Coolify deployment and poll it to a terminal status. In the deployment log, confirm the expected commit, base directory, Dockerfile, successful <code>COPY</code> step, completed build, and healthy replacement container. Finally, request a real route and assert unique content from the new release. An HTTP 200 alone can be a stale page, proxy fallback, or single-page-app fallback.</p>
+
+    <h2>Fixes that usually make the problem worse</h2>
+    <ul>
+      <li><strong>Using <code>COPY ../file</code>:</strong> a Dockerfile cannot reach above its context.</li>
+      <li><strong>Purging every build cache:</strong> cache does not create a source missing from the context.</li>
+      <li><strong>Copying the whole repository without review:</strong> this can increase build time and expose local-only files to the builder.</li>
+      <li><strong>Committing generated output reflexively:</strong> a builder stage is usually a cleaner source of production artifacts.</li>
+      <li><strong>Deleting <code>.dockerignore</code>:</strong> fix the one wrong pattern while preserving the security and performance boundary.</li>
+      <li><strong>Changing path case until a laptop passes:</strong> prove the exact committed spelling on a case-sensitive checkout.</li>
+      <li><strong>Editing the live container:</strong> the next deployment will rebuild from source and discard the change.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Capture the failed commit, branch, build pack, base directory, Dockerfile location, instruction, and complete error.</li>
+      <li>Identify whether the source belongs to the context, an earlier stage, or an image.</li>
+      <li>Prove the exact path and case exist in the deployed commit.</li>
+      <li>Map Coolify’s base directory to Docker’s context root.</li>
+      <li>Reproduce the exact Dockerfile/context pair from a clean checkout.</li>
+      <li>Audit root and Dockerfile-specific ignore rules.</li>
+      <li>Generate build artifacts in a builder stage where appropriate.</li>
+      <li>Test the image, review the diff, deploy once, and verify unique live content.</li>
+    </ol>
+
+    <p>Authoritative references: Docker’s official <a href="https://docs.docker.com/build/concepts/context/" rel="noopener noreferrer">build-context guide</a> defines which files <code>COPY</code> can access and how <code>.dockerignore</code> removes them; the <a href="https://docs.docker.com/reference/dockerfile/#copy" rel="noopener noreferrer">Dockerfile <code>COPY</code> reference</a> documents context and <code>--from</code> sources; Docker’s <a href="https://docs.docker.com/reference/build-checks/copy-ignored-file/" rel="noopener noreferrer">CopyIgnoredFile check</a> covers excluded inputs. Coolify’s official <a href="https://coolify.io/docs/applications/build-packs/dockerfile" rel="noopener noreferrer">Dockerfile build-pack guide</a> explains how Base Directory and Dockerfile Location establish the build.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify deployment guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-npm-ci-package-lock-out-of-sync.html">Coolify <code>npm ci</code> failed?</a><span>Repair a manifest and lockfile mismatch after the correct files reach the dependency stage.</span></li>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a GitHub push?</a><span>Trace the expected commit through checkout, build, container replacement, and public content.</span></li>
+        <li><a href="/posts/coolify-static-site-deploy-checklist.html">Coolify static-site deployment checklist</a><span>Verify build output, nginx-readable files, cache behaviour, and live discovery surfaces.</span></li>
+        <li><a href="/posts/coolify-deployment-stuck-queued-in-progress.html">Coolify deployment stuck queued or in progress?</a><span>Separate build failures from queue pressure, resource exhaustion, and stale log streams.</span></li>
+        <li><a href="/posts/coolify-docker-hub-pull-rate-limit-429.html">Coolify Docker Hub pull rate limit?</a><span>Diagnose an image-source failure that occurs before your application context is built.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

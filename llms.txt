@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Docker COPY Failed: Fix File Not Found in Build Context: https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html
+  - Build-context troubleshooting covering exact commit and case, Coolify Base Directory and Dockerfile Location, local context reproduction, .dockerignore exclusions, generated artifacts, multi-stage source paths, monorepo manifests, clean image tests, and commit-level live verification.
 |- Coolify npm ci Failed: Fix package-lock.json Out of Sync: https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html
   - Lockfile-safe Node.js deployment recovery covering frozen-install semantics, exact commit and build-root evidence, Node/npm toolchain alignment, project-level dependency flags, workspace boundaries, Docker cache-safe manifest ordering, clean local reproduction, reviewed lockfile regeneration, and commit-level live verification.
 |- Coolify Docker Hub Pull Rate Limit: Fix 429 Safely: https://adrianmarikar.com/posts/coolify-docker-hub-pull-rate-limit-429.html
