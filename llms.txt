@@ -10,6 +10,8 @@
 
 ## Current posts and categories
 
+|- Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch: https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html
+  - Architecture-safe container recovery covering deployment and build server identity, image manifests and digests, entrypoint scripts, compiled binaries, target-aware multi-stage builds, native versus emulated execution, immutable release tags, and live runtime verification.
 |- Coolify Docker COPY Failed: Fix File Not Found in Build Context: https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html
   - Build-context troubleshooting covering exact commit and case, Coolify Base Directory and Dockerfile Location, local context reproduction, .dockerignore exclusions, generated artifacts, multi-stage source paths, monorepo manifests, clean image tests, and commit-level live verification.
 |- Coolify npm ci Failed: Fix package-lock.json Out of Sync: https://adrianmarikar.com/posts/coolify-npm-ci-package-lock-out-of-sync.html

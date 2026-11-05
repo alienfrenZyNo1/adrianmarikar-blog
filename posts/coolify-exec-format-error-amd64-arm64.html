@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch — Adrian Marikar</title>
+  <meta name="description" content="Fix exec format error in Coolify by proving the deployment server, image, entrypoint, and compiled binary architectures, then rebuilding or publishing the correct platform image.">
+  <meta name="keywords" content="Coolify exec format error, Docker exec format error, amd64 arm64 image mismatch, Coolify wrong architecture, Docker multi platform image">
+  <link rel="canonical" href="https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html">
+  <meta property="og:site_name" content="Adrian Marikar">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch">
+  <meta property="og:description" content="Trace an exec format error through the server, image manifest, entrypoint, and application binary before rebuilding the right platform variant.">
+  <meta property="og:url" content="https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html">
+  <meta property="article:published_time" content="2026-11-05T10:00:00Z">
+  <meta property="article:modified_time" content="2026-11-05T10:00:00Z">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch">
+  <meta name="twitter:description" content="A practical architecture-mismatch guide for Coolify and Docker deployments.">
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"Article","headline":"Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch","description":"Fix exec format error in Coolify by proving the deployment server, image, entrypoint, and compiled binary architectures, then rebuilding or publishing the correct platform image.","url":"https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html","mainEntityOfPage":{"@type":"WebPage","@id":"https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html"},"datePublished":"2026-11-05T10:00:00Z","dateModified":"2026-11-05T10:00:00Z","author":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"publisher":{"@type":"Person","name":"Adrian Marikar","url":"https://adrianmarikar.com/"},"keywords":["Coolify","Docker","exec format error","amd64","arm64","multi-platform images"],"inLanguage":"en"}</script>
+  <link rel="stylesheet" href="/styles.css?v=20260816-mobile-nav1">
+  <script defer src="https://analytics.adrianmarikar.com/script.js" data-website-id="1f6101c0-e548-4d9b-ba97-e30dbeffb59e"></script>
+</head>
+<body>
+<header class="site-header">
+      <a class="brand" href="/" aria-label="Adrian Marikar home">
+        <span class="brand-mark">AM</span>
+        <span>Adrian Marikar</span>
+      </a>
+      <details class="nav-menu" open>
+        <summary>
+          <span>Menu</span>
+          <span class="nav-icon" aria-hidden="true"></span>
+        </summary>
+        <nav id="primary-navigation" aria-label="Primary navigation">
+          <a href="/#writing">Writing</a>
+          <a href="/categories/ai-agents.html">AI agents</a>
+          <a href="/categories/newbizfeed.html">NewBizFeed</a>
+          <a href="/categories/dryhomeadvice.html">Dry Home Advice</a>
+          <a href="/categories/horse-racing-tips-research.html">RailSideRatings Research</a>
+          <a href="/#about">About</a>
+          <a href="mailto:hello@adrianmarikar.com">Contact</a>
+        </nav>
+      </details>
+    </header>
+
+<main>
+  <article class="article">
+    <a class="back-link" href="/">← Back home</a>
+    <header>
+      <p class="date">2026.11 / image platforms 084</p>
+      <h1>Coolify <code>exec format error</code>: fix an AMD64/ARM64 image mismatch</h1>
+    </header>
+
+    <p>A Coolify deployment may build successfully, replace the container, and then enter a restart loop with an error such as <code>exec /app/server: exec format error</code> or <code>exec /usr/local/bin/docker-entrypoint.sh: exec format error</code>. The usual explanation is a CPU architecture mismatch: an ARM64 executable is being started on an AMD64 server, or the reverse.</p>
+
+    <p>Do not assume architecture is the only possible cause. A script without a valid shebang, Windows CRLF characters in that shebang, or a corrupted executable can produce a similar startup failure. The path named in the error tells you where to begin.</p>
+
+    <blockquote>Prove four identities separately: the deployment server, the image selected by Docker, the configured entrypoint, and any compiled binary the entrypoint launches.</blockquote>
+
+    <h2>What the error actually means</h2>
+    <p>Linux asked the kernel to execute a file, but the file was not in a format that the host could start. For a compiled application, that often means the binary targets the wrong instruction set. For a shell script, it can mean the interpreter declaration is missing or malformed.</p>
+
+    <table>
+      <thead><tr><th>Error path or evidence</th><th>Likely boundary</th><th>First check</th></tr></thead>
+      <tbody>
+        <tr><td><code>/app/server</code></td><td>Compiled application binary</td><td>Run <code>file</code> against the binary in the image</td></tr>
+        <tr><td><code>/usr/local/bin/docker-entrypoint.sh</code></td><td>Base image or script format</td><td>Inspect image platform, shebang, and line endings</td></tr>
+        <tr><td>Warning says requested platform differs from host</td><td>Image manifest selection</td><td>Compare host and image OS/architecture</td></tr>
+        <tr><td>Build passes on Apple Silicon, VPS fails</td><td>Single-platform local build</td><td>Inspect the pushed registry manifest</td></tr>
+        <tr><td>Multi-stage image has a native final base but still fails</td><td>Copied build artifact</td><td>Check target arguments used by the compiler</td></tr>
+      </tbody>
+    </table>
+
+    <h2>1. Preserve the failed deployment evidence</h2>
+    <p>Before rebuilding, record the Coolify deployment identifier, source commit, image reference or digest, deployment server, build server if one is enabled, container state, restart count, and the first startup error. Use placeholders when sharing diagnostics publicly; host addresses and registry credentials are not needed.</p>
+
+    <pre><code>docker inspect APP_CONTAINER \
+  --format '{{.Image}} {{.Path}} {{json .Args}} {{.RestartCount}}'
+
+docker logs --tail 100 APP_CONTAINER</code></pre>
+
+    <p>If the container restarts too quickly, inspect the image directly rather than repeatedly restarting production. Do not replace the entrypoint with a sleeping shell and call the deployment fixed; that only hides the application failure.</p>
+
+    <h2>2. Prove the deployment server architecture</h2>
+    <p>Run the check on the server that actually starts the application container. A separate Coolify build server can have a different architecture, so checking only the machine that built the image is insufficient.</p>
+
+    <pre><code>uname -m
+docker info --format '{{.OSType}}/{{.Architecture}}'
+
+docker version --format \
+  'client={{.Client.Os}}/{{.Client.Arch}} server={{.Server.Os}}/{{.Server.Arch}}'</code></pre>
+
+    <p>Common mappings are <code>x86_64</code> to Docker’s <code>amd64</code>, and <code>aarch64</code> to <code>arm64</code>. Trust the Docker server value for container scheduling. The laptop running a CLI or browser is not the deployment host.</p>
+
+    <h2>3. Inspect the image Docker is really running</h2>
+    <p>A tag is mutable and does not prove which platform or bytes are present. Start with the immutable image ID used by the failed container, then inspect its metadata:</p>
+
+    <pre><code>IMAGE_ID=$(docker inspect APP_CONTAINER --format '{{.Image}}')
+
+docker image inspect "$IMAGE_ID" \
+  --format 'id={{.Id}} os={{.Os}} arch={{.Architecture}} entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}}'</code></pre>
+
+    <p>If the app deploys a registry tag, inspect the remote manifest as well:</p>
+
+    <pre><code>docker buildx imagetools inspect registry.example/app:RELEASE_TAG</code></pre>
+
+    <p>A multi-platform tag should expose a manifest list containing the platforms you intend to deploy, such as <code>linux/amd64</code> and <code>linux/arm64</code>. When Docker pulls that tag, it selects the matching variant for the host. A single-platform tag has no alternative to select.</p>
+
+    <p>Compare the image digest in the registry with the container’s image data. Reusing a tag can leave different machines with different cached content. Immutable release tags or digests make this comparison unambiguous.</p>
+
+    <h2>4. Determine whether the entrypoint or the app binary is wrong</h2>
+    <p>The path in the error matters. If the image’s own entrypoint fails before your code starts, inspect that file. If a shell script starts successfully and then reports the error for <code>/app/server</code>, the copied application binary is the suspect.</p>
+
+    <p>Use a compatible diagnostic container or export the image filesystem. The following example overrides the entrypoint only for a disposable inspection run:</p>
+
+    <pre><code>docker run --rm --entrypoint /bin/sh IMAGE_REFERENCE -c '
+  uname -m
+  file /app/server 2>/dev/null || true
+  sed -n "1p" /usr/local/bin/docker-entrypoint.sh 2>/dev/null || true
+'
+</code></pre>
+
+    <p>This works only if the image contains the requested shell and can run on the host. For a distroless or wrong-platform image, create a container without starting it, export its filesystem, and examine the relevant file from a separate trusted tool environment.</p>
+
+    <p>For scripts, verify that the first line names an interpreter that exists in the image, for example <code>#!/bin/sh</code>, and that it has Unix line endings. A shebang ending in an invisible carriage return can make Linux search for a nonexistent interpreter. Also check that the file is executable; a missing execute bit normally produces “permission denied”, which is a different signal.</p>
+
+    <h2>5. Find where the wrong platform entered the release</h2>
+    <p>Architecture drift usually appears at one of these boundaries:</p>
+    <ul>
+      <li><strong>A local image was built on Apple Silicon and pushed as a single ARM64 tag.</strong> The AMD64 deployment server later pulls exactly that image.</li>
+      <li><strong>A CI workflow hard-codes one platform.</strong> Its build command or action configuration publishes only <code>linux/arm64</code> or only <code>linux/amd64</code>.</li>
+      <li><strong>A remote Coolify build server differs from the deployment server.</strong> Coolify’s documentation recommends matching their CPU architectures unless the build deliberately produces the deployment target.</li>
+      <li><strong>A multi-stage build cross-compiles incorrectly.</strong> The final base image matches the host, but a binary copied from the builder was compiled for the builder rather than the target.</li>
+      <li><strong>A Compose service forces <code>platform:</code>.</strong> The override may select a variant that the production host cannot execute natively.</li>
+      <li><strong>An imported vendor binary has a fixed architecture.</strong> The base image can be correct while a downloaded executable is not.</li>
+    </ul>
+
+    <p>Inspect the exact Git commit and deployment configuration. If the source files are not the ones expected by the Dockerfile, solve that separately with the <a href="/posts/coolify-docker-copy-failed-file-not-found.html">Coolify Docker build-context checklist</a>.</p>
+
+    <h2>6. Choose a single-platform or multi-platform repair</h2>
+    <p>If the application will run only on one AMD64 VPS, the simplest repair is often to build explicitly for <code>linux/amd64</code>. Replace the target with <code>linux/arm64</code> for an ARM deployment server:</p>
+
+    <pre><code>docker buildx build \
+  --platform linux/amd64 \
+  --tag registry.example/app:RELEASE_TAG \
+  --push .</code></pre>
+
+    <p>If the same image tag must work on both architectures, publish both variants under one manifest list:</p>
+
+    <pre><code>docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag registry.example/app:RELEASE_TAG \
+  --push .</code></pre>
+
+    <p>Do not add <code>platform: linux/amd64</code> to Compose merely to silence image selection on an ARM server. That requires correctly installed emulation and carries performance and compatibility costs. Native images are preferable for normal production workloads.</p>
+
+    <h2>7. Make compiled artifacts target-aware</h2>
+    <p>A multi-platform base image does not automatically make a locally downloaded or compiled binary multi-platform. BuildKit exposes <code>BUILDPLATFORM</code>, <code>TARGETPLATFORM</code>, <code>TARGETOS</code>, and <code>TARGETARCH</code> so a multi-stage build can compile for the selected final target.</p>
+
+    <pre><code># syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
+    go build -o /out/server ./cmd/server
+
+FROM alpine
+COPY --from=build /out/server /usr/local/bin/server
+ENTRYPOINT ["/usr/local/bin/server"]</code></pre>
+
+    <p>The builder runs natively, while the compiler emits the requested target. Other languages and native dependencies have their own cross-compilation requirements. If a build needs C libraries or CGO, use a target-compatible toolchain and verify the resulting binary instead of assuming environment variables are enough.</p>
+
+    <p>For downloaded tools, construct and verify architecture-specific download URLs deliberately. Do not derive them from untrusted runtime input, and verify publisher checksums or signatures before putting the binary into the image.</p>
+
+    <h2>8. Align Coolify’s build and deployment boundary</h2>
+    <p>By default, Coolify can build and deploy on the same server. With a dedicated build server, the completed image is pushed to a registry and pulled by the deployment server. That boundary makes the registry manifest part of the release contract.</p>
+
+    <p>For a straightforward single-platform deployment, keep build and deployment servers on the same CPU architecture. If they differ intentionally, make the Docker build target explicit and ensure the builder has a supported native, cross-compilation, or emulation strategy. Record the expected platform in CI rather than relying on whichever runner happens to execute the job.</p>
+
+    <p>After correcting the Dockerfile or workflow, use a new immutable release tag. Confirm the tag’s remote manifest before telling Coolify to deploy it. If the deployment also appears to use an old commit or tag, use the <a href="/posts/coolify-github-deploy-not-updating.html">Coolify stale-deployment checklist</a> rather than repeatedly pressing redeploy.</p>
+
+    <h2>9. Test both the image and the actual Coolify release</h2>
+    <p>Before production, run the exact platform variant on compatible infrastructure and assert application behaviour:</p>
+
+    <pre><code>docker pull --platform linux/amd64 registry.example/app:RELEASE_TAG
+
+docker image inspect registry.example/app:RELEASE_TAG \
+  --format '{{.Os}}/{{.Architecture}} {{.Id}}'
+
+docker run --rm --platform linux/amd64 \
+  registry.example/app:RELEASE_TAG --version</code></pre>
+
+    <p>Then trigger one Coolify deployment and poll it to a terminal state. Verify that the replacement container has a new immutable ID, the expected image digest, a stable start time, no restart loop, and a healthy status. Request a real application route and assert unique release content—not only HTTP 200.</p>
+
+    <p>If using a multi-platform tag, test each advertised variant in CI or on a native runner. A manifest list can be published even when one constituent image is broken.</p>
+
+    <h2>Fixes that create more uncertainty</h2>
+    <ul>
+      <li><strong>Forcing a platform without checking the host:</strong> this can exchange a clear mismatch for slow or unavailable emulation.</li>
+      <li><strong>Reusing <code>latest</code>:</strong> mutable tags make cache and digest comparisons harder during an incident.</li>
+      <li><strong>Rebuilding only the base image:</strong> a copied application binary can still target the wrong architecture.</li>
+      <li><strong>Installing QEMU directly on production as the first response:</strong> build the native variant unless emulation is a reviewed requirement.</li>
+      <li><strong>Replacing the entrypoint with <code>sleep</code>:</strong> a running container is not a working application.</li>
+      <li><strong>Editing the live container:</strong> the next Coolify recreation discards the change and preserves no trustworthy release history.</li>
+    </ul>
+
+    <h2>Compact recovery order</h2>
+    <ol>
+      <li>Capture the exact container, image ID, error path, source commit, and deployment record.</li>
+      <li>Prove the Docker server OS and CPU architecture.</li>
+      <li>Inspect the local image metadata and remote registry manifest.</li>
+      <li>Identify whether the failed file is an entrypoint script or compiled binary.</li>
+      <li>Trace the mismatch to local build, CI, Coolify build server, Compose override, or Dockerfile stage.</li>
+      <li>Publish the correct single-platform image or a tested multi-platform manifest under a new tag.</li>
+      <li>Deploy once, then verify digest, restart count, health, logs, and unique application content.</li>
+    </ol>
+
+    <p>Authoritative references: Docker’s official <a href="https://docs.docker.com/build/building/multi-platform/" rel="noopener noreferrer">multi-platform build guide</a> explains manifest lists, host compatibility, emulation, native nodes, and cross-compilation; the <a href="https://docs.docker.com/reference/cli/docker/image/inspect/" rel="noopener noreferrer"><code>docker image inspect</code> reference</a> documents image and platform inspection. Coolify’s <a href="https://coolify.io/docs/core/infrastructure/servers/build-servers" rel="noopener noreferrer">build-server guide</a> describes the registry hand-off and recommends matching build and deployment server architecture, while its <a href="https://coolify.io/docs/applications/build-packs/dockerfile" rel="noopener noreferrer">Dockerfile build-pack guide</a> documents source and build configuration.</p>
+
+    <section class="related-posts" aria-label="Related posts">
+      <p class="eyebrow">// keep reading</p>
+      <h2>Related Coolify and Docker guides</h2>
+      <ul>
+        <li><a href="/posts/coolify-docker-copy-failed-file-not-found.html">Coolify Docker <code>COPY</code> says a file is missing?</a><span>Prove the exact commit, build context, ignore rules, filename case, and build-stage path.</span></li>
+        <li><a href="/posts/github-actions-docker-build-coolify-deploy.html">Build Docker images in GitHub Actions for Coolify</a><span>Separate image building, registry publication, and deployment triggers into verifiable stages.</span></li>
+        <li><a href="/posts/coolify-docker-hub-pull-rate-limit-429.html">Coolify Docker Hub pull rate limit?</a><span>Distinguish image-platform failures from registry allowance, abuse protection, and authentication.</span></li>
+        <li><a href="/posts/coolify-github-deploy-not-updating.html">Coolify deploy not updating after a push?</a><span>Trace the intended commit through checkout, image build, container replacement, and public content.</span></li>
+        <li><a href="/posts/coolify-healthcheck-curl-wget-not-found.html">Coolify health check fails because curl or wget is missing?</a><span>Repair a different image-runtime boundary without masking the application’s real health.</span></li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<footer class="site-footer"><p>© Adrian Marikar</p><p><a href="mailto:hello@adrianmarikar.com">hello@adrianmarikar.com</a></p></footer>
+<script src="/script.js?v=20260816-mobile-nav1"></script>
+</body>
+</html>

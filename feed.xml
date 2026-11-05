@@ -7,6 +7,13 @@
     <language>en</language>
     <atom:link href="https://adrianmarikar.com/feed.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>Coolify Exec Format Error: Fix an AMD64/ARM64 Image Mismatch</title>
+      <link>https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html</link>
+      <guid>https://adrianmarikar.com/posts/coolify-exec-format-error-amd64-arm64.html</guid>
+      <pubDate>Thu, 05 Nov 2026 10:00:00 GMT</pubDate>
+      <description>A practical guide to proving the deployment server, image manifest, entrypoint, and compiled binary architectures before repairing a Coolify exec format error.</description>
+    </item>
+    <item>
       <title>Coolify Docker COPY Failed: Fix File Not Found in Build Context</title>
       <link>https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html</link>
       <guid>https://adrianmarikar.com/posts/coolify-docker-copy-failed-file-not-found.html</guid>
